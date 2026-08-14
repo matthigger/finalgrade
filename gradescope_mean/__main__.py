@@ -9,6 +9,7 @@ from collections import Counter
 import pandas as pd
 
 import gradescope_mean
+from gradescope_mean.errors import GradescopeMeanError
 
 logger = logging.getLogger('gradescope_mean')
 
@@ -152,10 +153,12 @@ def cmd_grade(args):
             pd.DataFrame(row).to_csv(_folder / f'{stem}.csv')
         logger.info(f'wrote per-student CSVs to {_folder}')
 
-    # late days CSV
+    # late days CSV (using each category's own grace period, so that the
+    # export matches the late days actually penalised)
     if args.f_late_csv is not None:
         f_late = folder / args.f_late_csv
-        gradebook.df_lateday.to_csv(f_late.with_suffix('.csv'))
+        df_lateday = gradebook.get_lateday(cat_late_dict=config.cat_late_dict)
+        df_lateday.to_csv(f_late.with_suffix('.csv'))
         logger.info(f'wrote {f_late}')
 
     # histogram
@@ -225,7 +228,14 @@ def main(args=None):
         'canvas': cmd_canvas,
         'banner': cmd_banner,
     }
-    dispatch[args.command](args)
+
+    try:
+        dispatch[args.command](args)
+    except GradescopeMeanError as e:
+        # an expected, actionable problem: the user needs the message, not a
+        # traceback
+        logger.error(f'error: {e}')
+        sys.exit(2)
 
 
 if __name__ == '__main__':

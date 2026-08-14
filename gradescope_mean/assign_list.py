@@ -1,8 +1,8 @@
 import warnings
 
+from .errors import AssignmentNotFoundError
 
-class AssignmentNotFoundError(NameError):
-    pass
+__all__ = ['AssignmentList', 'AssignmentNotFoundError', 'normalize']
 
 
 def normalize(s):
@@ -13,31 +13,60 @@ def normalize(s):
 class AssignmentList(list):
     """ lookup assignment string with partial match without spaces or capitals
 
-    the keys of the dictionary are the normalized names, the values are the
-    full names.
+    Holds normalized assignment names.  Building one is cheap and side effect
+    free; the gradescope-specific parsing (and the ambiguity warning that goes
+    with it) lives in from_columns(), which runs once per csv.
     """
     MAX_PTS = normalize(' - max points')
     LATE = normalize(' - lateness (h:m:s)')
+    SUB_TIME = normalize(' - submission time')
 
-    def __init__(self, ass_list):
-        # normalize
-        ass_norm_list = [normalize(ass) for ass in ass_list]
-        ass_norm_list = [ass.replace(self.MAX_PTS, '') for ass in ass_norm_list
-                         if self.MAX_PTS in ass]
-        assert len(ass_norm_list) == len(set(ass_norm_list)), \
-            'two assignment names differ by only capitalization or spacing'
+    # every column gradescope emits for a single assignment
+    SUFFIX_TUP = ('', MAX_PTS, LATE, SUB_TIME)
 
-        _ass_norm_list = sorted(ass_norm_list, key=len)
+    @classmethod
+    def from_columns(cls, columns):
+        """ builds from the raw columns of a gradescope csv
+
+        An assignment is any column with a matching ' - Max Points' column.
+
+        Args:
+            columns (iterable): column names (normalized or not)
+
+        Returns:
+            ass_list (AssignmentList)
+        """
+        col_list = [normalize(col) for col in columns]
+        ass_norm_list = [ass.replace(cls.MAX_PTS, '') for ass in col_list
+                         if cls.MAX_PTS in ass]
+
+        if len(ass_norm_list) != len(set(ass_norm_list)):
+            raise AssignmentNotFoundError(
+                'two assignment names differ by only capitalization or '
+                'spacing')
+
+        cls._warn_prefix(ass_norm_list)
+
+        return cls(sorted(ass_norm_list))
+
+    @staticmethod
+    def _warn_prefix(ass_norm_list):
+        """ warns when one name prefixes another (match() can't tell them
+        apart) """
         link = 'https://github.com/matthigger/gradescope_mean/issues/28'
-        for i, ass in enumerate(_ass_norm_list):
-            for _ass in _ass_norm_list[i + 1:]:
+        sort_list = sorted(ass_norm_list, key=len)
+        for idx, ass in enumerate(sort_list):
+            for _ass in sort_list[idx + 1:]:
                 if _ass.startswith(ass):
                     warnings.warn(f'{ass} prefixes {_ass}, youll have '
                                   f'trouble referencing {ass}\n{link}',
                                   UserWarning)
 
-        super().__init__(sorted(ass_norm_list))
-
+    def get_column_set(self):
+        """ every gradescope column belonging to these assignments """
+        return {ass + suffix
+                for ass in self
+                for suffix in self.SUFFIX_TUP}
 
     def match_iter(self, s_assign):
         """ iterates through all matching assignments

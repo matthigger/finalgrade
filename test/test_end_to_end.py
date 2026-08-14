@@ -107,7 +107,6 @@ class TestPipelineGolden:
 class TestFeatureInteractions:
     """ the seams between features -- where the bugs actually live """
 
-    @known_bug('waive does not clear late days (fixed in phase 3)')
     def test_waive_also_waives_late_penalty(self, f_scope_std):
         """ waiving an assignment must waive its late days too (README) """
         _, df = Config(
@@ -194,7 +193,6 @@ class TestFeatureInteractions:
 class TestAdversarialInput:
     """ malformed / unusual gradescope exports """
 
-    @known_bug('0-point assignment yields inf/nan percentages')
     def test_zero_point_assignment(self, tmp_path):
         """ a 0-point assignment must not poison the mean with inf/nan """
         assignments = {'HW1': 10, 'Survey': 0}
@@ -220,7 +218,6 @@ class TestAdversarialInput:
         assert gb.df_lateday.loc['a@u.edu', 'hw1'] == 0
         assert df.loc['a@u.edu', 'mean'] == pytest.approx(.8)
 
-    @known_bug('duplicate emails silently share one grade (fixed in phase 3)')
     def test_duplicate_email_raises(self, tmp_path):
         """ two rows for one email cannot be silently merged """
         students = list(STUDENT_STD) + [dict(STUDENT_STD[0], scores={
@@ -239,7 +236,6 @@ class TestAdversarialInput:
         # the extra column must be metadata, never mistaken for an assignment
         np.testing.assert_allclose([.9, .75, .5], df['mean'])
 
-    @known_bug('META_DATA_COLS is hardcoded to 4')
     def test_fewer_metadata_columns(self, tmp_path):
         """ an export with no SID column still works """
         f = write_scope(
@@ -280,7 +276,6 @@ class TestConfigValidationEndToEnd:
         with pytest.raises(ValueError, match='(?i)drop_low'):
             Config(cat_weight_dict={'hw': 1}, cat_drop_dict={'quiz': 1})
 
-    @known_bug('only warns; config x gradebook validation does not exist yet')
     def test_category_matching_no_assignment_raises(self, f_scope_std):
         """ a weight category that matches nothing is a config error """
         with pytest.raises(ValueError, match='(?i)(match|category)'):
@@ -335,7 +330,6 @@ class TestCLI:
             ['grade', str(f_scope_std), '--config', f_cfg, '-q']))
         assert capsys.readouterr().out == ''
 
-    @known_bug('--late_csv exports the legacy 60-min-grace frame')
     def test_late_csv_uses_configured_grace(self, tmp_path, f_scope_std):
         """ the exported late days must match the ones actually penalised """
         f_cfg = self._write_cfg(tmp_path, CFG_BASE + """\

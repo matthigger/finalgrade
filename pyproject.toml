@@ -1,6 +1,6 @@
 [project]
 name = "gradescope-mean"
-version = "0.0.20"
+version = "0.1.0"
 description = "Utility to average gradescope csv output to final grades"
 authors = [
     {name = "Matt Higger",email = "mhigger@ccs.neu.edu"}

@@ -1,67 +1,67 @@
 import pathlib
 import shutil
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from ruamel.yaml import YAML
 
 from .assign_list import normalize
+from .errors import ConfigError
 from .gradebook import Gradebook
 
 F_CONFIG_DEFAULT = (pathlib.Path(__file__).parent / 'config.yaml').resolve()
 yaml = YAML(typ='safe')
 
+# each attribute below corresponds to one section of the yaml file.  keeping
+# the two in one table (rather than spelling the mapping out in from_file)
+# is what stops an attribute from being silently dropped when a new one is
+# added -- which has been the cause of more than one bug here.
+YAML_KEY_DICT = {
+    'cat_weight_dict': ('category', 'weight'),
+    'cat_drop_dict': ('category', 'drop_low'),
+    'cat_late_dict': ('category', 'late_penalty'),
+    'remove_list': ('assignments', 'exclude'),
+    'sub_dict': ('assignments', 'substitute'),
+    'exclude_complete_thresh': ('assignments', 'exclude_complete_thresh'),
+    'waive_dict': ('waive',),
+    'late_waive_dict': ('waive_late',),
+    'grade_thresh': ('grade_thresh',),
+    'email_list': ('email_list',),
+}
 
+
+@dataclass
 class Config:
-    def __init__(self, cat_weight_dict=None, cat_drop_dict=None,
-                 remove_list=tuple(), sub_dict=None, waive_dict=None,
-                 email_list=None, cat_late_dict=None,
-                 exclude_complete_thresh=0, grade_thresh=None,
-                 late_waive_dict=None):
-        if cat_weight_dict is None:
-            self.cat_weight_dict = dict()
-        else:
-            self.cat_weight_dict = cat_weight_dict
+    """ grading policy: what counts, how much, and for whom
 
-        if cat_drop_dict is None:
-            self.cat_drop_dict = dict()
-        else:
-            self.cat_drop_dict = cat_drop_dict
+    Attribute names mirror the yaml sections via YAML_KEY_DICT.
+    """
+    cat_weight_dict: dict = field(default_factory=dict)
+    cat_drop_dict: dict = field(default_factory=dict)
+    remove_list: list = field(default_factory=list)
+    sub_dict: dict = field(default_factory=dict)
+    waive_dict: dict = field(default_factory=dict)
+    email_list: list = field(default_factory=list)
+    cat_late_dict: dict = field(default_factory=dict)
+    exclude_complete_thresh: float = 0
+    grade_thresh: dict = None
+    late_waive_dict: dict = field(default_factory=dict)
 
-        if remove_list is None:
-            self.remove_list = list()
-        else:
-            self.remove_list = remove_list
+    # yaml gives None for an empty section; normalize that to an empty
+    # container so that every attribute has a predictable type
+    EMPTY_DICT_TUP = ('cat_weight_dict', 'cat_drop_dict', 'sub_dict',
+                      'waive_dict', 'cat_late_dict', 'late_waive_dict')
+    EMPTY_LIST_TUP = ('remove_list', 'email_list')
 
-        if sub_dict is None:
-            self.sub_dict = dict()
-        else:
-            self.sub_dict = sub_dict
-
-        if waive_dict is None:
-            self.waive_dict = dict()
-        else:
-            self.waive_dict = waive_dict
-
-        if email_list is None:
-            self.email_list = list()
-        else:
-            self.email_list = email_list
-
-        if cat_late_dict is None:
-            self.cat_late_dict = dict()
-        else:
-            self.cat_late_dict = cat_late_dict
-
-        if late_waive_dict is None:
-            self.late_waive_dict = dict()
-        else:
-            self.late_waive_dict = late_waive_dict
-
-        if exclude_complete_thresh is None:
+    def __post_init__(self):
+        for name in self.EMPTY_DICT_TUP:
+            if getattr(self, name) is None:
+                setattr(self, name, dict())
+        for name in self.EMPTY_LIST_TUP:
+            if getattr(self, name) is None:
+                setattr(self, name, list())
+        if self.exclude_complete_thresh is None:
             self.exclude_complete_thresh = 0
-        else:
-            self.exclude_complete_thresh = exclude_complete_thresh
-        self.grade_thresh = grade_thresh
 
         self._normalize()
 
@@ -145,7 +145,7 @@ class Config:
         unknown_set = set(d.keys()) - set(self.cat_weight_dict.keys())
         if unknown_set:
             known = ', '.join(sorted(self.cat_weight_dict)) or '<none given>'
-            raise ValueError(
+            raise ConfigError(
                 f'{field_name} category has no entry in category/weight: '
                 f'{", ".join(sorted(unknown_set))}.  '
                 f'weighted categories are: {known}')
@@ -153,16 +153,16 @@ class Config:
     def _validate_grade_thresh(self):
         for thresh, letter in self.grade_thresh.items():
             if not self._is_number(thresh):
-                raise ValueError(
+                raise ConfigError(
                     f'grade_thresh keys must be numbers, got {thresh!r} '
                     f'for "{letter}"')
             if not 0 <= thresh <= 1:
-                raise ValueError(
+                raise ConfigError(
                     f'grade_thresh must be a fraction between 0 and 1, got '
                     f'{thresh!r} for "{letter}" (write .93 rather than 93)')
 
         if self.grade_thresh and min(self.grade_thresh) > 0:
-            raise ValueError(
+            raise ConfigError(
                 'grade_thresh needs an entry at 0 so that every grade maps '
                 f'to a letter, lowest given is {min(self.grade_thresh)}')
 
@@ -172,18 +172,18 @@ class Config:
         # category weights: non-negative numbers, not all zero
         for cat, w in self.cat_weight_dict.items():
             if not self._is_number(w) or w < 0:
-                raise ValueError(
+                raise ConfigError(
                     f'category weight must be a non-negative number, '
                     f'got {w!r} for "{cat}"')
         if self.cat_weight_dict and sum(self.cat_weight_dict.values()) <= 0:
-            raise ValueError(
+            raise ConfigError(
                 'at least one category weight must be positive, got all '
                 f'zero: {self.cat_weight_dict}')
 
         # drop counts are non-negative integers
         for cat, d in self.cat_drop_dict.items():
             if not isinstance(d, int) or isinstance(d, bool) or d < 0:
-                raise ValueError(
+                raise ConfigError(
                     f'drop_low must be a non-negative integer, '
                     f'got {d!r} for "{cat}"')
 
@@ -196,7 +196,7 @@ class Config:
         if self.exclude_complete_thresh:
             t = self.exclude_complete_thresh
             if not self._is_number(t) or not (0 <= t <= 1):
-                raise ValueError(
+                raise ConfigError(
                     f'exclude_complete_thresh must be between 0 and 1, '
                     f'got {t!r}')
 
@@ -204,7 +204,10 @@ class Config:
             self._validate_grade_thresh()
 
     def __call__(self, f_scope):
-        """ runs a typical processing pipeline given config and f_scop
+        """ runs the processing pipeline given config and f_scope
+
+        The step order is load bearing; each comment below states what breaks
+        if that step moves.
 
         Args:
             f_scope (str): raw gradescope csv
@@ -215,18 +218,28 @@ class Config:
         """
         gradebook = Gradebook(f_scope=f_scope)
 
+        # 1. prune first, so that every later step (completion threshold in
+        #    particular) sees only the students actually being graded
         if self.email_list:
             gradebook.prune_email(email_list=self.email_list)
 
+        # 2. substitute before excluding, since the alternate assignments a
+        #    substitution reads from are usually the ones excluded next
         if self.sub_dict:
             gradebook.substitute(sub_dict=self.sub_dict)
 
+        # 3. explicit exclusions before the completion threshold, so the
+        #    threshold isn't computed over assignments already on their way out
         for ass in self.remove_list:
             gradebook.remove(ass, multi=True)
 
+        # 4. completion threshold, now that substitutions have filled in
+        #    scores and exclusions have removed the noise
         gradebook.remove_thresh(
             min_complete_thresh=self.exclude_complete_thresh)
 
+        # 5. waive last: waivers name assignments, so they must run after the
+        #    set of assignments has settled
         if self.waive_dict:
             gradebook.waive(waive_dict=self.waive_dict)
 
@@ -254,39 +267,26 @@ class Config:
         try:
             d = yaml.load(f_config)
         except Exception as e:
-            raise ValueError(
+            raise ConfigError(
                 f'failed to parse config file {f_config}: {e}') from e
 
         if not isinstance(d, dict):
-            raise ValueError(
+            raise ConfigError(
                 f'config file must be a YAML mapping, got {type(d).__name__} '
                 f'in {f_config}')
 
-        def _get(d, *keys, default=None):
-            """Safely navigate nested dicts, returning default for missing/null."""
+        def _get(*key_tup, default=None):
+            """Safely navigate nested dicts, returning default for missing."""
             val = d
-            for k in keys:
-                if not isinstance(val, dict) or k not in val:
+            for key in key_tup:
+                if not isinstance(val, dict) or key not in val:
                     return default
-                val = val[k]
+                val = val[key]
             return val if val is not None else default
 
-        cat_weight_dict = _get(d, 'category', 'weight')
-        cat_drop_n = _get(d, 'category', 'drop_low')
-        cat_late_dict = _get(d, 'category', 'late_penalty')
-        exclude_list = _get(d, 'assignments', 'exclude')
-        sub_dict = _get(d, 'assignments', 'substitute')
-        waive_dict = _get(d, 'waive')
-        email_list = _get(d, 'email_list')
-        exclude_complete_thresh = _get(d, 'assignments',
-                                       'exclude_complete_thresh')
-        grade_thresh = _get(d, 'grade_thresh')
-        late_waive_dict = _get(d, 'waive_late')
-
-        return cls(cat_weight_dict, cat_drop_n, exclude_list, sub_dict,
-                   waive_dict, email_list, cat_late_dict,
-                   exclude_complete_thresh, grade_thresh=grade_thresh,
-                   late_waive_dict=late_waive_dict)
+        # driven by the table, so a new attribute can't be forgotten here
+        return cls(**{attr: _get(*key_tup)
+                      for attr, key_tup in YAML_KEY_DICT.items()})
 
     @classmethod
     def resolve_config(cls, folder, force_new=False):
