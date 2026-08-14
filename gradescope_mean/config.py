@@ -127,27 +127,81 @@ class Config:
         # lowercase email list entries
         self.email_list = [e.lower() for e in self.email_list]
 
-        # validate category weights are positive
-        for cat, w in self.cat_weight_dict.items():
-            if not isinstance(w, (int, float)) or w < 0:
-                raise ValueError(
-                    f'category weight must be a positive number, '
-                    f'got {w!r} for "{cat}"')
+        self._validate()
 
-        # validate drop counts are non-negative integers
+    @staticmethod
+    def _is_number(x):
+        """ bool is an int subclass, but never a meaningful weight / count """
+        return not isinstance(x, bool) and isinstance(x, (int, float))
+
+    def _check_category_keys(self, d, field_name):
+        """ raises unless every category in d also has a weight
+
+        a category with no weight is never visited when averaging, so an
+        entry here would otherwise be silently ignored.
+        """
+        if not d:
+            return
+        unknown_set = set(d.keys()) - set(self.cat_weight_dict.keys())
+        if unknown_set:
+            known = ', '.join(sorted(self.cat_weight_dict)) or '<none given>'
+            raise ValueError(
+                f'{field_name} category has no entry in category/weight: '
+                f'{", ".join(sorted(unknown_set))}.  '
+                f'weighted categories are: {known}')
+
+    def _validate_grade_thresh(self):
+        for thresh, letter in self.grade_thresh.items():
+            if not self._is_number(thresh):
+                raise ValueError(
+                    f'grade_thresh keys must be numbers, got {thresh!r} '
+                    f'for "{letter}"')
+            if not 0 <= thresh <= 1:
+                raise ValueError(
+                    f'grade_thresh must be a fraction between 0 and 1, got '
+                    f'{thresh!r} for "{letter}" (write .93 rather than 93)')
+
+        if self.grade_thresh and min(self.grade_thresh) > 0:
+            raise ValueError(
+                'grade_thresh needs an entry at 0 so that every grade maps '
+                f'to a letter, lowest given is {min(self.grade_thresh)}')
+
+    def _validate(self):
+        """ validates config values against each other (no gradebook needed)
+        """
+        # category weights: non-negative numbers, not all zero
+        for cat, w in self.cat_weight_dict.items():
+            if not self._is_number(w) or w < 0:
+                raise ValueError(
+                    f'category weight must be a non-negative number, '
+                    f'got {w!r} for "{cat}"')
+        if self.cat_weight_dict and sum(self.cat_weight_dict.values()) <= 0:
+            raise ValueError(
+                'at least one category weight must be positive, got all '
+                f'zero: {self.cat_weight_dict}')
+
+        # drop counts are non-negative integers
         for cat, d in self.cat_drop_dict.items():
-            if not isinstance(d, int) or d < 0:
+            if not isinstance(d, int) or isinstance(d, bool) or d < 0:
                 raise ValueError(
                     f'drop_low must be a non-negative integer, '
                     f'got {d!r} for "{cat}"')
 
+        # categories referenced elsewhere must be weighted, or they'd be
+        # silently ignored
+        self._check_category_keys(self.cat_drop_dict, 'drop_low')
+        self._check_category_keys(self.cat_late_dict, 'late_penalty')
+
         # validate exclude_complete_thresh
         if self.exclude_complete_thresh:
             t = self.exclude_complete_thresh
-            if not isinstance(t, (int, float)) or not (0 <= t <= 1):
+            if not self._is_number(t) or not (0 <= t <= 1):
                 raise ValueError(
                     f'exclude_complete_thresh must be between 0 and 1, '
                     f'got {t!r}')
+
+        if self.grade_thresh is not None:
+            self._validate_grade_thresh()
 
     def __call__(self, f_scope):
         """ runs a typical processing pipeline given config and f_scop

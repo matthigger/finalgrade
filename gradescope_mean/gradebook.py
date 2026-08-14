@@ -1,8 +1,11 @@
+import logging
 from math import ceil
 from warnings import warn
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger('gradescope_mean')
 
 from .assign_list import AssignmentList, AssignmentNotFoundError, normalize
 from .get_mean_drop_low import get_mean_drop_low
@@ -37,13 +40,23 @@ class Gradebook:
                 str.lower)
         df_scope.index = df_scope.index.map(str.lower)
         df_scope.index.name = df_scope.index.name.lower()
-        df_scope.fillna(0, inplace=True)
+
+        self.ass_list = AssignmentList(df_scope.columns)
+
+        # a missing score means "no submission", which counts as 0.  a missing
+        # lateness cell means "not late".  (a blanket fillna(0) would put an
+        # int into the H:M:S strings, which then fails to parse)
+        for ass in self.ass_list:
+            df_scope[ass] = df_scope[ass].fillna(0)
+            col_late = ass + self.ass_list.LATE
+            df_scope[col_late] = df_scope[col_late].fillna('00:00:00')
+        df_scope.iloc[:, :self.META_DATA_COLS] = \
+            df_scope.iloc[:, :self.META_DATA_COLS].fillna('')
 
         # store meta data
         self.df_meta = df_scope.iloc[:, :self.META_DATA_COLS]
 
         # compute percent per assignment & points
-        self.ass_list = AssignmentList(df_scope.columns)
         self.df_perc = pd.DataFrame()
         self.points = np.empty(len(self.ass_list))
         for idx, ass in enumerate(self.ass_list):
@@ -59,6 +72,10 @@ class Gradebook:
         # compute days late (raw minutes; grace period applied later)
         def get_late_minutes(s_hour_min_sec):
             """ returns total lateness in minutes (ignoring seconds) """
+            if not isinstance(s_hour_min_sec, str) or \
+                    not s_hour_min_sec.strip():
+                # blank lateness cell: not late
+                return 0
             parts = s_hour_min_sec.split(':')
             return int(parts[0]) * 60 + int(parts[1])
 
@@ -157,45 +174,46 @@ class Gradebook:
     def prune_email(self, email_list, ignore_suffix=True):
         """ discards rows not in email_list, warns if emails in list not a row
 
+        row order always follows the input csv, never set iteration order,
+        so that repeated runs produce identical output.
+
         Args:
             email_list (list): list of strings
+            ignore_suffix (bool): if True, emails match on the part before '@'
         """
-        if ignore_suffix:
-            def discard_suffix(email_list):
-                prefix_list = [email.split('@')[0] for email in email_list]
-                prefix_set = set(prefix_list)
-                assert len(prefix_list) == len(set(prefix_list)), \
-                    'non-unique email (before @) found, disable ignore_suffix'
+        def get_key(email):
+            return email.split('@')[0] if ignore_suffix else email
 
-                prefix_email_dict = dict(zip(prefix_list, email_list))
+        key_scope_list = [get_key(email) for email in self.df_meta.index]
+        if len(key_scope_list) != len(set(key_scope_list)):
+            dupe_list = sorted({key for key in key_scope_list
+                                if key_scope_list.count(key) > 1})
+            raise ValueError(
+                'two students share an email prefix, pass ignore_suffix='
+                f'False: {", ".join(dupe_list)}')
 
-                return prefix_set, prefix_email_dict
+        key_scope_set = set(key_scope_list)
+        key_target_set = {get_key(email) for email in email_list}
 
-            email_target, _ = discard_suffix(email_list)
-            email_scope, prefix_email_dict = discard_suffix(self.df_meta.index)
-        else:
-            email_scope = set(self.df_meta.index)
-            email_target = set(email_list)
-
-        # warn if any emails not found
-        email_target_missing = email_target - email_scope
-        if email_target_missing:
-            s = '\n'.join(email_target_missing)
+        # warn if any emails not found (sorted: warnings must be stable too)
+        key_missing_set = key_target_set - key_scope_set
+        if key_missing_set:
+            s = '\n'.join(sorted(key_missing_set))
             warn(f'email not found in scope:\n{s}')
 
-            email_scope_extra = email_scope - email_target
-            if email_scope_extra:
-                s = '\n'.join(email_scope_extra)
+            key_extra_set = key_scope_set - key_target_set
+            if key_extra_set:
+                s = '\n'.join(sorted(key_extra_set))
                 warn(f'maybe its one of these?\n{s}')
 
-        # discard rows not in email_list
-        email_list_found = list(email_scope.intersection(email_target))
-        if ignore_suffix:
-            email_list_found = [prefix_email_dict[prefix]
-                                for prefix in email_list_found]
-        self.df_perc = self.df_perc.loc[email_list_found, :]
-        self.df_meta = self.df_meta.loc[email_list_found, :]
-        self.df_lateday = self.df_lateday.loc[email_list_found, :]
+        # discard rows not in email_list, preserving the csv's row order
+        keep_bool_list = [key in key_target_set for key in key_scope_list]
+        idx_keep = self.df_meta.index[keep_bool_list]
+
+        self.df_perc = self.df_perc.loc[idx_keep, :]
+        self.df_meta = self.df_meta.loc[idx_keep, :]
+        self.df_lateday = self.df_lateday.loc[idx_keep, :]
+        self.df_late_minutes = self.df_late_minutes.loc[idx_keep, :]
 
     def remove_thresh(self, min_complete_thresh):
         """ removes assignments which not enough students have submitted
@@ -213,7 +231,7 @@ class Gradebook:
                 self.remove(ass, skip_match=True)
             else:
                 msg = f'   kept: {comp_perc * 100:.0f}% complete {ass}'
-            print(msg)
+            logger.info(msg)
 
     def remove(self, ass, multi=False, skip_match=False):
         """ deletes an assignment
@@ -360,7 +378,11 @@ class Gradebook:
         if cat_drop_dict is None:
             cat_drop_dict = dict()
         else:
-            assert set(cat_drop_dict.keys()).issubset(cat_weight_dict.keys())
+            unknown_set = set(cat_drop_dict.keys()) - set(cat_weight_dict)
+            if unknown_set:
+                raise ValueError(
+                    f'drop_low category has no weight: '
+                    f'{", ".join(sorted(unknown_set))}')
 
         # ensure that categories partition assignments (warn if they don't)
         cat_bool_dict = {cat: np.array([cat in ass for ass in self.ass_list])
@@ -420,8 +442,8 @@ class Gradebook:
             # add category's contribution to overall mean
             cat_missing = df_grade[s_mean].isna()
             for email in cat_missing.index[cat_missing]:
-                print(
-                    f'{email} has no assignments in category: {cat} (ignored in final mean)')
+                logger.info(f'{email} has no assignments in category: {cat} '
+                            f'(ignored in final mean)')
             weight_total += cat_weight_dict[cat] * ~cat_missing
 
             cat_mean = df_grade[s_mean].copy()

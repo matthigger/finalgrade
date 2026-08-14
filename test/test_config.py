@@ -247,7 +247,9 @@ class TestConfigEmailPrefix:
 
     def test_excuse_day_offset_keys_lowercased(self):
         """excuse_day_offset emails inside cat_late_dict should be lowered"""
-        config = Config(cat_late_dict={
+        # a late_penalty category must also carry a weight, else it would
+        # never be applied
+        config = Config(cat_weight_dict={'hw': 1}, cat_late_dict={
             'hw': {'penalty_per_day': 0.1, 'excuse_day': 0,
                    'excuse_day_offset': {'FOO@bar.edu': 2}}})
         offset = config.cat_late_dict['hw']['excuse_day_offset']

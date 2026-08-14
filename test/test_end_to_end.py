@@ -208,7 +208,6 @@ class TestAdversarialInput:
         np.testing.assert_allclose([.8, .9], df['mean'])
         assert not df['mean'].isna().any()
 
-    @known_bug('fillna(0) hits lateness strings, then .split() crashes')
     def test_blank_lateness_cell(self, tmp_path):
         """ an empty lateness cell means 'not late', not a crash """
         f = tmp_path / 'scope.csv'
@@ -261,26 +260,22 @@ class TestAdversarialInput:
 class TestConfigValidationEndToEnd:
     """ a bad config must fail loudly, never produce plausible wrong grades """
 
-    @known_bug('grade_thresh is not range-validated')
     def test_grade_thresh_on_0_100_scale_raises(self, f_scope_std):
         """ '93: A' instead of '.93: A' must not silently fail everyone """
         with pytest.raises(ValueError, match='(?i)grade_thresh'):
             Config(cat_weight_dict={'hw': 1},
                    grade_thresh={93: 'A', 80: 'B', 0: 'E'})
 
-    @known_bug('late_penalty category is not cross-checked against weights')
     def test_late_penalty_on_unknown_category_raises(self, f_scope_std):
         """ a typo'd late_penalty category must not be silently ignored """
         with pytest.raises(ValueError, match='(?i)late_penalty'):
             Config(cat_weight_dict={'hw': 1, 'quiz': 1},
                    cat_late_dict={'homework': {'penalty_per_day': .15}})
 
-    @known_bug('weights are only checked for w >= 0, not for a positive sum')
     def test_all_zero_weights_raises(self):
         with pytest.raises(ValueError, match='(?i)weight'):
             Config(cat_weight_dict={'hw': 0, 'quiz': 0})
 
-    @known_bug('raises a bare AssertionError with an empty message')
     def test_drop_low_on_unknown_category_raises(self):
         with pytest.raises(ValueError, match='(?i)drop_low'):
             Config(cat_weight_dict={'hw': 1}, cat_drop_dict={'quiz': 1})
@@ -293,7 +288,6 @@ class TestConfigValidationEndToEnd:
 
 
 class TestDeterminism:
-    @known_bug('prune_email builds the row list from a set')
     def test_output_row_order_is_stable(self, tmp_path):
         """ same input -> byte-identical output, whatever the hash seed """
         f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
@@ -335,7 +329,6 @@ class TestCLI:
         np.testing.assert_allclose([.9, .75, .5], df['mean'])
         assert df['letter'].tolist() == ['A-', 'C', 'E']
 
-    @known_bug('remove_thresh and average print() instead of logging')
     def test_quiet_suppresses_stdout(self, tmp_path, f_scope_std, capsys):
         f_cfg = self._write_cfg(tmp_path)
         main(parser.parse_args(
@@ -359,7 +352,6 @@ class TestCLI:
         # 1500 min = 25h of grace, so bob's 24h hw1 is not late at all
         assert df_late.loc['bob@u.edu', 'hw1'] == 0
 
-    @known_bug('per-student filenames are not unique or sanitised')
     def test_per_student_files_are_unique(self, tmp_path):
         """ students sharing a name must not overwrite each other's file """
         students = [
@@ -376,7 +368,6 @@ class TestCLI:
 
 
 class TestExporters:
-    @known_bug('canvas_merge deletes a hardcoded column list')
     def test_canvas_cli_end_to_end(self, tmp_path):
         """ the documented canvas command, on an export whose section column
         is named 'section_name' rather than 'Sections' """
@@ -407,7 +398,6 @@ class TestExporters:
         assert 'mean' in df.columns
         np.testing.assert_allclose([.9, .75], df['mean'])
 
-    @known_bug('canvas_merge mutates df_grade and del_col_list in place')
     def test_canvas_merge_does_not_mutate_arguments(self, tmp_path):
         from gradescope_mean.canvas.canvas import canvas_merge
         f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)

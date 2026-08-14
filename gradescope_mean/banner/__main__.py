@@ -24,7 +24,7 @@ def main(args=None):
 
     df['Term Code'] = args.term_code
 
-    for idx, crn in enumerate(args.crn_list):
+    for idx, crn in enumerate(args.crn_list or ()):
         df[f'CRN{idx}'] = crn
 
     # modify student ID to banner format

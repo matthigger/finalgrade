@@ -4,6 +4,7 @@ import argparse
 import logging
 import pathlib
 import sys
+from collections import Counter
 
 import pandas as pd
 
@@ -99,6 +100,21 @@ def _setup_logging(quiet):
     logging.basicConfig(level=level, format='%(message)s', force=True)
 
 
+def _safe_stem(text):
+    """Makes a string safe to use as a filename component."""
+    stem = ''.join(c if (c.isalnum() or c in '-_') else '_'
+                   for c in str(text)).strip('_')
+    return stem or 'unknown'
+
+
+def _banner_id(sid):
+    """Formats a gradescope SID as a 9-digit banner student id."""
+    s_id = str(sid).strip()
+    if s_id[-1:].upper() == 'S':
+        s_id = s_id[:-1]
+    return s_id.zfill(9)
+
+
 def cmd_grade(args):
     """Execute the 'grade' subcommand."""
     _setup_logging(args.quiet)
@@ -124,11 +140,16 @@ def cmd_grade(args):
     if args.per_stud:
         _folder = folder / 'per_student'
         _folder.mkdir(exist_ok=True)
-        for idx, row in df_grade_full.iterrows():
-            _df = pd.DataFrame(row)
-            last = row['lastname']
-            first = row['firstname']
-            _df.to_csv(_folder / f'{last}_{first}.csv')
+        stem_count = Counter()
+        for email, row in df_grade_full.iterrows():
+            last = _safe_stem(row.get('lastname', ''))
+            first = _safe_stem(row.get('firstname', ''))
+            stem = f'{last}_{first}'
+            stem_count[stem] += 1
+            if stem_count[stem] > 1:
+                # two students share a name: disambiguate with the email
+                stem = f'{stem}_{_safe_stem(str(email).split("@")[0])}'
+            pd.DataFrame(row).to_csv(_folder / f'{stem}.csv')
         logger.info(f'wrote per-student CSVs to {_folder}')
 
     # late days CSV
@@ -173,7 +194,8 @@ def cmd_banner(args):
 
     from datetime import datetime
 
-    df = pd.read_csv(args.grade_full)
+    # sid must stay a string: leading zeros are significant to banner
+    df = pd.read_csv(args.grade_full, dtype={'sid': str})
     df['Term Code'] = args.term_code
 
     if args.crn_list:
@@ -181,7 +203,7 @@ def cmd_banner(args):
             df[f'CRN{idx}'] = crn
 
     # modify student ID to banner format
-    df['Student ID'] = df['sid'].map(lambda x: str(x).strip('S').zfill(9))
+    df['Student ID'] = df['sid'].map(_banner_id)
     del df['sid']
 
     timestamp = datetime.now().strftime('%b%d_%H%M')
