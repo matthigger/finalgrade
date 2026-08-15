@@ -183,6 +183,27 @@ h2 .sub {
 .drop-main { margin: 0; font-size: 1.05rem; font-weight: 600; }
 .drop-sub { margin: .3rem 0 0; color: var(--ink-soft); font-size: .85rem; }
 
+/* where the two files come from.  left aligned even though the box is
+   centred: these are paths to follow, and a centred path is hard to scan */
+.drop-how {
+  margin: .6rem auto 0;
+  padding: .45rem .6rem;
+  background: var(--bg);
+  border-radius: 5px;
+  text-align: left;
+  display: table;
+  font-size: .78rem;
+  line-height: 1.7;
+  color: var(--ink-faint);
+}
+
+.drop-how .where {
+  display: inline-block;
+  min-width: 5.4rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
 /* ---- the weight table ---- */
 
 table.weights { margin-top: 1rem; margin-bottom: .4rem; }
