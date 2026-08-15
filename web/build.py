@@ -53,14 +53,27 @@ def bust_cache(out):
     Without this a browser holds the previous build indefinitely -- the page
     is one html file that never changes name, so a fix can ship and simply
     not arrive, which is worse than not shipping it.
+
+    This alone is not enough: the file doing the asking is index.html, whose
+    own name never changes either, so a cached copy asks for a cached
+    app.js and the stamp is never seen.  The stamps are returned to be
+    written into wheel.json, which the page fetches unconditionally and
+    checks itself against.
+
+    Returns:
+        stamp_dict (dict): asset name to the hash the site was built with
     """
     import hashlib
 
+    stamp_dict = dict()
     text = (out / 'index.html').read_text()
     for name in ('app.js', 'style.css'):
         digest = hashlib.sha256((out / name).read_bytes()).hexdigest()[:10]
+        stamp_dict[name] = digest
         text = text.replace(f'"{name}"', f'"{name}?v={digest}"')
     (out / 'index.html').write_text(text)
+
+    return stamp_dict
 
 
 def fetch_vendor(folder):
@@ -96,7 +109,7 @@ def main():
     for name in ASSET_TUP:
         shutil.copy(WEB / name, out / name)
 
-    bust_cache(out)
+    stamp_dict = bust_cache(out)
 
     # the example the 'try an example' button loads: a hundred students whose
     # awkward cases are each named after what they do (web/make_example.py)
@@ -107,6 +120,7 @@ def main():
     (out / 'wheel.json').write_text(json.dumps({
         'wheel': f'wheel/{wheel}',
         'vendor': [f'wheel/{name}' for name in vendor_list],
+        'stamp': stamp_dict,
     }, indent=2) + '\n')
 
     # github pages otherwise runs the whole site through jekyll, which

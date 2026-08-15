@@ -56,6 +56,11 @@ const state = {
 async function boot() {
   const msg = $('boot-msg');
   try {
+    // before anything expensive: a stale page would download 15 MB and then
+    // reload and do it again
+    if (await checkFresh()) return;
+    tidyUrl();
+
     msg.textContent = 'downloading python…';
     const { loadPyodide } = await import(PYODIDE + 'pyodide.mjs');
     state.py = await loadPyodide({ indexURL: PYODIDE });
@@ -88,6 +93,64 @@ await micropip.install(${JSON.stringify(wheelList)}, deps=False)
  * packages pyodide doesn't ship (openpyxl, for the banner xlsx), served from
  * this site rather than pypi so the page owes nothing to the network once
  * it has loaded. */
+/* Whether this page is the page that was built, and a reload if it isn't.
+ *
+ * app.js and style.css are fetched with a hash of themselves in the query,
+ * so a new build is never taken from cache.  index.html is not: its name
+ * never changes, so a browser holding yesterday's copy asks for yesterday's
+ * app.js by name and gets it, cache-bust and all -- the fix ships and never
+ * arrives.  That is a bug that presents as every other bug, since the code
+ * running is not the code written.
+ *
+ * wheel.json is small, fetched already, and records what the build stamped
+ * into index.html.  If the running page disagrees with it, the html is
+ * stale; reloading through a url the cache has never seen gets the real
+ * one.  Once only -- a reload that doesn't take must not become a loop.
+ *
+ * Returns:
+ *   (bool) true when a reload is on its way and boot should stop
+ */
+const FRESH_KEY = 'finalgrade.reloaded';
+
+async function checkFresh() {
+  let want;
+  try {
+    const res = await fetch('wheel.json', { cache: 'no-store' });
+    want = ((await res.json()).stamp || {})['app.js'];
+  } catch (err) {
+    // offline, or a build too old to say: carry on with what we have
+    return false;
+  }
+  if (!want) return false;
+
+  const el = document.querySelector('script[src^="app.js"]');
+  const have = el
+    && new URL(el.getAttribute('src'), location.href).searchParams.get('v');
+  if (have === want) return false;
+
+  try {
+    if (sessionStorage.getItem(FRESH_KEY) === want) return false;
+    sessionStorage.setItem(FRESH_KEY, want);
+  } catch (err) {
+    // private mode with no storage: one reload is still better than none
+  }
+
+  const url = new URL(location.href);
+  url.searchParams.set('v', want);
+  location.replace(url.toString());
+  return true;
+}
+
+/* the stamp above is a cache-buster, not something to leave in the address
+ * bar for the user to copy into an email */
+function tidyUrl() {
+  const url = new URL(location.href);
+  if (!url.searchParams.has('v')) return;
+
+  url.searchParams.delete('v');
+  history.replaceState(null, '', url.toString());
+}
+
 async function findWheels() {
   const res = await fetch('wheel.json', { cache: 'no-cache' });
   if (!res.ok) throw new Error('no wheel.json — was the site built?');
@@ -328,9 +391,8 @@ function drawQuick(form) {
  * assignment is worth, what the class did on it, and what you have decided
  * about it, all on its own row.
  *
- * Click a name to exclude it from grading, drag one name onto another to give
- * the class the better of the two, and the last row adds work that has not
- * happened yet.
+ * Click an assignment name to waive it, drag onto another to take the best of
+ * both, and the last row adds work that has not happened yet.
  */
 
 const SORT_TUP = [
@@ -489,9 +551,9 @@ function headCell(col) {
 }
 
 function assChip(r, off) {
-  const why = off ? 'left out of grading — click to put it back'
-    : 'click to leave this out of grading, or drag it onto another '
-      + 'assignment to give the class the better of the two';
+  const why = off ? 'waived for everyone — click to put it back'
+    : 'click to waive this assignment, or drag it onto another to take '
+      + 'the best of both';
 
   return `<span class="chip ass ${off ? 'is-off' : ''}" data-ass="${
     escapeHtml(r.assignment)}" role="button" tabindex="0"
@@ -650,8 +712,11 @@ function drawStudent(form) {
  * person asking in May is answered by the file rather than by memory. */
 function noteBox(form, stud) {
   const note = (form.note_dict || {})[stud.email] || '';
+  const hint = 'note to self — why this grade was adjusted '
+    + '(not used in any computation)';
+
   return `<div class="stud-note"><textarea id="stud-note" rows="1"
-    placeholder="note — why this grade was adjusted">${
+    placeholder="${escapeHtml(hint)}">${
   escapeHtml(note)}</textarea></div>`;
 }
 
@@ -757,14 +822,10 @@ function dropSubstitute(fromName, toName) {
   const stud = pickedStudent();
   if (!stud || fromName === toName) return;
 
-  const cur = (state.form.max_list || [])
-    .find((s) => s.email === stud.email);
-  const target = ((cur || {}).target_dict || {})[toName] || [];
-
   applyEdit('set_max', {
     email: stud.email,
     target: toName,
-    ass_list: [...new Set([...target, fromName])],
+    ass_list: [...new Set([...studMaxOf(toName), fromName])],
   });
 }
 
@@ -1765,17 +1826,36 @@ function markDrag(over, from, x, y) {
   document.querySelectorAll('.drop-target').forEach(
     (el) => el.classList.remove('drop-target'));
 
-  const to = over && (over.getAttribute('data-score')
-    || over.getAttribute('data-ass'));
+  // a score belongs to the student on screen, an assignment to the class
+  const score = over && over.getAttribute('data-score');
+  const to = score || (over && over.getAttribute('data-ass'));
 
   if (to && to !== from) {
     over.classList.add('drop-target');
-    if (ghost) ghost.textContent = `${to} = max(${to}, ${from})`;
+    if (ghost) ghost.textContent = maxLabel(to, from, Boolean(score));
     if (ghost) ghost.classList.add('is-over');
   } else if (ghost) {
     ghost.textContent = from;
     ghost.classList.remove('is-over');
   }
+}
+
+/* A drop onto a target that already takes a maximum adds to that operation
+ * rather than replacing it, so the label has to name everything already in
+ * it -- otherwise dragging hw0 onto hw2 = max(hw2, hw3) promises something
+ * narrower than what it does. */
+function maxLabel(to, from, perStudent) {
+  const cur = perStudent ? studMaxOf(to) : (maxOf(to) || []);
+  return `${to} = max(${[...new Set([to, ...cur, from])].join(', ')})`;
+}
+
+function studMaxOf(ass) {
+  const stud = pickedStudent();
+  if (!stud) return [];
+
+  const cur = ((state.form || {}).max_list || [])
+    .find((s) => s.email === stud.email);
+  return ((cur || {}).target_dict || {})[ass] || [];
 }
 
 function clearDragMarks() {
