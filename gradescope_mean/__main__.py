@@ -28,7 +28,9 @@ grade_parser = subparsers.add_parser(
     help='compute final grades from a Gradescope CSV export')
 grade_parser.add_argument(
     'f_scope', type=str,
-    help='Gradescope CSV (Assignments > Download Grades > CSV)')
+    help='Gradescope CSV (Assignments > Download Grades > CSV), or a Canvas '
+         'gradebook export (Grades > Export); the two are told apart by '
+         'their columns')
 grade_parser.add_argument(
     '--config', dest='f_config', default=None,
     help='YAML configuration file. If omitted and config.yaml exists in the '

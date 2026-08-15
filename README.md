@@ -20,6 +20,20 @@ Compute final grades from a Gradescope CSV export — with category weighting, l
 
 That's it. The rest of this README covers what you can put in that config file and the additional flags available.
 
+### Grading from Canvas instead
+
+`grade` also accepts a Canvas gradebook export (`Grades > Export`), told apart from a Gradescope one by its columns:
+
+    gradescope-mean grade canvas.csv --config config.yaml
+
+Everything downstream is the same. Three differences are worth knowing, all of them forced by what Canvas puts in its csv:
+
+- **Late penalties aren't available.** Canvas' export has no submission times, so a `late_penalty` in your config is an error rather than a penalty that quietly computes to zero for everyone. (Canvas does know lateness, but only through its API.)
+- **Students may be keyed by SIS ID rather than email.** Canvas has no email column; its `SIS Login ID` holds one in some courses and an ID in others. Whichever is used is logged on every run, and it's the key that `waive`, `waive_late`, `excuse_day_offset` and `email_list` must then use.
+- **Excused (`EX`) becomes a waiver**, and a blank cell counts as 0 — the same meaning a blank Gradescope cell has.
+
+Assignments worth 0 points are dropped, as always. That covers most of what this tool uploads back to Canvas (`mean_hw`, `letter`, ...) along with solution handouts, so re-importing a course you've already exported to is a no-op rather than a feedback loop.
+
 ## Configuration
 
 All grading policy lives in `config.yaml`. A default copy is created on your first run — open it up and fill in the sections that apply to your course. Tabs aren't allowed in YAML, so use spaces (2 or 4 per indent level, consistently).

@@ -210,13 +210,14 @@ class Config:
         if that step moves.
 
         Args:
-            f_scope (str): raw gradescope csv
+            f_scope (str): raw gradescope csv, or a canvas gradebook export
+                (told apart by their columns)
 
         Returns:
             gradebook (Gradebook): processed gradebook
             df_grade_full (pd.DataFrame): full data frame
         """
-        gradebook = Gradebook(f_scope=f_scope)
+        gradebook = Gradebook.from_file(f_scope)
 
         # 1. prune first, so that every later step (completion threshold in
         #    particular) sees only the students actually being graded

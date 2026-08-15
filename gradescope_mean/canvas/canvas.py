@@ -12,8 +12,10 @@ logger = logging.getLogger('gradescope_mean')
 # 'totallateness(h:m:s)' is a trailing column recent gradescope exports add;
 # it isn't an assignment, so it lands in the metadata and must be dropped too
 # (canvas turns any unrecognized column into a new assignment).
+# 'email' and 'student' are the gradebook's index, which to_csv writes as a
+# column: whichever of the two it was keyed by has to go the same way.
 GRADESCOPE_META_COL_TUP = ('firstname', 'lastname', 'sid', 'sections',
-                           'section_name', 'crn', 'email',
+                           'section_name', 'crn', 'email', 'student',
                            'totallateness(h:m:s)')
 
 # canvas exports lead with these identity columns; the rest are its own

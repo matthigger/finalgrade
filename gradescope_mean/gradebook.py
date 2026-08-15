@@ -31,6 +31,130 @@ def minutes_to_days(minutes, grace_period_minutes=GRACE_DEFAULT):
     return ceil(effective / MINUTES_PER_DAY)
 
 
+def get_late_minutes(s_hour_min_sec):
+    """ returns total lateness in minutes (ignoring seconds) """
+    if not isinstance(s_hour_min_sec, str) or not s_hour_min_sec.strip():
+        # blank lateness cell: not late
+        return 0
+    part_list = s_hour_min_sec.split(':')
+    return int(part_list[0]) * 60 + int(part_list[1])
+
+
+def read_scope(f_scope):
+    """ reads a gradescope csv export
+
+    Args:
+        f_scope (str): csv downloaded from gradescope
+
+    Returns:
+        part_dict (dict): df_score (points earned per student-assignment),
+            points (max points per assignment), df_meta (one row per student)
+            and df_late_minutes
+    """
+    df_scope = pd.read_csv(str(f_scope), index_col='Email')
+
+    # groom input data
+    df_scope.columns = list(map(normalize, df_scope.columns))
+    df_scope.index = df_scope.index.map(lambda s: str(s).lower())
+    df_scope.index.name = str(df_scope.index.name).lower()
+
+    if df_scope.index.has_duplicates:
+        dupe_list = sorted(set(df_scope.index[df_scope.index.duplicated()]))
+        raise GradebookError(
+            'duplicate email in gradescope csv (each student must appear '
+            f'once): {", ".join(dupe_list)}')
+
+    ass_list = AssignmentList.from_columns(df_scope.columns)
+
+    # metadata is whatever isn't part of an assignment.  (counting a fixed
+    # number of leading columns breaks on exports with an extra column)
+    ass_col_set = ass_list.get_column_set()
+    meta_col_list = [col for col in df_scope.columns
+                     if col not in ass_col_set]
+
+    # a missing score means "no submission", which counts as 0.  a missing
+    # lateness cell means "not late".  (a blanket fillna(0) would put an int
+    # into the H:M:S strings, which then fails to parse)
+    for ass in ass_list:
+        df_scope[ass] = df_scope[ass].fillna(0)
+        df_scope[ass + ass_list.LATE] = \
+            df_scope[ass + ass_list.LATE].fillna('00:00:00')
+
+    # meta data (lowercased, except student ids)
+    df_meta = df_scope.loc[:, meta_col_list].copy()
+    for col in meta_col_list:
+        if col == 'sid':
+            # student ids are sometimes ints, lets not cast to str
+            continue
+        df_meta[col] = df_meta[col].fillna('').astype(str).map(str.lower)
+
+    # points per assignment
+    point_list = []
+    for ass in ass_list:
+        col_max_pt = ass + ass_list.MAX_PTS
+        if df_scope[col_max_pt].nunique(dropna=False) != 1:
+            raise GradebookError(
+                f'assignment has more than one max points value: {ass}')
+        point_list.append(df_scope[col_max_pt].values[0])
+    points = pd.Series(point_list, index=list(ass_list), dtype=float)
+
+    df_score = df_scope.loc[:, list(ass_list)].copy()
+
+    # raw lateness in minutes (grace period applied on demand)
+    df_late_minutes = pd.DataFrame(index=df_scope.index)
+    for ass in ass_list:
+        df_late_minutes[ass] = \
+            df_scope[ass + ass_list.LATE].map(get_late_minutes)
+
+    return dict(df_score=df_score, points=points, df_meta=df_meta,
+                df_late_minutes=df_late_minutes)
+
+
+def finalize(df_score, points, df_meta, df_late_minutes=None):
+    """ the shared tail of both readers: drop the unusable, take percentages
+
+    Args:
+        df_score (pd.DataFrame): points earned per student-assignment
+        points (pd.Series): max points per assignment
+        df_meta (pd.DataFrame): one metadata row per student
+        df_late_minutes (pd.DataFrame): minutes late per student-assignment,
+            or None when the source records no lateness (a canvas csv)
+
+    Returns:
+        part_dict (dict): the parts a Gradebook is made of
+    """
+    # an assignment worth 0 points can only produce inf / nan percentages and
+    # contributes nothing to any weighted mean, so drop it
+    zero_list = sorted(points.index[points == 0])
+    if zero_list:
+        warn(f'assignment worth 0 points, excluded from grading: '
+             f'{", ".join(zero_list)}')
+        points = points.drop(index=zero_list)
+        df_score = df_score.drop(columns=zero_list)
+        if df_late_minutes is not None:
+            df_late_minutes = df_late_minutes.drop(columns=zero_list)
+
+    if not len(points):
+        # every mean would be nan, so say so here rather than let a gradebook
+        # of nothing propagate.  a canvas course whose only columns are ones
+        # this tool uploaded (means, letter grades) lands exactly here
+        raise GradebookError(
+            'no assignment is worth any points, so there is nothing to '
+            'grade (an assignment needs a max points above 0)')
+
+    # every score is a fraction of that assignment's max points
+    df_perc = df_score.div(points, axis='columns')
+
+    has_lateness = df_late_minutes is not None
+    if not has_lateness:
+        # nothing is late, and get_late_penalty refuses to pretend otherwise
+        df_late_minutes = pd.DataFrame(0, index=df_score.index,
+                                       columns=df_score.columns)
+
+    return dict(df_perc=df_perc, df_late_minutes=df_late_minutes,
+                points=points, df_meta=df_meta, has_lateness=has_lateness)
+
+
 class Gradebook:
     """ a grade for every student-assignment pair & manipulations
 
@@ -53,87 +177,56 @@ class Gradebook:
         df_late_minutes (pd.DataFrame): index is email, cols are assignment,
             values are raw minutes late (nan for waived)
         points (pd.Series): max points, indexed by assignment name
+        has_lateness (bool): whether the source recorded lateness at all.
+            a canvas csv doesn't, so df_late_minutes is all zeros there and
+            a configured late penalty is an error rather than a silent no-op.
     """
 
     def __init__(self, f_scope):
-        df_scope = pd.read_csv(str(f_scope), index_col='Email')
+        """ builds from a gradescope csv export
 
-        # groom input data
-        df_scope.columns = list(map(normalize, df_scope.columns))
-        df_scope.index = df_scope.index.map(lambda s: str(s).lower())
-        df_scope.index.name = str(df_scope.index.name).lower()
+        (Gradebook.from_canvas builds the same object from a canvas one,
+        Gradebook.from_file picks between them)
+        """
+        self._set_part_dict(finalize(**read_scope(f_scope)))
 
-        if df_scope.index.has_duplicates:
-            dupe_list = sorted(set(
-                df_scope.index[df_scope.index.duplicated()]))
-            raise GradebookError(
-                'duplicate email in gradescope csv (each student must appear '
-                f'once): {", ".join(dupe_list)}')
+    @classmethod
+    def from_canvas(cls, f_canvas):
+        """ builds from a canvas gradebook export
 
-        ass_list = AssignmentList.from_columns(df_scope.columns)
+        Args:
+            f_canvas (str): csv downloaded from canvas
 
-        # metadata is whatever isn't part of an assignment.  (counting a fixed
-        # number of leading columns breaks on exports with an extra column)
-        ass_col_set = ass_list.get_column_set()
-        meta_col_list = [col for col in df_scope.columns
-                         if col not in ass_col_set]
+        Returns:
+            gradebook (Gradebook)
+        """
+        from .canvas.read import read_canvas
+        gradebook = cls.__new__(cls)
+        gradebook._set_part_dict(finalize(**read_canvas(f_canvas)))
+        return gradebook
 
-        # a missing score means "no submission", which counts as 0.  a missing
-        # lateness cell means "not late".  (a blanket fillna(0) would put an
-        # int into the H:M:S strings, which then fails to parse)
-        for ass in ass_list:
-            df_scope[ass] = df_scope[ass].fillna(0)
-            df_scope[ass + ass_list.LATE] = \
-                df_scope[ass + ass_list.LATE].fillna('00:00:00')
+    @classmethod
+    def from_file(cls, f_grade):
+        """ builds from either export, told apart by their columns
 
-        # store meta data (lowercased, except student ids)
-        self.df_meta = df_scope.loc[:, meta_col_list].copy()
-        for col in meta_col_list:
-            if col == 'sid':
-                # student ids are sometimes ints, lets not cast to str
-                continue
-            self.df_meta[col] = self.df_meta[col].fillna('').astype(str).map(
-                str.lower)
+        Args:
+            f_grade (str): a gradescope or canvas csv
 
-        # points per assignment
-        point_list = []
-        for ass in ass_list:
-            col_max_pt = ass + ass_list.MAX_PTS
-            if df_scope[col_max_pt].nunique(dropna=False) != 1:
-                raise GradebookError(
-                    f'assignment has more than one max points value: {ass}')
-            point_list.append(df_scope[col_max_pt].values[0])
-        self.points = pd.Series(point_list, index=list(ass_list), dtype=float)
+        Returns:
+            gradebook (Gradebook)
+        """
+        from .canvas.read import is_canvas_export
+        if is_canvas_export(f_grade):
+            return cls.from_canvas(f_grade)
+        return cls(f_grade)
 
-        # an assignment worth 0 points can only produce inf / nan percentages
-        # and contributes nothing to any weighted mean, so drop it
-        zero_list = sorted(self.points.index[self.points == 0])
-        if zero_list:
-            warn(f'assignment worth 0 points, excluded from grading: '
-                 f'{", ".join(zero_list)}')
-            self.points = self.points.drop(index=zero_list)
-            ass_list = AssignmentList(
-                [ass for ass in ass_list if ass not in zero_list])
-
-        # percentage per assignment
-        self.df_perc = pd.DataFrame(index=df_scope.index)
-        for ass in ass_list:
-            self.df_perc[ass] = df_scope[ass] / df_scope[ass + ass_list.MAX_PTS]
-
-        # raw lateness in minutes (grace period applied on demand)
-        self.df_late_minutes = pd.DataFrame(index=df_scope.index)
-        for ass in ass_list:
-            self.df_late_minutes[ass] = \
-                df_scope[ass + ass_list.LATE].map(self._get_late_minutes)
-
-    @staticmethod
-    def _get_late_minutes(s_hour_min_sec):
-        """ returns total lateness in minutes (ignoring seconds) """
-        if not isinstance(s_hour_min_sec, str) or not s_hour_min_sec.strip():
-            # blank lateness cell: not late
-            return 0
-        part_list = s_hour_min_sec.split(':')
-        return int(part_list[0]) * 60 + int(part_list[1])
+    def _set_part_dict(self, part_dict):
+        """ adopts the parts a gradebook is made of (see class docstring) """
+        self.df_perc = part_dict['df_perc']
+        self.df_late_minutes = part_dict['df_late_minutes']
+        self.points = part_dict['points']
+        self.df_meta = part_dict['df_meta']
+        self.has_lateness = part_dict['has_lateness']
 
     @property
     def ass_list(self):
@@ -364,6 +457,14 @@ class Gradebook:
         if penalty_per_day < 0:
             raise ConfigError(
                 'penalty_per_day should be positive to lower credit when late')
+
+        if not self.has_lateness:
+            # applying a penalty here would compute zero for everybody, which
+            # reads as "nobody was late" rather than "we can't tell"
+            raise ConfigError(
+                f'late_penalty configured for category {cat!r}, but this '
+                'grade source records no submission times (a canvas csv '
+                'export has no lateness columns)')
 
         if waive_dict is None:
             waive_dict = dict()
