@@ -58,12 +58,42 @@ class TestWhatHappened:
         assert late
         assert any('hw1' in e['text'] and 'h' in e['text'] for e in late)
 
-    def test_the_penalty_shows_its_arithmetic(self, graded):
+    def test_the_days_and_the_arithmetic_are_separate_lines(self, graded):
+        """ two facts, and the second is the one nobody does in their head """
         log = log_of(graded, 'carol@u.edu')
 
+        days = next(e for e in log
+                    if e['kind'] == 'late' and 'excused' in e['text'])
         hit = next(e for e in log if e['kind'] == 'penalty')
+
         # carol is 3 days late across hw, 1 excused, so 2 are charged
-        assert 'excused' in hit['text']
+        assert 'excused' in days['text']
+        assert 'a day' in hit['text'] and 'spread over' in hit['text']
+
+    def test_the_penalty_shows_how_it_reached_the_average(self, tmp_path):
+        """ 10% a day, charged once, across 10 assignments, is 1% of the
+        average -- which read as "10% a day" sounds ten times worse """
+        from conftest import write_scope
+
+        assign_dict = {f'HW{i}': 10 for i in range(1, 11)}
+        student = {'email': 'a@u.edu',
+                   'scores': {ass: 10 for ass in assign_dict},
+                   'late': {'HW1': '48:00:00'}}
+        f_scope = write_scope(tmp_path / 'scope.csv', assign_dict, [student])
+
+        res = web.grade(f_scope.read_text(),
+                        'category:\n  weight:\n    hw: 100\n'
+                        '  late_penalty:\n    hw:\n'
+                        '      penalty_per_day: .1\n      excuse_day: 1\n')
+
+        hit = next(e for e in log_of(res, 'a@u.edu')
+                   if e['kind'] == 'penalty')
+
+        assert '1 day' in hit['text']
+        assert '10% a day' in hit['text']
+        assert '10 assignments' in hit['text']
+        assert '1.0% off the average' in hit['text']
+        assert '100.0% becomes 99.0%' in hit['text']
 
     def test_the_dropped_assignment_is_named(self, graded):
         """ which one was dropped is different for every student """

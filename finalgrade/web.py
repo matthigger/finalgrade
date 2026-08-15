@@ -477,6 +477,10 @@ def _late_detail(gradebook, policy):
         excused = kwargs.get('excuse_day', 0) or 0
         offset_dict = kwargs.get('excuse_day_offset') or {}
 
+        # the penalty is spread across the category's assignments, which is
+        # what turns "10% a day" into a much smaller dent in the average
+        n_ass = len([a for a in gradebook.ass_list if cat in a])
+
         late_dict[cat] = {}
         for email in gradebook.df_perc.index:
             unexcused = float(s_unexcused.get(email, 0))
@@ -487,7 +491,9 @@ def _late_detail(gradebook, policy):
                 days_used=round(unexcused + allowed, 2),
                 days_excused=allowed,
                 days_unexcused=max(round(unexcused, 2), 0),
-                penalty=float(s_penalty.get(email, 0)))
+                penalty=float(s_penalty.get(email, 0)),
+                rate=float(kwargs.get('penalty_per_day', 0) or 0),
+                n_ass=n_ass)
 
     df_day = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
     day_dict = {

@@ -10,6 +10,8 @@ their scores was dropped, and how the categories combined.  The pipeline
 reports the first two itself (only it knows what it did); everything after
 is reconstructed here from the same numbers grading used.
 """
+import pandas as pd
+
 from .get_mean_drop_low import get_drop_idx
 from .gradebook import MINUTES_PER_DAY
 
@@ -47,15 +49,18 @@ def build_log(gradebook, policy, df_grade, log=None, late_dict=None):
     out = {str(email): list((log or {}).get(email, []))
            for email in df_grade.index}
 
-    _add_late(gradebook, policy, out, late_dict or {})
+    # the order the pipeline works in, so each number is traceable to the
+    # one above it: the penalty acts on a mean the drop has already changed
+    _add_late(gradebook, policy, out)
     _add_drop(gradebook, policy, out)
+    _add_penalty(out, late_dict or {}, df_grade)
     _add_mean(policy, df_grade, out)
 
     return out
 
 
-def _add_late(gradebook, policy, out, late_dict):
-    """ what was late, and what the lateness cost the category
+def _add_late(gradebook, policy, out):
+    """ what was handed in late, and by how much
 
     Only where a penalty exists.  Elsewhere lateness changed nothing, and a
     log of how a grade was computed that lists things which didn't affect it
@@ -88,25 +93,69 @@ def _add_late(gradebook, policy, out, late_dict):
                         f'{"day" if day == 1 else "days"}' if day else
                         ', inside the grace period')))
 
+
+def _add_penalty(out, late_dict, df_grade):
+    """ what the lateness came to, once the drops had already happened """
     for cat, per_email in late_dict.items():
         for email, detail in per_email.items():
-            if email not in out or not detail:
+            if email not in out or not detail or not detail['days_used']:
                 continue
-            if not detail['days_used']:
-                continue
+            out[email] += _penalty_event(cat, detail, df_grade, email)
 
-            if detail['penalty']:
-                out[email].append(dict(
-                    kind='penalty',
-                    text=f'{cat}: {detail["days_used"]:g} late days, '
-                         f'{detail["days_excused"]:g} excused, so '
-                         f'{detail["days_unexcused"]:g} cost '
-                         f'{abs(detail["penalty"]):.1%} of the category'))
-            else:
-                out[email].append(dict(
-                    kind='penalty',
-                    text=f'{cat}: {detail["days_used"]:g} late days, all '
-                         f'within the {detail["days_excused"]:g} excused'))
+
+def _penalty_event(cat, detail, df_grade, email):
+    """ the days charged, and what they came to once spread over the category
+
+    Two lines because it is two facts, and the second is the one nobody can
+    do in their head: a penalty of 10% a day, charged once, is a tenth of one
+    assignment -- which across ten assignments is 1% of the average.  Read as
+    "10% a day" alone it sounds ten times worse than it is.
+    """
+    used = detail['days_used']
+    excused = detail['days_excused']
+    over = detail['days_unexcused']
+
+    day_text = (f'{cat}: {used:g} late {_day(used)} used, '
+                f'{excused:g} excused')
+    day_text += (f', so {over:g} {_is(over)} charged' if over
+                 else ', all of them within the allowance')
+
+    event_list = [dict(kind='late', text=day_text)]
+
+    if not detail['penalty']:
+        return event_list
+
+    rate = detail.get('rate') or 0
+    n_ass = detail.get('n_ass') or 0
+    hit = abs(detail['penalty'])
+
+    sum_text = f'{cat}: '
+    if rate and n_ass:
+        # exactly the arithmetic get_late_penalty does
+        sum_text += (f'{over:g} {_day(over)} × {rate:.0%} a day, spread over '
+                     f'{n_ass} {"assignment" if n_ass == 1 else "assignments"}'
+                     f', is {hit:.1%} off the average')
+    else:
+        sum_text += f'{hit:.1%} off the average'
+
+    col = f'mean_{cat}'
+    if col in df_grade.columns:
+        after = df_grade.at[email, col]
+        if pd.notna(after):
+            before = after + hit
+            sum_text += (f' — {before:.1%} becomes {after:.1%}'
+                         if before <= 1.0001 else
+                         f' — taking it to {after:.1%}')
+
+    return event_list + [dict(kind='penalty', text=sum_text)]
+
+
+def _day(n):
+    return 'day' if n == 1 else 'days'
+
+
+def _is(n):
+    return 'is' if n == 1 else 'are'
 
 
 def _add_drop(gradebook, policy, out):
@@ -140,8 +189,6 @@ def _add_drop(gradebook, policy, out):
 
 def _add_mean(policy, df_grade, out):
     """ how the categories combined into the number at the top """
-    import pandas as pd
-
     weight_dict = policy.cat_weight_dict
     total = sum(weight_dict.values()) or 1
 
