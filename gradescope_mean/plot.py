@@ -1,6 +1,4 @@
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 
 def plot_hist(df_grade_full, cat_weight_dict):
@@ -16,6 +14,11 @@ def plot_hist(df_grade_full, cat_weight_dict):
     Returns:
         fig (plotly):
     """
+    # imported here rather than at module scope: plotly is by far the
+    # heaviest dependency and only --plot needs it, which matters to the
+    # browser build (where a wheel is a download) and to cli startup
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
 
     # always plot mean grade histogram
     feat_list = ['mean']

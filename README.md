@@ -4,6 +4,8 @@ Compute final grades from a Gradescope CSV export — with category weighting, l
 
     pip install gradescope-mean
 
+**No Python? Use it in your browser instead:** [matthigger.github.io/gradescope_mean](https://matthigger.github.io/gradescope_mean) runs this same package inside the page — nothing to install, and your grades are never uploaded anywhere. See [In the browser](#in-the-browser) below.
+
 ## Quick Start
 
 1. Download grades from Gradescope (`Assignments > Download Grades > CSV`) to a file like `scope.csv`.
@@ -265,6 +267,26 @@ gradescope-mean grade scope.csv --new-config
 ### Histogram output
 
 <img alt="histogram per category" src="doc/hist.png" width="800px"/>
+
+## In the browser
+
+[matthigger.github.io/gradescope_mean](https://matthigger.github.io/gradescope_mean) is the same tool with nothing to install: pick your csv, edit the policy, download `grade_full.csv`.
+
+It is worth being precise about what that does and doesn't do:
+
+- **Nothing is uploaded.** The page downloads a Python interpreter ([Pyodide](https://pyodide.org)) and a wheel of this package, then runs them in your browser. Your csv is read by JavaScript and handed to Python in the same tab. There is no server to send it to — you can disconnect from the network once the page has loaded and it still works.
+- **It is the same code**, not a reimplementation. The browser and the command line call the same functions, so they cannot disagree about a grade; the test suite asserts that they don't.
+- **First load fetches ~15 MB** (Python plus pandas), then caches it.
+- **The config is the same `config.yaml`.** Download it and use it with the CLI, or drop a CLI-written one into the page.
+
+The left pane edits the config; the right pane shows what it does to your assignments, updating as you type. That mapping is the whole point — it is `check`, live.
+
+### Building the site
+
+    python web/build.py            # writes _site/
+    python -m http.server -d _site # then open localhost:8000
+
+The build copies `web/*` and builds a wheel next to it. Pushing to `main` deploys it via `.github/workflows/pages.yml`. (Opening `index.html` off disk won't work — it loads a module over http.)
 
 ## Exporting Grades
 

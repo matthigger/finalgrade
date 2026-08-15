@@ -5,5 +5,7 @@
 /gradescope_mean.egg-info/
 /dist/
 /.pytest_cache/
+/_site/
+/.playwright-mcp/
 /gradescope_auto_py.egg-info/
 /venv/

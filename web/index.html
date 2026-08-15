@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gradescope-mean — final grades from a Gradescope or Canvas export</title>
+<meta name="description" content="Compute final grades from a Gradescope or Canvas CSV export, in your browser. Nothing is uploaded.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>gradescope&#8209;mean</h1>
+  <p class="tagline">Final grades from a Gradescope or Canvas export — category
+    weights, dropped lowests, late penalties, per&#8209;student waivers.</p>
+  <p class="privacy" id="privacy">
+    <strong>Your grades never leave this computer.</strong>
+    The whole tool runs inside this page, so the csv you pick is never
+    uploaded anywhere. You can turn off your network after this page loads.
+  </p>
+</header>
+
+<main>
+
+<section id="boot" class="panel">
+  <p class="boot-line"><span class="spinner" aria-hidden="true"></span>
+    <span id="boot-msg">starting python…</span></p>
+  <p class="hint">First load fetches ~15&nbsp;MB of Python and pandas, then
+    caches it. Later visits are quick.</p>
+</section>
+
+<section id="pick" class="panel" hidden>
+  <div id="drop" class="drop">
+    <p class="drop-main">Drop your csv here</p>
+    <p class="drop-sub">or <button type="button" id="browse"
+        class="link">choose a file</button></p>
+    <p class="hint">
+      Gradescope: <em>Assignments &rsaquo; Download Grades &rsaquo; CSV</em>.
+      Canvas: <em>Grades &rsaquo; Export</em>.
+      <button type="button" id="demo" class="link">try an example</button>
+    </p>
+  </div>
+  <input type="file" id="file" accept=".csv,text/csv" hidden>
+  <p id="pick-error" class="error" hidden></p>
+</section>
+
+<section id="work" hidden>
+
+  <div class="filebar">
+    <span id="file-name" class="file-name"></span>
+    <span id="file-facts" class="file-facts"></span>
+    <button type="button" id="change" class="link">use a different csv</button>
+  </div>
+
+  <div class="cols">
+
+    <div class="panel col-config">
+      <h2>config.yaml <span class="sub">your grading policy</span></h2>
+      <div id="quick" class="quick"></div>
+      <textarea id="yaml" spellcheck="false" autocapitalize="off"
+        autocorrect="off" aria-label="config.yaml"></textarea>
+      <div class="row">
+        <button type="button" id="dl-config">download config.yaml</button>
+        <button type="button" id="reset" class="secondary">start over</button>
+      </div>
+      <p class="hint">Keep this file. Next time, drop it back in — or use it
+        with the command line tool, which reads exactly the same format.</p>
+      <input type="file" id="file-config" accept=".yaml,.yml" hidden>
+    </div>
+
+    <div class="panel col-report">
+      <h2>what it does <span class="sub" id="live">updates as you type</span></h2>
+      <div id="verdict" class="verdict"></div>
+      <div id="report"></div>
+    </div>
+
+  </div>
+
+  <div class="panel" id="grades-panel">
+    <h2>grades</h2>
+    <div class="row">
+      <button type="button" id="run">compute grades</button>
+      <button type="button" id="dl-grades" hidden>download grade_full.csv</button>
+    </div>
+    <div id="grades"></div>
+  </div>
+
+</section>
+
+</main>
+
+<footer>
+  <p>
+    <a href="https://github.com/matthigger/gradescope_mean">source and
+      documentation on github</a> ·
+    the same code runs as a command line tool:
+    <code>pip install gradescope-mean</code>
+  </p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

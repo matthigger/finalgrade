@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#1f5fa9"/>
+  <!-- three bars and a mean line: a grade distribution, small -->
+  <rect x="6"  y="17" width="5" height="9"  rx="1" fill="#ffffff" opacity=".75"/>
+  <rect x="13.5" y="10" width="5" height="16" rx="1" fill="#ffffff"/>
+  <rect x="21" y="14" width="5" height="12" rx="1" fill="#ffffff" opacity=".75"/>
+  <rect x="4"  y="7"  width="24" height="1.6" rx=".8" fill="#ffd166"/>
+</svg>
