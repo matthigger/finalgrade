@@ -155,7 +155,6 @@ function useCsv(name, text) {
   }
 
   drawRoster();
-  fillAssignmentSelects();
   setYaml(state.api.seed_policy(text, name));
 
   $('work').hidden = false;
@@ -233,23 +232,18 @@ function drawForm() {
     $('cats').innerHTML =
       '<p class="empty">This policy file cannot be read as yaml, so the ' +
       'controls are paused.</p>';
-    ['quick', 'excl-list', 'sub-list', 'waive-list', 'thresh-list',
-      'stud-card', 'weight-table'].forEach((id) => ($(id).innerHTML = ''));
+      ['quick', 'waive-list', 'thresh-list', 'stud-card',
+      'weight-table'].forEach((id) => ($(id).innerHTML = ''));
     return;
   }
 
   drawCategories(form);
   drawQuick(form);
-  drawExclude(form);
-  drawPlanned(form);
-  drawSubstitute(form);
   drawThresh(form);
   drawStudent(form);
   drawWaiveList(form);
   drawRosterFilter(form);
 
-  $('thresh-complete').value = form.complete_thresh
-    ? Math.round(form.complete_thresh * 100) : '';
 }
 
 function catches(cat) {
@@ -328,60 +322,180 @@ function drawQuick(form) {
     `<button type="button" data-cat="" class="other">+ other…</button>`;
 }
 
-/* Where every assignment's real contribution to the final grade is spelled
- * out.  It is the answer to "so what is this worth", which is otherwise two
- * multiplications away from anything on screen. */
+/* The weights table is also the assignments editor.  There is only one list
+ * of assignments in a course, so there is one list of them on screen: what an
+ * assignment is worth, what the class did on it, and what you have decided
+ * about it, all on its own row.
+ *
+ * Click a name to exclude it from grading, drag one name onto another to give
+ * the class the better of the two, and the last row adds work that has not
+ * happened yet.
+ */
+
+const SORT_TUP = [
+  { key: 'category', label: 'category', num: false },
+  { key: 'assignment', label: 'assignment', num: false },
+  { key: 'points', label: 'points', num: true },
+  { key: 'weight_in_cat', label: 'of category', num: true },
+  { key: 'weight_total', label: 'of grade', num: true },
+  { key: 'mean_nonzero', label: 'mean*', num: true },
+  { key: 'complete_frac', label: 'submitted', num: true },
+  { key: 'max', label: 'maximum', num: false },
+];
+
+function sortRows(rowList) {
+  const sort = state.sort;
+  if (!sort) return rowList;
+
+  const col = SORT_TUP.find((c) => c.key === sort.key);
+  const dir = sort.dir === 'down' ? -1 : 1;
+
+  return [...rowList].sort((a, b) => {
+    const x = sortValue(a, sort.key);
+    const y = sortValue(b, sort.key);
+    // an assignment with no value sorts last whichever way the column goes
+    if (x === null) return 1;
+    if (y === null) return -1;
+    if (col && col.num) return (x - y) * dir;
+    return String(x).localeCompare(String(y)) * dir;
+  });
+}
+
+function sortValue(row, key) {
+  if (key === 'complete_frac') {
+    return row.n_student ? row.n_complete / row.n_student : null;
+  }
+  if (key === 'max') {
+    return (maxOf(row.assignment) || []).join(', ') || null;
+  }
+  const v = row[key];
+  return v === undefined ? null : v;
+}
+
+function maxOf(ass) {
+  const hit = ((state.form || {}).sub_list || [])
+    .find((s) => s.target === ass);
+  return hit ? hit.ass_list : null;
+}
+
 function drawWeightTable() {
   const res = state.grades;
-  if (!res || !res.row_list.length) return ($('weight-table').innerHTML = '');
+  if (!res) return ($('weight-table').innerHTML = '');
 
   const problem = ((state.report || {}).ass_problem_dict) || {};
+  const excluded = ((state.report || {}).excluded_list || []);
+  const exclSet = new Set(excluded.map((a) => a.name));
 
+  // every assignment in one list, graded or not: a table that omits the
+  // excluded ones agrees they never existed, and they are the ones you are
+  // most likely to want back
+  const rowList = sortRows([
+    ...res.row_list,
+    ...excluded.map((a) => ({
+      category: null, assignment: a.name, points: a.points,
+      weight_in_cat: null, weight_total: null, mean_nonzero: null,
+      n_complete: a.n_complete, n_student: a.n_student,
+      excluded_by: a.excluded_by,
+    })),
+  ]);
+
+  // grouping only reads as grouping while the rows are in category order
+  const grouped = !state.sort;
   let last = null;
-  const row = res.row_list.map((r) => {
-    // a category spans its assignments: naming it once reads as a group
-    const cat = r.category === last ? '' : (r.category || '—');
-    last = r.category;
 
-    // a complaint about an assignment belongs on that assignment's row,
-    // where whoever is reading the weights is already looking
+  const row = rowList.map((r) => {
+    const cat = !grouped ? (r.category || '—')
+      : r.category === last ? '' : (r.category || '—');
+    if (grouped) last = r.category;
+
     const note = (problem[r.assignment] || []).map((s) =>
       `<div class="row-warn">${escapeHtml(s)}</div>`).join('');
 
-    const cls = [cat ? 'grp' : '', note ? 'flag-none' : ''].filter(Boolean);
+    const off = exclSet.has(r.assignment);
+    const cls = [grouped && cat ? 'grp' : '', note ? 'flag-none' : '',
+                 off ? 'dropped' : ''].filter(Boolean);
 
     return `<tr${cls.length ? ` class="${cls.join(' ')}"` : ''}>
       <td class="cat">${escapeHtml(cat)}</td>
-      <td class="name">${escapeHtml(r.assignment)}${note}</td>
-      <td class="num">${fmtNum(r.points)}</td>
+      <td class="name">${assChip(r, off)}${note}${whyNote(r)}</td>
+      <td class="num">${r.points === null ? '–' : fmtNum(r.points)}</td>
       <td class="num">${frac(r.weight_in_cat)}</td>
       <td class="num strong">${frac(r.weight_total)}</td>
       <td class="num">${pct(r.mean_nonzero)}</td>
-      <td class="num">${r.n_complete}/${r.n_student}</td>
+      <td class="num">${r.n_complete === null ? '–'
+        : `${r.n_complete}/${r.n_student}`}</td>
+      <td>${maxCell(r)}</td>
     </tr>`;
   }).join('');
 
-  // an assignment that is not being graded still has to appear, or the table
-  // quietly agrees that it never existed
-  const gone = ((state.report || {}).excluded_list || []).map((a) => `
-    <tr class="dropped">
-      <td class="cat">—</td>
-      <td class="name">${escapeHtml(a.name)}
-        <div class="row-warn">not graded: ${escapeHtml(a.excluded_by)}</div>
-      </td>
-      <td class="num">${a.points === null ? '–' : fmtNum(a.points)}</td>
-      <td class="num">–</td><td class="num">–</td><td class="num">–</td>
-      <td class="num">${a.n_complete === null ? '–'
-        : `${a.n_complete}/${a.n_student}`}</td>
-    </tr>`).join('');
-
   $('weight-table').innerHTML = `<table class="weights">
-    <thead><tr>
-      <th>category</th><th>assignment</th><th class="num">points</th>
-      <th class="num">of category</th><th class="num">of grade</th>
-      <th class="num">mean*</th><th class="num">submitted</th>
-    </tr></thead><tbody>${row}${gone}</tbody></table>
-    <p class="hint">* mean among non-zero scores</p>`;
+    <thead><tr>${SORT_TUP.map(headCell).join('')}</tr></thead>
+    <tbody>${row}${addRow()}</tbody></table>
+    <p class="hint">* mean among non-zero scores. Click an assignment to
+      leave it out of grading; drag one onto another to give the class the
+      better of the two.</p>`;
+}
+
+function headCell(col) {
+  const on = state.sort && state.sort.key === col.key;
+  const arrow = on ? (state.sort.dir === 'down' ? ' ▼' : ' ▲') : '';
+  return `<th class="${col.num ? 'num ' : ''}sortable" data-sort="${col.key}"
+    title="sort by ${escapeHtml(col.label)}">${escapeHtml(col.label)}${
+    arrow}</th>`;
+}
+
+function assChip(r, off) {
+  const why = off ? 'left out of grading — click to put it back'
+    : 'click to leave this out of grading, or drag it onto another '
+      + 'assignment to give the class the better of the two';
+
+  return `<span class="chip ass ${off ? 'is-off' : ''}" data-ass="${
+    escapeHtml(r.assignment)}" role="button" tabindex="0"
+    title="${escapeHtml(why)}"><span class="chip-k">${
+    escapeHtml(r.assignment)}</span>${r.planned
+      ? '<span class="chip-v">not set</span>' : ''}</span>`
+    + (r.planned ? `<button type="button" class="x" data-unplan="${
+      escapeHtml(r.assignment)}" title="remove this assignment"
+      >&times;</button>` : '');
+}
+
+function whyNote(r) {
+  return r.excluded_by
+    ? `<div class="row-warn">${escapeHtml(r.excluded_by)}</div>` : '';
+}
+
+function maxCell(r) {
+  const from = maxOf(r.assignment);
+  if (!from) return '';
+
+  // the alternates count twice unless they are excluded as well, which is
+  // the mistake this invites, so the offer to fix it sits on the row
+  const open = from.filter((a) => !((state.form || {}).exclude_list || [])
+    .some((e) => a.includes(e)));
+
+  return `<span class="chip is-max">
+      <span class="chip-v">${escapeHtml(r.assignment)} = max(${
+    escapeHtml([r.assignment, ...from].join(', '))})</span>
+      <button type="button" data-unsub="${escapeHtml(r.assignment)}"
+        title="undo this">&times;</button>
+    </span>` + (open.length
+    ? `<button type="button" class="small nag" data-excl-add="${
+      escapeHtml(open.join(','))}">also leave out ${
+      escapeHtml(open.join(', '))}</button>` : '');
+}
+
+function addRow() {
+  return `<tr class="add-row">
+    <td class="cat"></td>
+    <td colspan="6"><span class="add-k">add an assignment</span>
+      <input type="text" id="plan-name" size="10" placeholder="hw9">
+      <input type="number" id="plan-points" min="1" step="1" size="4"
+        placeholder="pts" class="pct">
+      <button type="button" id="plan-go" class="small">add</button>
+      <span class="hint add-why">work you have not set yet: weight it now,
+        and it counts for nobody until real scores arrive</span></td>
+    <td></td>
+  </tr>`;
 }
 
 function frac(x) {
@@ -389,77 +503,6 @@ function frac(x) {
 }
 
 /* ------------------------------------------------------------ assignments */
-
-function fillAssignmentSelects() {
-  const opts = state.assList.map((a) =>
-    `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`
-  ).join('');
-
-  $('excl-add').innerHTML =
-    '<option value="">exclude an assignment…</option>' + opts;
-  $('sub-target').innerHTML = '<option value="">replace…</option>' + opts;
-  $('sub-alt').innerHTML = '<option value="">…</option>' + opts;
-}
-
-function drawExclude(form) {
-  if (!form.exclude_list.length) {
-    return ($('excl-list').innerHTML =
-      '<span class="empty">nothing excluded</span>');
-  }
-
-  $('excl-list').innerHTML = form.exclude_list.map((s) => {
-    const hit = catches(s);
-    const title = hit.length ? `removes ${hit.join(', ')}`
-      : 'matches no assignment';
-    return `<span class="chip" title="${escapeHtml(title)}">` +
-      `${escapeHtml(s)}<button type="button" data-excl="${escapeHtml(s)}"
-        title="stop excluding">&times;</button></span>`;
-  }).join('');
-}
-
-function drawPlanned(form) {
-  if (!form.plan_list.length) {
-    return ($('plan-list').innerHTML =
-      '<span class="empty">nothing planned</span>');
-  }
-
-  $('plan-list').innerHTML = form.plan_list.map((p) =>
-    `<span class="chip" title="not set yet, worth ${p.points} points">` +
-    `${escapeHtml(p.name)} <span class="dim">${escapeHtml(p.points)}pt</span>` +
-    `<button type="button" data-plan="${escapeHtml(p.name)}"
-      title="remove">&times;</button></span>`).join('');
-}
-
-function drawSubstitute(form) {
-  if (!form.sub_list.length) {
-    return ($('sub-list').innerHTML =
-      '<span class="empty">no substitutions</span>');
-  }
-
-  $('sub-list').innerHTML = form.sub_list.map((s) => {
-    const missing = s.ass_list.filter((a) => !catches(a).length);
-    const warn = missing.length
-      ? `<span class="tag error">no such assignment: ${
-        escapeHtml(missing.join(', '))}</span>` : '';
-    // alternates double count unless excluded too, which is the mistake this
-    // section invites, so offer the fix where the mistake is made
-    const open = s.ass_list.filter(
-      (a) => !form.exclude_list.some((e) => a.includes(e)));
-    const nag = open.length
-      ? `<button type="button" class="small nag" data-excl-add="${
-        escapeHtml(open.join(','))}">also exclude ${
-        escapeHtml(open.join(', '))}</button>` : '';
-
-    return `<div class="sub-row">
-      <span class="name">${escapeHtml(s.target)}</span>
-      <span class="arrow">← best of</span>
-      <span class="name">${escapeHtml(s.ass_list.join(', '))}</span>
-      <button type="button" class="x" data-sub="${escapeHtml(s.target)}"
-        title="remove">&times;</button>
-      ${warn}${nag}
-    </div>`;
-  }).join('');
-}
 
 /* ---------------------------------------------------------- letter grades */
 
@@ -541,10 +584,14 @@ function drawStudent(form) {
           : '<span class="empty">no grade yet</span>'}
       </div>
       ${graded ? catRow(graded) : ''}
-      ${graded ? scoreGrid(graded, stud) : ''}
-      ${graded ? lateGrid(graded) : ''}
-      ${excuseRow(form, stud)}
-      ${graded ? auditLog(graded) : ''}
+      <div class="stud-split">
+        <div>
+          ${graded ? scoreGrid(graded, stud) : ''}
+          ${graded ? lateGrid(graded) : ''}
+          ${excuseRow(form, stud)}
+        </div>
+        ${graded ? auditLog(graded) : ''}
+      </div>
     </div>`;
 }
 
@@ -689,6 +736,16 @@ function lateGrid(graded) {
 }
 
 function lateChip(a) {
+  // waiving an assignment nulls its lateness as well -- the penalty follows
+  // the waiver -- so "on time" would be describing a fact that no longer
+  // applies to a grade
+  if (a.waived) {
+    return `<span class="chip late-c is-waived" title="${escapeHtml(
+      a.name)} is waived, so its lateness is not counted either">` +
+      `<span class="chip-k">${escapeHtml(a.name)}</span>` +
+      `<span class="chip-v">forgiven</span></span>`;
+  }
+
   const cls = a.late_waived ? 'late-c is-waived'
     : a.late_days ? 'late-c is-late' : 'late-c';
 
@@ -716,16 +773,15 @@ function lateChip(a) {
  * where a number cannot. */
 function auditLog(graded) {
   const list = graded.log_list || [];
-  if (!list.length) return '';
+  if (!list.length) return '<div></div>';
 
-  return `<details class="audit">
-    <summary>how this grade was computed <span class="sub">${list.length}
-      steps</span></summary>
+  return `<div class="audit">
+    <span class="field-k">how this grade was computed</span>
     <ol class="audit-list">${list.map((e) =>
       `<li class="ev ev-${escapeHtml(e.kind)}">` +
       `<span class="ev-k">${escapeHtml(e.kind)}</span>` +
       `${escapeHtml(e.text)}</li>`).join('')}</ol>
-  </details>`;
+  </div>`;
 }
 
 /* the same wording python's audit log uses */
@@ -858,27 +914,69 @@ function excuseRow(form, stud) {
 }
 
 function drawWaiveList(form) {
-  const rows = [
-    ...form.waive_list.map((w) => ({ ...w, kind: 'waive' })),
-    ...form.waive_late_list.map((w) => ({ ...w, kind: 'waive_late' })),
-  ];
+  const row = [];
 
-  $('waive-all').hidden = !rows.length;
-  $('waive-count').textContent = rows.length === 1
-    ? '1 student' : `${rows.length} students`;
+  for (const w of form.waive_list) {
+    row.push({ email: w.email, kind: 'waived',
+               what: w.ass_list.join(', '),
+               undo: `waive:${w.email}` });
+  }
+  for (const w of form.waive_late_list) {
+    row.push({ email: w.email, kind: 'late forgiven',
+               what: w.ass_list.join(', '),
+               undo: `waive_late:${w.email}` });
+  }
+  for (const s of (form.max_list || [])) {
+    for (const [target, from] of Object.entries(s.target_dict || {})) {
+      row.push({ email: s.email, kind: 'maximum',
+                 what: `${target} = max(${[target, ...from].join(', ')})`,
+                 undo: `max:${s.email}:${target}` });
+    }
+  }
+  // an accommodation is an adjustment for one student like any other, and
+  // was the one this list used to leave out
+  for (const c of form.cat_list) {
+    const offset = (c.late || {}).excuse_day_offset || {};
+    for (const [email, days] of Object.entries(offset)) {
+      row.push({ email, kind: 'extra late days',
+                 what: `${days > 0 ? '+' : ''}${days} on ${c.name}`,
+                 undo: `excuse:${email}:${c.name}` });
+    }
+  }
 
-  if (!rows.length) return ($('waive-list').innerHTML = '');
+  $('waive-all').hidden = !row.length;
+  $('waive-count').textContent = row.length === 1
+    ? '1 adjustment' : `${row.length} adjustments`;
+
+  if (!row.length) return ($('waive-list').innerHTML = '');
 
   $('waive-list').innerHTML =
-    '<table class="waive-table"><tbody>' + rows.map((w) => `<tr>
+    '<table class="waive-table"><tbody>' + row.map((w) => `<tr>
       <td><button type="button" class="link" data-goto="${
         escapeHtml(w.email)}">${escapeHtml(w.email)}</button></td>
-      <td>${escapeHtml(w.ass_list.join(', '))}</td>
-      <td>${w.kind === 'waive_late'
-        ? '<span class="tag late">late only</span>' : ''}</td>
-      <td><button type="button" class="x" data-drop="${escapeHtml(w.email)}"
-        data-kind="${w.kind}" title="remove">&times;</button></td>
+      <td><span class="adj-k">${escapeHtml(w.kind)}</span></td>
+      <td class="name">${escapeHtml(w.what)}</td>
+      <td><button type="button" class="x" data-undo="${escapeHtml(w.undo)}"
+        title="remove">&times;</button></td>
     </tr>`).join('') + '</tbody></table>';
+}
+
+/* one undo for every kind of adjustment, keyed by what it is */
+function undoAdjustment(token) {
+  const part = token.split(':');
+  const kind = part[0];
+  const email = part[1];
+
+  if (kind === 'waive' || kind === 'waive_late') {
+    return applyEdit('set_waive', { email, ass_list: [], field: kind });
+  }
+  if (kind === 'max') {
+    return applyEdit('set_max', { email, target: part[2], ass_list: [] });
+  }
+  if (kind === 'excuse') {
+    return applyEdit('set_excuse_offset',
+                     { cat: part[2], email, days: 0 });
+  }
 }
 
 function drawRosterFilter(form) {
@@ -1354,61 +1452,6 @@ $('cats').addEventListener('click', (e) => {
             { cat: e.target.closest('.cat-card').getAttribute('data-cat') });
 });
 
-$('excl-add').addEventListener('change', (e) => {
-  const name = e.target.value;
-  e.target.value = '';
-  if (name) {
-    applyEdit('set_exclude', { ass_list: [...state.form.exclude_list, name] });
-  }
-});
-
-$('excl-list').addEventListener('click', (e) => {
-  const name = e.target.getAttribute('data-excl');
-  if (name === null) return;
-  applyEdit('set_exclude',
-            { ass_list: state.form.exclude_list.filter((s) => s !== name) });
-});
-
-$('plan-go').addEventListener('click', () => {
-  const name = $('plan-name').value.trim().replace(/\s+/g, '').toLowerCase();
-  const points = Number($('plan-points').value) || 0;
-  if (!name || points <= 0) return;
-  $('plan-name').value = '';
-  $('plan-points').value = '';
-  applyEdit('set_planned', { ass: name, points });
-});
-
-$('plan-list').addEventListener('click', (e) => {
-  const name = e.target.getAttribute('data-plan');
-  if (name !== null) applyEdit('set_planned', { ass: name, points: 0 });
-});
-
-$('sub-go').addEventListener('click', () => {
-  const target = $('sub-target').value;
-  const alt = $('sub-alt').value;
-  if (!target || !alt || target === alt) return;
-
-  const cur = state.form.sub_list.find((s) => s.target === target);
-  const list = new Set(cur ? cur.ass_list : []);
-  list.add(alt);
-  applyEdit('set_substitute', { target, ass_list: [...list] });
-});
-
-$('sub-list').addEventListener('click', (e) => {
-  const target = e.target.getAttribute('data-sub');
-  if (target !== null) {
-    return applyEdit('set_substitute', { target, ass_list: [] });
-  }
-  const add = e.target.getAttribute('data-excl-add');
-  if (add !== null) {
-    applyEdit('set_exclude',
-              { ass_list: [...state.form.exclude_list, ...add.split(',')] });
-  }
-});
-
-$('thresh-complete').addEventListener('change', (e) =>
-  applyEdit('set_complete_thresh', { thresh: Number(e.target.value) / 100 }));
-
 $('thresh-list').addEventListener('change', () =>
   applyEdit('set_grade_thresh', { thresh_list: threshFromForm() }));
 
@@ -1429,6 +1472,136 @@ $('thresh-add').addEventListener('click', () => {
 
 $('thresh-reset').addEventListener('click', () =>
   applyEdit('set_grade_thresh', { thresh_list: [] }));
+
+/* The weights table: sorting, excluding, un-planning, and dragging one
+ * assignment onto another.  Class-wide, where the student card's identical
+ * gestures are for one person. */
+
+$('weight-table').addEventListener('click', (e) => {
+  const sort = e.target.closest('[data-sort]');
+  if (sort) {
+    const key = sort.getAttribute('data-sort');
+    state.sort = (state.sort && state.sort.key === key)
+      ? (state.sort.dir === 'up' ? { key, dir: 'down' } : null)
+      : { key, dir: 'up' };
+    return drawWeightTable();
+  }
+
+  const unplan = e.target.getAttribute('data-unplan');
+  if (unplan !== null) {
+    return applyEdit('set_planned', { ass: unplan, points: 0 });
+  }
+
+  const unsub = e.target.getAttribute('data-unsub');
+  if (unsub !== null) {
+    return applyEdit('set_substitute', { target: unsub, ass_list: [] });
+  }
+
+  const add = e.target.getAttribute('data-excl-add');
+  if (add !== null) {
+    return applyEdit('set_exclude', {
+      ass_list: [...state.form.exclude_list, ...add.split(',')],
+    });
+  }
+
+  if (e.target.id === 'plan-go') return addPlanned();
+
+  if (assDragMoved) return;
+  const chip = e.target.closest('[data-ass]');
+  if (chip) toggleExclude(chip.getAttribute('data-ass'));
+});
+
+$('weight-table').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  if (e.target.id === 'plan-name' || e.target.id === 'plan-points') {
+    e.preventDefault();
+    return addPlanned();
+  }
+  const chip = e.target.closest('[data-ass]');
+  if (chip) {
+    e.preventDefault();
+    toggleExclude(chip.getAttribute('data-ass'));
+  }
+});
+
+function addPlanned() {
+  const name = $('plan-name').value.trim().replace(/\s+/g, '').toLowerCase();
+  const points = Number($('plan-points').value) || 0;
+  if (!name || points <= 0) return;
+  applyEdit('set_planned', { ass: name, points });
+}
+
+/* An assignment is excluded by name, and the name is what the chip says, so
+ * removing it again is removing that name rather than anything cleverer. */
+function toggleExclude(ass) {
+  const cur = (state.form || {}).exclude_list || [];
+  const hit = cur.filter((s) => ass.includes(s));
+
+  applyEdit('set_exclude', {
+    ass_list: hit.length ? cur.filter((s) => !hit.includes(s))
+      : [...cur, ass],
+  });
+}
+
+/* the same pointer drag as the student card, on the class-wide table */
+let assDrag = null;
+let assDragMoved = false;
+
+$('weight-table').addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  const chip = e.target.closest('[data-ass]');
+  if (!chip) return;
+
+  assDrag = { from: chip.getAttribute('data-ass'), chip,
+              x: e.clientX, y: e.clientY, moved: false };
+  try {
+    chip.setPointerCapture(e.pointerId);
+  } catch (err) { /* an optimisation only */ }
+});
+
+$('weight-table').addEventListener('pointermove', (e) => {
+  if (!assDrag) return;
+
+  if (!assDrag.moved) {
+    if (Math.hypot(e.clientX - assDrag.x, e.clientY - assDrag.y) < 5) return;
+    assDrag.moved = true;
+    assDrag.chip.classList.add('dragging');
+    const ghost = document.createElement('div');
+    ghost.id = 'drag-ghost';
+    document.body.appendChild(ghost);
+  }
+
+  const over = chipAtSel(e.clientX, e.clientY, '#weight-table [data-ass]');
+  markDrag(over, assDrag.from, e.clientX, e.clientY);
+});
+
+$('weight-table').addEventListener('pointerup', (e) => {
+  if (!assDrag) return;
+
+  const from = assDrag.from;
+  const moved = assDrag.moved;
+  const over = moved
+    ? chipAtSel(e.clientX, e.clientY, '#weight-table [data-ass]') : null;
+  assDrag = null;
+  clearDragMarks();
+
+  if (!moved) return;
+  assDragMoved = true;
+  setTimeout(() => { assDragMoved = false; }, 0);
+
+  const to = over && over.getAttribute('data-ass');
+  if (!to || to === from) return;
+
+  const cur = maxOf(to) || [];
+  applyEdit('set_substitute', {
+    target: to, ass_list: [...new Set([...cur, from])],
+  });
+});
+
+$('weight-table').addEventListener('pointercancel', () => {
+  assDrag = null;
+  clearDragMarks();
+});
 
 $('stud').addEventListener('input', () => drawStudent(state.form));
 $('stud-clear').addEventListener('click', () => {
@@ -1456,8 +1629,38 @@ let drag = null;
 let suppressClick = false;
 
 function chipAt(x, y) {
+  return chipAtSel(x, y, '#stud-card [data-score]');
+}
+
+function chipAtSel(x, y, sel) {
   const el = document.elementFromPoint(x, y);
-  return el ? el.closest('#stud-card [data-score]') : null;
+  return el ? el.closest(sel) : null;
+}
+
+/* The label under the cursor says what the drop would do, not merely what is
+ * being dragged: over nothing it is the assignment, over a target it is the
+ * whole operation, so the result is readable before it is committed. */
+function markDrag(over, from, x, y) {
+  const ghost = $('drag-ghost');
+  if (ghost) {
+    ghost.style.left = `${x + 14}px`;
+    ghost.style.top = `${y + 14}px`;
+  }
+
+  document.querySelectorAll('.drop-target').forEach(
+    (el) => el.classList.remove('drop-target'));
+
+  const to = over && (over.getAttribute('data-score')
+    || over.getAttribute('data-ass'));
+
+  if (to && to !== from) {
+    over.classList.add('drop-target');
+    if (ghost) ghost.textContent = `${to} = max(${to}, ${from})`;
+    if (ghost) ghost.classList.add('is-over');
+  } else if (ghost) {
+    ghost.textContent = from;
+    ghost.classList.remove('is-over');
+  }
 }
 
 function clearDragMarks() {
@@ -1498,18 +1701,7 @@ $('stud-card').addEventListener('pointermove', (e) => {
     document.body.appendChild(ghost);
   }
 
-  const ghost = $('drag-ghost');
-  if (ghost) {
-    ghost.style.left = `${e.clientX + 14}px`;
-    ghost.style.top = `${e.clientY + 14}px`;
-  }
-
-  const over = chipAt(e.clientX, e.clientY);
-  document.querySelectorAll('.drop-target').forEach(
-    (el) => el.classList.remove('drop-target'));
-  if (over && over.getAttribute('data-score') !== drag.from) {
-    over.classList.add('drop-target');
-  }
+  markDrag(chipAt(e.clientX, e.clientY), drag.from, e.clientX, e.clientY);
 });
 
 $('stud-card').addEventListener('pointerup', (e) => {
@@ -1581,12 +1773,8 @@ $('waive-list').addEventListener('click', (e) => {
     $('stud').scrollIntoView({ block: 'center' });
     return;
   }
-  const email = e.target.getAttribute('data-drop');
-  if (email !== null) {
-    applyEdit('set_waive', {
-      email, ass_list: [], field: e.target.getAttribute('data-kind'),
-    });
-  }
+  const undo = e.target.getAttribute('data-undo');
+  if (undo !== null) undoAdjustment(undo);
 });
 
 $('email-save').addEventListener('click', () =>

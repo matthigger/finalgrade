@@ -210,7 +210,35 @@ h2 .sub {
   color: var(--ink-soft);
 }
 
-/* ---- the weight table ---- */
+/* ---- the weight table, which is also the assignments editor ---- */
+
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--accent); }
+
+.chip.ass { margin-right: .2rem; }
+.chip.ass .chip-k { color: var(--ink); }
+
+.chip.ass.is-off {
+  border-style: dashed;
+  opacity: .7;
+}
+
+.chip.ass.is-off .chip-k { text-decoration: line-through; }
+
+tr.add-row td { border-bottom: none; padding-top: .5rem; }
+.add-k {
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ink-faint);
+  margin-right: .4rem;
+}
+.add-why { display: inline; margin-left: .5rem; }
+
+/* the two places a drag can start behave the same way */
+#weight-table [data-ass] { cursor: grab; touch-action: none; }
+
+#drag-ghost.is-over { background: var(--good); }
 
 table.weights { margin-top: 1rem; margin-bottom: .4rem; }
 table.weights td.cat { font-weight: 600; }
@@ -426,15 +454,33 @@ button.chip:hover { border-color: var(--accent); }
 
 /* ---- the audit log ---- */
 
-details.audit { margin-top: .6rem; border-top: 1px solid var(--line);
-  padding-top: .5rem; }
+/* what you change on the left, how it added up on the right */
+.stud-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  gap: 1.2rem;
+  align-items: start;
+  margin-top: .5rem;
+}
 
-details.audit > summary {
-  font-size: .78rem;
+@media (max-width: 1000px) {
+  .stud-split { grid-template-columns: 1fr; }
+}
+
+.audit {
+  background: var(--bg);
+  border-radius: 6px;
+  padding: .6rem .7rem;
+}
+
+.audit .field-k { display: block; margin-bottom: .3rem; }
+
+.adj-k {
+  font-size: .72rem;
   text-transform: uppercase;
   letter-spacing: .04em;
   color: var(--ink-faint);
-  font-weight: 600;
+  white-space: nowrap;
 }
 
 .audit-list {

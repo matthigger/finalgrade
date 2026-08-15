@@ -84,78 +84,22 @@
     </div>
   </div>
 
-  <div class="cols">
-
-    <div class="panel">
-      <h2>assignments <span class="sub">what to leave out, and stand in</span></h2>
-
-      <div class="field">
-        <span class="field-k">excluded</span>
-        <div id="excl-list" class="chips"></div>
-        <select id="excl-add" aria-label="exclude an assignment">
-          <option value="">exclude an assignment…</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <span class="field-k">substitutions</span>
-        <p class="hint sub-why">Each student keeps the <em>best</em> of the
-          named assignments, and that score becomes the first one's. Useful
-          for a quiz sat in two versions — exclude the alternates too, or
-          they count twice.</p>
-        <div id="sub-list"></div>
-        <div class="sub-add">
-          <select id="sub-target" aria-label="assignment to replace">
-            <option value="">replace…</option>
-          </select>
-          <span class="arrow">with the best of</span>
-          <select id="sub-alt" aria-label="assignment to allow instead">
-            <option value="">…</option>
-          </select>
-          <button type="button" id="sub-go" class="small">add</button>
-        </div>
-      </div>
-
-      <div class="field">
-        <label class="f" for="thresh-complete">drop assignments fewer
-          than</label>
-        <input type="number" id="thresh-complete" min="0" max="100" step="5"
-          class="pct"> <span class="unit">% of students submitted</span>
-      </div>
-
-      <div class="field">
-        <span class="field-k">future assignments</span>
-        <div id="plan-list" class="chips"></div>
-        <div class="sub-add">
-          <input type="text" id="plan-name" size="10" placeholder="hw9">
-          <input type="number" id="plan-points" min="1" step="1" size="4"
-            placeholder="pts" class="pct">
-          <button type="button" id="plan-go" class="small">add</button>
-        </div>
-        <p class="hint">Work you haven't set yet. It can be weighted and put
-          in a category now, and counts for nobody until real scores arrive
-          to replace it.</p>
-      </div>
+  <div class="panel">
+    <h2>students <span class="sub">grades, waivers, accommodations</span></h2>
+    <div class="waive-pick">
+      <input id="stud" list="roster" placeholder="find a student by name…"
+        autocomplete="off" aria-label="find a student">
+      <datalist id="roster"></datalist>
+      <button type="button" id="stud-clear" class="small secondary"
+        hidden>clear</button>
     </div>
+    <div id="stud-card"></div>
 
-    <div class="panel">
-      <h2>students <span class="sub">grades, waivers, accommodations</span></h2>
-      <div class="waive-pick">
-        <input id="stud" list="roster" placeholder="find a student by name…"
-          autocomplete="off" aria-label="find a student">
-        <datalist id="roster"></datalist>
-        <button type="button" id="stud-clear" class="small secondary"
-          hidden>clear</button>
-      </div>
-      <div id="stud-card"></div>
-
-      <details id="waive-all">
-        <summary>waivers in this policy <span class="sub"
-          id="waive-count"></span></summary>
-        <div id="waive-list"></div>
-      </details>
-    </div>
-
+    <details id="waive-all">
+      <summary>show all student-specific adjustments <span class="sub"
+        id="waive-count"></span></summary>
+      <div id="waive-list"></div>
+    </details>
   </div>
 
   <div class="cols">

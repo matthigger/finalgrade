@@ -91,7 +91,8 @@ def build_table(gradebook, policy):
             in_cat = points / point_sum if point_sum else None
             row_list.append(_row(gradebook, ass, cat, points, in_cat,
                                  None if in_cat is None else in_cat * cat_frac,
-                                 n_student))
+                                 n_student,
+                                 planned=ass in policy.plan_dict))
 
     # an assignment no category caught still has to appear, or the table
     # would quietly agree that it doesn't exist
@@ -99,12 +100,14 @@ def build_table(gradebook, policy):
         if ass not in seen_set:
             row_list.append(_row(gradebook, ass, None,
                                  float(gradebook.points[ass]), None, 0.,
-                                 n_student))
+                                 n_student,
+                                 planned=ass in policy.plan_dict))
 
     return row_list
 
 
-def _row(gradebook, ass, cat, points, in_cat, weight, n_student):
+def _row(gradebook, ass, cat, points, in_cat, weight, n_student,
+         planned=False):
     """ one assignment's row of the table """
     s_perc = gradebook.df_perc[ass]
 
@@ -120,7 +123,9 @@ def _row(gradebook, ass, cat, points, in_cat, weight, n_student):
         weight_total=weight,
         mean_nonzero=float(s_scored.mean()) if len(s_scored) else None,
         n_complete=int(len(s_scored)),
-        n_student=n_student)
+        n_student=n_student,
+        # work not set yet: the table offers to remove it again
+        planned=planned)
 
 
 def _pair(s_final, s_raw):
