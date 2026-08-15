@@ -138,6 +138,10 @@ function useCsv(name, text) {
   state.csv = text;
   state.name = name;
   state.sourceIsCanvas = info.source === 'canvas';
+  // which format it was read as is not cosmetic: it decides whether late
+  // penalties are available at all, so it belongs next to the filename
+  state.facts = `${info.source}, ${info.n_student} students, ` +
+    `${info.ass_list.length} assignments`;
   state.assList = info.ass_list;
   state.studentList = info.student_list;
   state.catHintList = info.cat_hint_list;
@@ -493,6 +497,8 @@ function drawStudent(form) {
           [stud.first, stud.last].filter(Boolean).join(' ') || stud.email)
         }</span>
         <span class="stud-email">${escapeHtml(stud.email)}</span>
+        ${graded ? `<button type="button" class="link stud-file"
+          id="stud-csv">${escapeHtml(studentFile(stud))}</button>` : ''}
         ${graded
           ? `<span class="stud-grade">${pct(graded.mean)}<span
               class="stud-letter">${escapeHtml(graded.letter)}</span></span>`
@@ -501,12 +507,22 @@ function drawStudent(form) {
       ${graded ? studGrades(graded) : ''}
       ${waiveChecks(form, stud)}
       ${excuseRow(form, stud)}
-      ${graded ? `<div class="waive-row">
-        <span class="field-k">their own csv</span>
-        <button type="button" class="link" id="stud-csv">download
-          this student's breakdown</button>
-      </div>` : ''}
     </div>`;
+}
+
+/* The name the download will carry, worked out here so the link can say it
+ * without grading the whole class to find out.  Python writes the file and
+ * names it the same way; a test holds the two together. */
+function studentFile(stud) {
+  const safe = (text) => (String(text || '').replace(/[^a-zA-Z0-9-_]/g, '_')
+    .replace(/^_+|_+$/g, '') || 'unknown');
+
+  const last = safe(stud.last);
+  const first = safe(stud.first);
+  if (last === 'unknown' && first === 'unknown') {
+    return `${safe(stud.email.split('@')[0])}.csv`;
+  }
+  return `${last}_${first}.csv`;
 }
 
 /* The same file --per_student writes: everything behind one grade, which is
@@ -802,7 +818,8 @@ function drawFiles() {
 
   const part = [
     '<span class="file-k">files</span>',
-    fileLink('csv', state.name, state.csv, 'text/csv'),
+    fileLink('csv', state.name, state.csv, 'text/csv') +
+      `<span class="file-note">${escapeHtml(state.facts || '')}</span>`,
     fileLink('yaml', state.configName, state.yaml, 'text/yaml'),
   ];
 

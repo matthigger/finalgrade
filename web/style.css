@@ -65,14 +65,20 @@ h1 {
   max-width: 60ch;
 }
 
-.privacy {
+.privacy, .policy-note {
   margin: 1rem 0 0;
   padding: .7rem .9rem;
-  background: var(--good-soft);
   border-left: 3px solid var(--good);
   border-radius: 0 5px 5px 0;
   font-size: .9rem;
   max-width: 72ch;
+}
+
+.privacy { background: var(--good-soft); }
+
+.policy-note {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
 }
 
 h2 {
@@ -504,9 +510,12 @@ button.nag {
 
 /* ---- letter thresholds ---- */
 
-table.thresh { margin-bottom: .3rem; }
+/* only as wide as its four short columns: stretched across a panel, the eye
+   has to travel from a percentage to a letter across empty space */
+table.thresh { width: auto; margin-bottom: .3rem; }
 table.thresh td { border: none; padding: .12rem .35rem .12rem 0; }
 table.thresh td:first-child { padding-left: 0; }
+table.thresh .unit { white-space: nowrap; }
 
 /* ---- student card ---- */
 
@@ -528,6 +537,11 @@ table.thresh td:first-child { padding-left: 0; }
 .stud-name { font-weight: 600; }
 .stud-email { font-family: var(--mono); font-size: .78rem;
   color: var(--ink-faint); }
+
+.stud-file {
+  font-family: var(--mono);
+  font-size: .78rem;
+}
 
 .stud-grade {
   margin-left: auto;

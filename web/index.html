@@ -24,11 +24,18 @@
       <p class="tagline">Final grades from a Gradescope or Canvas export —
         category weights, dropped lowests, late penalties,
         per&#8209;student waivers.</p>
+      <p class="policy-note">
+        <strong>Your whole grading policy is one small file.</strong>
+        Every weight, dropped lowest, late penalty and waiver you set here is
+        written to a <code>config.yaml</code> you can download and keep —
+        hand it to a TA, put it in your syllabus repo, or drop it back on
+        this page next term and pick up where you left off. The command line
+        tool reads the very same file, so nothing here is a dead end.
+      </p>
       <p class="privacy">
-        <strong>Your grades never leave this computer.</strong>
-        The whole tool runs inside this page, so the files you pick are never
-        uploaded anywhere. You can turn off your network after this page
-        loads.
+        <strong>Your grades never leave this computer:</strong>
+        it all runs inside this page. (Try disabling the network after it
+        loads.)
       </p>
     </div>
 
@@ -134,8 +141,8 @@
 
   <div class="cols">
 
-    <div class="panel">
-      <h2>letter grades <span class="sub" id="letters-sub"></span></h2>
+    <details class="panel">
+      <summary>letter grades <span class="sub" id="letters-sub"></span></summary>
       <div id="thresh-list"></div>
       <div class="row">
         <button type="button" id="thresh-add" class="small">add a
@@ -145,10 +152,10 @@
       </div>
       <p class="hint">The lowest percentage that earns each letter. One must
         reach 0, or a low grade would have no letter at all.</p>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>roster <span class="sub" id="roster-count"></span></h2>
+    <details class="panel">
+      <summary>roster <span class="sub" id="roster-count"></span></summary>
       <p class="hint">One email per line. Anyone not listed is dropped from
         the output — useful for removing students who withdrew. Leave empty
         to grade everyone in the csv.</p>
@@ -160,7 +167,7 @@
         <button type="button" id="email-clear"
           class="small secondary">grade everyone</button>
       </div>
-    </div>
+    </details>
 
   </div>
 

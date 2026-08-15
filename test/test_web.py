@@ -295,6 +295,38 @@ class TestStudentCsv:
 
         assert res['filename'] == 'anders_alice.csv'
 
+    def test_the_page_can_predict_that_name(self, csv_text):
+        """ the link says the filename before the file exists, so the page
+        works it out itself -- from the same rule, or it would lie """
+        import re
+
+        info = web.load_csv(csv_text)
+
+        def js_rule(stud):
+            def safe(text):
+                out = re.sub(r'[^a-zA-Z0-9\-_]', '_', str(text or ''))
+                return out.strip('_') or 'unknown'
+            last, first = safe(stud['last']), safe(stud['first'])
+            if last == 'unknown' and first == 'unknown':
+                return safe(stud['email'].split('@')[0]) + '.csv'
+            return f'{last}_{first}.csv'
+
+        for stud in info['student_list']:
+            res = web.student_csv(csv_text, YAML_STD, stud['email'])
+            assert res['filename'] == js_rule(stud), stud['email']
+
+    def test_a_student_with_no_name(self, tmp_path):
+        """ canvas exports sometimes have an id and nothing else """
+        from conftest import ASSIGN_STD, write_scope
+
+        f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, [
+            {'email': 'x9@u.edu', 'first': '', 'last': '', 'sid': '9S',
+             'scores': {'HW1': 5}}])
+
+        res = web.student_csv(f_scope.read_text(), '', 'x9@u.edu')
+
+        assert res['filename'] == 'x9.csv'
+
     def test_matches_what_the_cli_writes(self, csv_text, f_scope_std,
                                          tmp_path):
         """ same file, so an emailed breakdown cannot disagree with a run """

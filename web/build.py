@@ -80,9 +80,9 @@ def main():
     for name in ASSET_TUP:
         shutil.copy(WEB / name, out / name)
 
-    # the example the 'try an example' button loads.  it is the suite's own
-    # fixture, so the page always demonstrates something that is tested
-    shutil.copy(ROOT / 'test' / 'scope.csv', out / 'example.csv')
+    # the example the 'try an example' button loads: a hundred students whose
+    # awkward cases are each named after what they do (web/make_example.py)
+    shutil.copy(WEB / 'example.csv', out / 'example.csv')
 
     wheel = build_wheel(out / 'wheel')
     vendor_list = fetch_vendor(out / 'wheel')
