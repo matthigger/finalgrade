@@ -140,6 +140,18 @@ assignments:
 
 Auto-excludes any assignment where fewer than 60% of students received a non-zero score (no submissions count as zero). Applied after other exclusions and substitutions. By default no threshold is applied.
 
+### Substituting for one student
+
+```yaml
+substitute_student:
+  alice@uni.edu:
+    exam2a: exam2b
+  bob@uni.edu:
+    quiz1: quiz1_makeup, quiz1_v3
+```
+
+The same rule as `assignments/substitute`, applied to one student: they keep the best of the named assignments and that score becomes the first one's. Use it for the makeup one person sat, where a policy-wide rule would be inventing a policy to describe a single arrangement. Emails are matched by prefix and refused if they name nobody, like every other student setting.
+
 ### Work you haven't set yet
 
 ```yaml
@@ -306,7 +318,9 @@ Every option documented above has a control:
 
 - **Categories** — weight, drop-lowest, and late penalty (rate, excused days, grace period), above a table giving every assignment's points, its share of its category, its share of the whole grade, the mean among non-zero scores, and how many students submitted it.
 - **Assignments** — exclusions picked from a list, substitutions (with a button offering the exclusion that a substitution almost always needs), and the completion threshold.
-- **Students** — search by name to see every score they have, grouped by category. **Clicking a score waives it**, and clicking it again puts it back. A score that was never handed in reads *none*, a submitted zero reads *0%*, and one you haven't set yet reads *not set* — three things that are all zero points and mean entirely different things. Below that, every assignment appears again with its late days, where a click forgives the late penalty, before it is incurred as readily as after. Late days appear too: how many were used, how many were excused, how many ran over, and what the penalty cost — a category mean carries its penalty inside it, so 78% could be a 78% or an 86% with two days against it. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
+- **Students** — search by name to see every score they have, grouped by category. **Clicking a score waives it**, and clicking it again puts it back. A score that was never handed in reads *none*, a submitted zero reads *0%*, and one you haven't set yet reads *not set* — three things that are all zero points and mean entirely different things. **Dragging one score onto another** gives that student the better of the two — the makeup only they sat, without inventing a policy-wide rule for it. Below the scores, every assignment a late penalty could act on appears again with its late days and the exact time (`2d = 1d 23h`), where a click forgives the penalty — before it is incurred as readily as after.
+
+Each student also carries **a log of how their grade was computed**: what stood in for what, what was waived, what was late and what that cost, which of their scores `drop_low` discarded, and how the categories combined. It's the answer to the question that always follows a final grade. Late days appear too: how many were used, how many were excused, how many ran over, and what the penalty cost — a category mean carries its penalty inside it, so 78% could be a 78% or an 86% with two days against it. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
 - **Letter grades** — the cutoff table, editable, resettable to the defaults.
 - **Roster** — paste a list to grade only those students.
 

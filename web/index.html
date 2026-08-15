@@ -74,10 +74,14 @@
 
   <div class="panel">
     <h2>categories <span class="sub">what counts, and how much</span></h2>
-    <div id="cats"></div>
-    <div id="quick" class="quick"></div>
-    <p class="hint" id="cats-hint"></p>
-    <div id="weight-table"></div>
+    <div class="cat-split">
+      <div>
+        <div id="cats"></div>
+        <div id="quick" class="quick"></div>
+        <p class="hint" id="cats-hint"></p>
+      </div>
+      <div id="weight-table"></div>
+    </div>
   </div>
 
   <div class="cols">
@@ -95,6 +99,10 @@
 
       <div class="field">
         <span class="field-k">substitutions</span>
+        <p class="hint sub-why">Each student keeps the <em>best</em> of the
+          named assignments, and that score becomes the first one's. Useful
+          for a quiz sat in two versions — exclude the alternates too, or
+          they count twice.</p>
         <div id="sub-list"></div>
         <div class="sub-add">
           <select id="sub-target" aria-label="assignment to replace">
@@ -116,7 +124,7 @@
       </div>
 
       <div class="field">
-        <span class="field-k">not set yet</span>
+        <span class="field-k">future assignments</span>
         <div id="plan-list" class="chips"></div>
         <div class="sub-add">
           <input type="text" id="plan-name" size="10" placeholder="hw9">

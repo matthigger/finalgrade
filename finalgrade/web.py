@@ -165,7 +165,7 @@ def grade(csv_text, yaml_text, name='scope.csv'):
 
     with _Csv(csv_text, name) as f_csv:
         try:
-            (gradebook, df_grade, df_raw), warn_list = _warn_list(
+            (gradebook, df_grade, df_raw, log), warn_list = _warn_list(
                 lambda: _grade_twice(policy, f_csv))
         except FinalgradeError as e:
             return dict(ok=False, error=str(e), warn_list=[])
@@ -187,7 +187,8 @@ def grade(csv_text, yaml_text, name='scope.csv'):
         letter_list=[dict(letter=str(letter), n=int(letter_count[letter]))
                      for letter in _letter_order(policy, letter_count)],
         thresh_list=_thresh_list(policy.grade_thresh),
-        student_list=_graded_student_list(gradebook, df_grade, policy),
+        student_list=_graded_student_list(gradebook, df_grade, policy,
+                                          prepare_log=log),
         row_list=build_table(gradebook, policy))
 
     out.update(build_view(gradebook, policy, df_grade, df_raw))
@@ -344,7 +345,8 @@ def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
 def _grade_twice(policy, f_csv):
     """ the prepared gradebook, averaged with the policy and without it """
     gradebook = Gradebook.from_file(f_csv)
-    policy.prepare(gradebook)
+    log = dict()
+    policy.prepare(gradebook, log=log)
 
     def average(cat_drop_dict, cat_late_dict):
         return gradebook.average_full(
@@ -356,14 +358,18 @@ def _grade_twice(policy, f_csv):
 
     df_grade = average(policy.cat_drop_dict, policy.cat_late_dict)
     df_raw = average(dict(), dict())
-    return gradebook, df_grade, df_raw
+    return gradebook, df_grade, df_raw, log
 
 
-def _graded_student_list(gradebook, df_grade, policy):
+def _graded_student_list(gradebook, df_grade, policy, prepare_log=None):
     """ one row per student: who they are and what they got """
+    from .audit import build_log
+
     meta = gradebook.df_meta
     cat_list = list(policy.cat_weight_dict)
     late_dict, day_dict = _late_detail(gradebook, policy)
+    log_dict = build_log(gradebook, policy, df_grade,
+                         log=prepare_log, late_dict=late_dict)
 
     def val(row, col):
         if col not in df_grade.columns:
@@ -383,10 +389,12 @@ def _graded_student_list(gradebook, df_grade, policy):
             letter=str(row['letter']) if 'letter' in df_grade.columns else '',
             cat_dict={cat: val(row, f'mean_{cat}') for cat in cat_list},
             ass_dict={ass: val(row, ass) for ass in gradebook.ass_list},
-            ass_list=_student_ass_list(gradebook, policy, email, row,
-                                       day_dict.get(str(email), {})),
+            ass_list=_student_ass_list(
+                gradebook, policy, email, row, day_dict.get(str(email), {}),
+                late_cat_set=frozenset(policy.cat_late_dict)),
             late_dict={cat: d.get(email) for cat, d in late_dict.items()},
-            late_day_dict=day_dict.get(str(email), {})))
+            late_day_dict=day_dict.get(str(email), {}),
+            log_list=log_dict.get(str(email), [])))
     return out_list
 
 
@@ -396,7 +404,8 @@ def _cat_of(policy, ass):
     return [cat for cat in policy.cat_weight_dict if cat in ass]
 
 
-def _student_ass_list(gradebook, policy, email, row, day_dict):
+def _student_ass_list(gradebook, policy, email, row, day_dict,
+                      late_cat_set=frozenset()):
     """ one record per assignment for one student, with why it is what it is
 
     A zero on screen can mean three different things -- nothing handed in, a
@@ -415,9 +424,16 @@ def _student_ass_list(gradebook, policy, email, row, day_dict):
             and ass in gradebook.df_submit.columns else True
 
         cat_hit = _cat_of(policy, ass)
+        minutes = gradebook.df_late_minutes.at[email, ass] \
+            if ass in gradebook.df_late_minutes.columns else 0
+
         out_list.append(dict(
             name=ass,
             category=cat_hit[0] if cat_hit else None,
+            # only where a penalty exists is lateness a thing that acts on
+            # the grade; elsewhere it is trivia
+            late_counts=any(c in late_cat_set for c in cat_hit),
+            late_minutes=0 if pd.isna(minutes) else int(minutes),
             perc=None if pd.isna(perc) else float(perc),
             submitted=submitted,
             waived=ass in waived,
@@ -537,6 +553,11 @@ def form_state(yaml_text):
         exclude_list=_str_list(ass_dict.get('exclude')),
         plan_list=[dict(name=str(k), points=v)
                    for k, v in (ass_dict.get('planned') or {}).items()],
+        stud_sub_list=[
+            dict(email=str(email),
+                 target_dict={str(t): _str_list(v)
+                              for t, v in (d or {}).items()})
+            for email, d in (data.get('substitute_student') or {}).items()],
         complete_thresh=ass_dict.get('exclude_complete_thresh'),
         email_list=_str_list(data.get('email_list')),
         sub_list=_sub_list(ass_dict.get('substitute')),

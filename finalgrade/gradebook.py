@@ -320,7 +320,7 @@ class Gradebook:
             return email
         return self.email_by_prefix.get(email.split('@')[0], email)
 
-    def waive(self, waive_dict):
+    def waive(self, waive_dict, log=None):
         """ waives assignment (per student): the score and its lateness both
         stop counting, as if the work had never been assigned
 
@@ -343,10 +343,17 @@ class Gradebook:
                 except AssignmentNotFoundError:
                     warn(f'waive-fail: not found "{ass}" for {email}')
                     continue
+                was = self.df_perc.at[email, _ass]
                 self.df_perc.loc[email, _ass] = np.nan
                 # nulling the single source of truth is what makes the late
                 # penalty follow the waiver
                 self.df_late_minutes.loc[email, _ass] = np.nan
+
+                if log is not None:
+                    had = '' if pd.isna(was) else f' (was {was:.0%})'
+                    log.setdefault(email, []).append(dict(
+                        kind='waive',
+                        text=f'{_ass} waived, so it is not counted{had}'))
 
     def add_planned(self, plan_dict):
         """ adds assignments nobody has been given yet
@@ -378,6 +385,57 @@ class Gradebook:
         self.points = self.points.loc[col_list]
         if self.df_submit is not None:
             self.df_submit = self.df_submit.loc[:, col_list]
+
+    def substitute_student(self, sub_dict, log=None):
+        """ substitutes assignments for one student at a time
+
+        The same rule as substitute(), applied to a single row: a makeup that
+        only one person sat, a quiz retaken by two.  Doing it per student
+        avoids inventing a policy-wide rule to describe one arrangement.
+
+        Args:
+            sub_dict (dict): email -> {target: [assignments it may take]}
+            log (dict): if given, email -> list of what happened
+        """
+        for email, target_dict in sub_dict.items():
+            email = self._resolve_email(email)
+            if email not in self.df_perc.index:
+                logger.info(f'substitute skipped, student not being graded: '
+                            f'{email}')
+                continue
+
+            for ass_to, ass_from_list in target_dict.items():
+                self._substitute_one(email, ass_to, ass_from_list, log)
+
+    def _substitute_one(self, email, ass_to, ass_from_list, log=None):
+        """ gives one student the best of ass_from_list on ass_to """
+        all_list = list(ass_from_list)
+        if ass_to not in all_list:
+            all_list.append(ass_to)
+
+        missing_list = sorted(set(all_list) - set(self.df_perc.columns))
+        if missing_list:
+            raise PolicyError(
+                f'substitute assignment not found: {", ".join(missing_list)} '
+                f'(assignments are: {", ".join(self.df_perc.columns)})')
+
+        row = self.df_perc.loc[email, all_list]
+        if row.isna().all():
+            return
+
+        best = row.idxmax()
+        was = self.df_perc.at[email, ass_to]
+        now = row.max()
+        self.df_perc.at[email, ass_to] = now
+
+        # a substitution that changed nothing is not an event: naming the
+        # winner of a tie would read as a decision that was never made
+        improved = pd.isna(was) or now > was
+        if log is not None and best != ass_to and improved:
+            log.setdefault(email, []).append(dict(
+                kind='substitute',
+                text=f'{ass_to} took {best}\'s score, {now:.0%}, in place '
+                     f'of {"nothing" if pd.isna(was) else f"{was:.0%}"}'))
 
     def substitute(self, sub_dict):
         """ substitutes some assignment percentages (if sub is higher)

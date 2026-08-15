@@ -1,6 +1,33 @@
 import numpy as np
 
 
+def get_drop_idx(perc, weight, drop_n=0):
+    """ which assignments drop_low would discard, by index
+
+    Split out of get_mean_drop_low so that an audit can name them: a student
+    asking why a grade is what it is is often asking which one was dropped,
+    and that answer is different for every student.
+
+    Args:
+        perc (np.array): percentage earned per assignment
+        weight (np.array): weight of each assignment
+        drop_n (int): number of assignments to drop
+
+    Returns:
+        idx_list (list): indices into perc, worst first
+    """
+    if not drop_n:
+        return []
+
+    idx_ok = [idx for idx in range(len(perc))
+              if not (np.isnan(weight[idx]) or np.isnan(perc[idx]))]
+
+    # the same order get_mean_drop_low keeps: worst percentage first, and
+    # the heavier assignment first when two are equal
+    iter_ass = sorted((perc[idx], -weight[idx], idx) for idx in idx_ok)
+    return [idx for _, _, idx in iter_ass[:drop_n]]
+
+
 def get_mean_drop_low(perc, weight, drop_n=0):
     """ drops low perc assignment (largest weight if tied), gets weighted mean
 

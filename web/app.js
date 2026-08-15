@@ -544,6 +544,7 @@ function drawStudent(form) {
       ${graded ? scoreGrid(graded) : ''}
       ${graded ? lateGrid(graded) : ''}
       ${excuseRow(form, stud)}
+      ${graded ? auditLog(graded) : ''}
     </div>`;
 }
 
@@ -604,18 +605,38 @@ function scoreChip(a) {
   const why = a.waived ? 'waived — click to count it again'
     : a.planned ? 'not assigned yet'
       : !a.submitted ? 'nothing submitted, counts as zero — click to waive'
-        : 'click to waive';
+        : 'click to waive · drag onto another to let this stand in for it';
 
   return `<button type="button" class="chip ${cls}" data-score="${
-    escapeHtml(a.name)}" title="${escapeHtml(why)}">` +
+    escapeHtml(a.name)}" draggable="true" title="${escapeHtml(why)}">` +
     `<span class="chip-k">${escapeHtml(a.name)}</span>` +
     `<span class="chip-v">${text}</span></button>`;
 }
 
-/* Every assignment, not only the late ones, so that a late penalty can be
- * forgiven before it is incurred as readily as after. */
+/* Dragging one score onto another gives that student the better of the two,
+ * for the makeup only they sat.  The same rule as a policy-wide substitution,
+ * without inventing a policy-wide rule to describe one arrangement. */
+function dropSubstitute(fromName, toName) {
+  const stud = pickedStudent();
+  if (!stud || fromName === toName) return;
+
+  const cur = (state.form.stud_sub_list || [])
+    .find((s) => s.email === stud.email);
+  const target = ((cur || {}).target_dict || {})[toName] || [];
+
+  applyEdit('set_student_sub', {
+    email: stud.email,
+    target: toName,
+    ass_list: [...new Set([...target, fromName])],
+  });
+}
+
+/* Every assignment a late penalty could act on -- not only the late ones, so
+ * a penalty can be forgiven before it is incurred as readily as after, and
+ * not the ones in categories with no penalty, where lateness is trivia. */
 function lateGrid(graded) {
-  const list = graded.ass_list.filter((a) => a.submitted || a.late_days);
+  const list = graded.ass_list.filter(
+    (a) => a.late_counts && (a.submitted || a.late_days));
   if (!list.length) return '';
 
   const late = graded.late_dict || {};
@@ -641,13 +662,53 @@ function lateChip(a) {
   const cls = a.late_waived ? 'late-c is-waived'
     : a.late_days ? 'late-c is-late' : 'late-c';
 
+  // days are what the penalty counts, but "2d" hides whether that was two
+  // minutes past a deadline or two whole days
+  const exact = a.late_minutes ? ` = ${hhmm(a.late_minutes)}` : '';
+  const value = a.late_waived ? 'forgiven'
+    : a.late_days ? `${a.late_days}d${exact}`
+      : a.late_minutes ? `0d${exact}` : 'on time';
+
+  const why = a.late_waived
+    ? 'late penalty forgiven — click to count it again'
+    : a.late_minutes && !a.late_days
+      ? `${hhmm(a.late_minutes)} late, inside the grace period`
+      : 'click to forgive any late penalty on this';
+
   return `<button type="button" class="chip ${cls}" data-late="${
-    escapeHtml(a.name)}" title="${a.late_waived
-      ? 'late penalty forgiven — click to count it again'
-      : 'click to forgive any late penalty on this'}">` +
+    escapeHtml(a.name)}" title="${escapeHtml(why)}">` +
     `<span class="chip-k">${escapeHtml(a.name)}</span>` +
-    `<span class="chip-v">${a.late_waived ? 'forgiven'
-      : a.late_days ? `${a.late_days}d` : 'on time'}</span></button>`;
+    `<span class="chip-v">${escapeHtml(value)}</span></button>`;
+}
+
+/* Every step that moved this number, in order.  The question after a final
+ * grade is always how it was arrived at, and a list of decisions answers it
+ * where a number cannot. */
+function auditLog(graded) {
+  const list = graded.log_list || [];
+  if (!list.length) return '';
+
+  return `<details class="audit">
+    <summary>how this grade was computed <span class="sub">${list.length}
+      steps</span></summary>
+    <ol class="audit-list">${list.map((e) =>
+      `<li class="ev ev-${escapeHtml(e.kind)}">` +
+      `<span class="ev-k">${escapeHtml(e.kind)}</span>` +
+      `${escapeHtml(e.text)}</li>`).join('')}</ol>
+  </details>`;
+}
+
+/* the same wording python's audit log uses */
+function hhmm(minutes) {
+  const day = Math.floor(minutes / 1440);
+  const hour = Math.floor((minutes % 1440) / 60);
+  const min = minutes % 60;
+
+  const part = [];
+  if (day) part.push(`${day}d`);
+  if (hour) part.push(`${hour}h`);
+  if (min || !part.length) part.push(`${min}m`);
+  return part.join('');
 }
 
 /* A category mean carries its late penalty inside it, so 78% could be a 78%
@@ -1352,6 +1413,47 @@ $('stud-card').addEventListener('change', (e) => {
     applyEdit('set_excuse_offset',
               { cat, email: stud.email, days: Number(e.target.value) });
   }
+});
+
+let dragFrom = null;
+
+$('stud-card').addEventListener('dragstart', (e) => {
+  const chip = e.target.closest('[data-score]');
+  if (!chip) return;
+  dragFrom = chip.getAttribute('data-score');
+  e.dataTransfer.effectAllowed = 'link';
+  e.dataTransfer.setData('text/plain', dragFrom);
+  chip.classList.add('dragging');
+});
+
+$('stud-card').addEventListener('dragend', (e) => {
+  document.querySelectorAll('.dragging, .drop-target').forEach(
+    (el) => el.classList.remove('dragging', 'drop-target'));
+  dragFrom = null;
+});
+
+$('stud-card').addEventListener('dragover', (e) => {
+  const chip = e.target.closest('[data-score]');
+  if (!chip || !dragFrom || chip.getAttribute('data-score') === dragFrom) {
+    return;
+  }
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'link';
+  chip.classList.add('drop-target');
+});
+
+$('stud-card').addEventListener('dragleave', (e) => {
+  const chip = e.target.closest('[data-score]');
+  if (chip) chip.classList.remove('drop-target');
+});
+
+$('stud-card').addEventListener('drop', (e) => {
+  const chip = e.target.closest('[data-score]');
+  if (!chip) return;
+  e.preventDefault();
+  const from = dragFrom || e.dataTransfer.getData('text/plain');
+  dragFrom = null;
+  dropSubstitute(from, chip.getAttribute('data-score'));
 });
 
 /* one click, one waiver: the chip is the control */
