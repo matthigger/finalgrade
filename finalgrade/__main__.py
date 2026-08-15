@@ -17,7 +17,7 @@ logger = logging.getLogger('finalgrade')
 parser = argparse.ArgumentParser(
     prog='finalgrade',
     description='Grade synthesis from Gradescope CSV exports. '
-                'See: https://github.com/matthigger/gradescope_mean')
+                'See: https://github.com/matthigger/finalgrade')
 parser.add_argument('--version', action='version',
                     version=f'%(prog)s {finalgrade.__version__}')
 subparsers = parser.add_subparsers(dest='command')
@@ -76,7 +76,7 @@ check_parser.add_argument(
 canvas_parser = subparsers.add_parser(
     'canvas',
     help='prepare grade CSV for Canvas upload '
-         '(see: https://github.com/matthigger/gradescope_mean/blob/main/doc'
+         '(see: https://github.com/matthigger/finalgrade/blob/main/doc'
          '/upload_canvas.md)')
 canvas_parser.add_argument(
     'grade_full', type=str,
@@ -96,7 +96,7 @@ canvas_parser.add_argument(
 banner_parser = subparsers.add_parser(
     'banner',
     help='prepare Excel file for Banner upload '
-         '(see: https://github.com/matthigger/gradescope_mean/blob/main/doc'
+         '(see: https://github.com/matthigger/finalgrade/blob/main/doc'
          '/upload_banner.md)')
 banner_parser.add_argument(
     'grade_full', type=str,

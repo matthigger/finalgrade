@@ -3,7 +3,7 @@
 # use spaces for indentation (not tabs), 2 per level
 # assignment / category names are case- and space-insensitive
 # examples of each section are below
-# see github for full documentation: https://github.com/matthigger/gradescope_mean
+# see github for full documentation: https://github.com/matthigger/finalgrade
 
 category:
   weight: null

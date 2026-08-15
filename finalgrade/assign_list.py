@@ -53,7 +53,7 @@ class AssignmentList(list):
     def _warn_prefix(ass_norm_list):
         """ warns when one name prefixes another (match() can't tell them
         apart) """
-        link = 'https://github.com/matthigger/gradescope_mean/issues/28'
+        link = 'https://github.com/matthigger/finalgrade/issues/28'
         sort_list = sorted(ass_norm_list, key=len)
         for idx, ass in enumerate(sort_list):
             for _ass in sort_list[idx + 1:]:

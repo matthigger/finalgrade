@@ -561,7 +561,7 @@ class Config:
 
         logger.info(
             f'created default config — edit as needed, see '
-            f'https://github.com/matthigger/gradescope_mean#configuration'
+            f'https://github.com/matthigger/finalgrade#configuration'
             f' for details:\n  {f_config}')
 
         return cls.from_file(f_config)

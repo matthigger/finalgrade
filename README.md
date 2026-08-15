@@ -6,7 +6,7 @@ Your grading policy lives in one small file, is applied identically to every stu
 
     pip install finalgrade
 
-**No Python? Use it in your browser instead:** [matthigger.github.io/gradescope_mean](https://matthigger.github.io/gradescope_mean) runs this same package inside the page — nothing to install, and your grades are never uploaded anywhere. See [In the browser](#in-the-browser) below.
+**No Python? Use it in your browser instead:** [matthigger.github.io/finalgrade](https://matthigger.github.io/finalgrade) runs this same package inside the page — nothing to install, and your grades are never uploaded anywhere. See [In the browser](#in-the-browser) below.
 
 ## Quick Start
 
@@ -278,7 +278,7 @@ finalgrade grade scope.csv --new-config
 
 ## In the browser
 
-[matthigger.github.io/gradescope_mean](https://matthigger.github.io/gradescope_mean) is the same tool with nothing to install: pick your csv, edit the policy, download `grade_full.csv`.
+[matthigger.github.io/finalgrade](https://matthigger.github.io/finalgrade) is the same tool with nothing to install: pick your csv, edit the policy, download `grade_full.csv`.
 
 It is worth being precise about what that does and doesn't do:
 

@@ -5,7 +5,7 @@ def plot_hist(df_grade_full, cat_weight_dict):
     """ plots a histogram of grades
 
     example:
-    https://github.com/matthigger/gradescope_mean/blob/main/doc/hist.png
+    https://github.com/matthigger/finalgrade/blob/main/doc/hist.png
 
     Args:
         df_grade_full (pd.DataFrame):
