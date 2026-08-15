@@ -246,7 +246,17 @@ button.plus {
 
 #drag-ghost.is-over { background: var(--good); }
 
-table.weights { margin-top: 1rem; margin-bottom: .4rem; }
+table.weights {
+  margin-top: 1rem;
+  margin-bottom: .4rem;
+  /* widths come from the colgroup, so a chip appearing in one column can't
+     re-lay the others out while the cursor is still over them */
+  table-layout: fixed;
+  width: 100%;
+}
+table.weights td.name, table.weights td:last-child {
+  overflow-wrap: anywhere;
+}
 table.weights td.cat { font-weight: 600; }
 table.weights tr.grp td { border-top: 1px solid var(--line); }
 table.weights td.strong { font-weight: 600; }
@@ -797,6 +807,26 @@ table.thresh .unit { white-space: nowrap; }
   gap: .6rem;
   flex-wrap: wrap;
 }
+
+/* ---- the note an instructor leaves themselves ---- */
+
+.stud-note { margin: .5rem 0 .2rem; }
+
+.stud-note textarea {
+  width: 100%;
+  min-height: 1.9rem;
+  padding: .3rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .82rem;
+  resize: vertical;
+  background: transparent;
+}
+
+.stud-note textarea { color: var(--ink); }
+.stud-note textarea::placeholder { color: var(--ink-faint); }
+.stud-note textarea:focus { border-color: var(--accent); outline: none; }
 
 .stud-name { font-weight: 600; }
 .stud-email { font-family: var(--mono); font-size: .78rem;

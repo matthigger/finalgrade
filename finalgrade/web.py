@@ -349,12 +349,8 @@ def _grade_twice(policy, f_csv):
     policy.prepare(gradebook, log=log)
 
     def average(cat_drop_dict, cat_late_dict):
-        return gradebook.average_full(
-            cat_weight_dict=policy.cat_weight_dict,
-            cat_drop_dict=cat_drop_dict,
-            cat_late_dict=cat_late_dict,
-            grade_thresh=policy.grade_thresh,
-            late_waive_dict=policy.late_waive_dict)
+        return gradebook.average_full(**policy.average_kwargs(
+            cat_drop_dict=cat_drop_dict, cat_late_dict=cat_late_dict))
 
     df_grade = average(policy.cat_drop_dict, policy.cat_late_dict)
     df_raw = average(dict(), dict())
@@ -394,6 +390,7 @@ def _graded_student_list(gradebook, df_grade, policy, prepare_log=None):
                 late_cat_set=frozenset(policy.cat_late_dict)),
             late_dict={cat: d.get(email) for cat, d in late_dict.items()},
             late_day_dict=day_dict.get(str(email), {}),
+            note=policy.note_dict.get(str(email), ''),
             log_list=log_dict.get(str(email), [])))
     return out_list
 
@@ -557,6 +554,9 @@ def form_state(yaml_text):
         waive_list=_waive_list(data.get('waive')),
         waive_late_list=_waive_list(data.get('waive_late')),
         exclude_list=_str_list(ass_dict.get('exclude')),
+        extra_list=_str_list(ass_dict.get('extra_credit')),
+        note_dict={str(email): str(note)
+                   for email, note in (data.get('note') or {}).items()},
         plan_list=[dict(name=str(k), points=v)
                    for k, v in (ass_dict.get('planned') or {}).items()],
         max_list=[

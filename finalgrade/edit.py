@@ -15,7 +15,7 @@ does that when the result is read back.
 import io
 
 from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 from .errors import PolicyError
 
@@ -65,23 +65,59 @@ def _put(section, key, value):
     slowly loses its shape every time a widget touches it.  Move the blank
     along to whatever is last now.
     """
-    if key in section:
-        section[key] = value
-        return
+    token = _take_blank(section, key if key in section else
+                        (next(reversed(section), None) if len(section)
+                         else None))
 
-    token = None
-    last_key = next(reversed(section), None) if len(section) else None
-    if last_key is not None:
-        entry = section.ca.items.get(last_key)
-        # index 2 is the comment following the value; a blank line is a
-        # token of nothing but newlines
-        if entry and entry[2] is not None and not entry[2].value.strip():
-            token, entry[2] = entry[2], None
+    if token is not None and isinstance(value, list) and len(value):
+        value = CommentedSeq(value)
 
     section[key] = value
 
-    if token is not None:
+    if token is None:
+        return
+
+    if isinstance(value, CommentedSeq) and len(value):
+        # a block sequence writes its key on one line and its items on the
+        # next, so a blank hung on the key lands between the two and the
+        # list reads as though it belonged to whatever follows.  hang it on
+        # the last item instead, which is where the block actually ends
+        value.ca.items[len(value) - 1] = [token, None, None, None]
+    else:
         section.ca.items.setdefault(key, [None, None, None, None])[2] = token
+
+
+def _take_blank(section, key):
+    """ removes and returns the blank line trailing key, if there is one
+
+    It may be hung on the key, or -- when the value is a block sequence --
+    on that sequence's last item, which is where this module puts it.
+    """
+    if key is None:
+        return None
+
+    value = section.get(key)
+    if isinstance(value, CommentedSeq) and len(value):
+        # index 0 is the comment following a sequence item
+        entry = value.ca.items.get(len(value) - 1)
+        token = _blank_of(entry, 0)
+        if token is not None:
+            entry[0] = None
+            return token
+
+    # index 2 is the comment following a mapping's value
+    entry = section.ca.items.get(key)
+    token = _blank_of(entry, 2)
+    if token is not None:
+        entry[2] = None
+    return token
+
+
+def _blank_of(entry, idx):
+    """ the token at idx, when it is a blank line and nothing else """
+    if not entry or entry[idx] is None or entry[idx].value.strip():
+        return None
+    return entry[idx]
 
 
 def _section(data, *key_tup):
@@ -234,6 +270,26 @@ def set_exclude(data, ass_list):
             section['exclude'] = None
 
 
+def set_extra(data, ass_list):
+    """ replaces the list of extra credit assignments """
+    if ass_list:
+        _put(_section(data, 'assignments'), 'extra_credit', list(ass_list))
+    else:
+        section = data.get('assignments')
+        if isinstance(section, dict):
+            section['extra_credit'] = None
+
+
+def set_note(data, email, note):
+    """ sets one student's note (an empty note removes it) """
+    section = _section(data, 'note')
+    if note and str(note).strip():
+        _put(section, email, str(note).strip())
+    else:
+        section.pop(email, None)
+    _clear_if_empty(data, 'note')
+
+
 def set_max(data, email, target, ass_list):
     """ lets one student's target take the best of ass_list
 
@@ -330,6 +386,8 @@ ACTION_DICT = {
     'set_excuse_offset': set_excuse_offset,
     'set_waive': set_waive,
     'set_exclude': set_exclude,
+    'set_extra': set_extra,
+    'set_note': set_note,
     'set_complete_thresh': set_complete_thresh,
     'set_substitute': set_substitute,
     'set_planned': set_planned,

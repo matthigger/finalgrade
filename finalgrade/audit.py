@@ -13,7 +13,7 @@ is reconstructed here from the same numbers grading used.
 import pandas as pd
 
 from .get_mean_drop_low import get_drop_idx
-from .gradebook import MINUTES_PER_DAY
+from .gradebook import MINUTES_PER_DAY, match_set
 
 
 def fmt_late(minutes):
@@ -170,12 +170,15 @@ def _add_drop(gradebook, policy, out):
             continue
 
         point_arr = gradebook.points.loc[cat_ass_list].values
+        extra_set = match_set(gradebook.ass_list, policy.extra_list)
+        extra_arr = [a in extra_set for a in cat_ass_list]
 
         for email in out:
             if email not in gradebook.df_perc.index:
                 continue
             perc_arr = gradebook.df_perc.loc[email, cat_ass_list].values
-            idx_list = get_drop_idx(perc_arr, point_arr, drop_n)
+            idx_list = get_drop_idx(perc_arr, point_arr, drop_n,
+                                    extra_arr)
             if not idx_list:
                 continue
 

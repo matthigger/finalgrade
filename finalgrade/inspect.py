@@ -18,6 +18,8 @@ was ever graded on.
 import numpy as np
 import pandas as pd
 
+from .gradebook import match_set
+
 # how many bins a histogram gets.  30 across 0-100% puts an edge every 3⅓
 # points, which is fine enough to see a cluster sitting on a letter cutoff
 N_BIN = 30
@@ -81,10 +83,15 @@ def build_table(gradebook, policy):
                    [a for a in ass_list if cat in a])
                   for cat in weight_dict] or [('', 1., ass_list)]
 
+    extra_set = match_set(gradebook.ass_list, policy.extra_list)
+
     row_list = []
     seen_set = set()
     for cat, cat_frac, cat_ass_list in group_list:
-        point_sum = sum(float(gradebook.points[a]) for a in cat_ass_list)
+        # extra credit is not part of what was available, so it is not part
+        # of what the others are a share of
+        point_sum = sum(float(gradebook.points[a]) for a in cat_ass_list
+                        if a not in extra_set)
         for ass in cat_ass_list:
             seen_set.add(ass)
             points = float(gradebook.points[ass])
@@ -92,7 +99,8 @@ def build_table(gradebook, policy):
             row_list.append(_row(gradebook, ass, cat, points, in_cat,
                                  None if in_cat is None else in_cat * cat_frac,
                                  n_student,
-                                 planned=ass in policy.plan_dict))
+                                 planned=ass in policy.plan_dict,
+                                 extra=ass in extra_set))
 
     # an assignment no category caught still has to appear, or the table
     # would quietly agree that it doesn't exist
@@ -101,13 +109,14 @@ def build_table(gradebook, policy):
             row_list.append(_row(gradebook, ass, None,
                                  float(gradebook.points[ass]), None, 0.,
                                  n_student,
-                                 planned=ass in policy.plan_dict))
+                                 planned=ass in policy.plan_dict,
+                                 extra=ass in extra_set))
 
     return row_list
 
 
 def _row(gradebook, ass, cat, points, in_cat, weight, n_student,
-         planned=False):
+         planned=False, extra=False):
     """ one assignment's row of the table """
     s_perc = gradebook.df_perc[ass]
 
@@ -125,7 +134,9 @@ def _row(gradebook, ass, cat, points, in_cat, weight, n_student,
         n_complete=int(len(s_scored)),
         n_student=n_student,
         # work not set yet: the table offers to remove it again
-        planned=planned)
+        planned=planned,
+        # its share is what it could add, not what it takes up
+        extra=extra)
 
 
 def _pair(s_final, s_raw):

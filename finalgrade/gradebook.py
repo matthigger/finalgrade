@@ -31,6 +31,23 @@ def minutes_to_days(minutes, grace_period_minutes=GRACE_DEFAULT):
     return ceil(effective / MINUTES_PER_DAY)
 
 
+def match_set(ass_list, name_list):
+    """ every assignment any of these names names
+
+    The same partial matching assignments/exclude uses, so that one setting
+    written the way the other is written means what it looks like it means.
+
+    Args:
+        ass_list (AssignmentList): the assignments to match against
+        name_list (list): names or fragments of them, as the policy wrote them
+
+    Returns:
+        ass_set (set): full assignment names
+    """
+    return {ass for name in (name_list or ())
+            for ass in ass_list.match_iter(name)}
+
+
 def get_late_minutes(s_hour_min_sec):
     """ returns total lateness in minutes (ignoring seconds) """
     if not isinstance(s_hour_min_sec, str) or not s_hour_min_sec.strip():
@@ -670,7 +687,8 @@ class Gradebook:
         return pd.concat((self.df_meta, df_grade, self.df_perc), axis=1)
 
     def average(self, cat_weight_dict=None, cat_drop_dict=None,
-                cat_late_dict=None, grade_thresh=None, late_waive_dict=None):
+                cat_late_dict=None, grade_thresh=None, late_waive_dict=None,
+                extra_list=None):
         """ final grades, weighted by points (default) or category weights
 
         Args:
@@ -689,6 +707,9 @@ class Gradebook:
             cat_late_dict (dict): keys are assignment categories.  values are
                 dictionaries unpacked as arguments into
                 Gradebook.get_late_penalty()
+            extra_list (list): assignments whose points count towards what a
+                student earned but not towards what was available, so they
+                can only raise a grade
 
         Returns:
             df_grade (pd.DataFrame): final grade
@@ -708,6 +729,8 @@ class Gradebook:
                 raise PolicyError(
                     f'drop_low category has no weight: '
                     f'{", ".join(sorted(unknown_set))}')
+
+        extra_set = match_set(self.ass_list, extra_list)
 
         ass_list = self.ass_list
         cat_ass_dict = {cat: [ass for ass in ass_list if cat in ass]
@@ -741,12 +764,21 @@ class Gradebook:
         for cat, ass_cat_list in cat_ass_dict.items():
             perc_cat = self.df_perc.loc[:, ass_cat_list].values
             point_cat = self.points.loc[ass_cat_list].values
+            extra_cat = [ass in extra_set for ass in ass_cat_list]
             drop_n = cat_drop_dict.get(cat, 0)
+
+            # extra credit raises the mean of the category it sits in.  a
+            # category with nothing else in it has no mean to raise, so the
+            # bonus lands nowhere -- points offered and never delivered
+            if ass_cat_list and all(extra_cat):
+                warn(f'category is all extra credit, so it has no mean of '
+                     f'its own and adds nothing to any grade: {cat} (extra '
+                     f'credit belongs in the category it should lift)')
 
             s_mean = f'mean_{cat}'
             df_grade[s_mean] = pd.Series(
                 [get_mean_drop_low(perc=perc_cat[idx, :], weight=point_cat,
-                                   drop_n=drop_n)
+                                   drop_n=drop_n, extra=extra_cat)
                  for idx in range(perc_cat.shape[0])],
                 index=self.df_perc.index)
 

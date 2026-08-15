@@ -131,6 +131,21 @@ assignments:
 
 Excludes any assignment whose name contains the given string (case/space-insensitive). By default nothing is excluded.
 
+### Extra credit
+
+```yaml
+assignments:
+  extra_credit:
+    - hw9
+    - bonus
+```
+
+Marks assignments whose points count towards what a student earned but not towards what was available. A 10 point bonus in a 100 point homework category is scored out of 100, not 110: doing it raises the category mean, skipping it leaves the same grade as if it had never been offered, and a category can pass 100%.
+
+Names are matched by substring, like `exclude`. Extra credit is never chosen by `drop_low` — dropping it would take away the credit rather than the damage.
+
+Put extra credit in the category it should lift. An assignment that is alone in its own category has no mean to raise, so the points land nowhere; that case is reported as a warning rather than left to be discovered from the grades.
+
 ### Completion threshold
 
 ```yaml
@@ -201,6 +216,18 @@ waive_late:
 ```
 
 Waives late penalties on specific assignments for individual students (the score still counts). Applied before excused late days are consumed. By default nothing is waived.
+
+### Notes
+
+```yaml
+note:
+  student0@uni.edu: extension agreed with the dean's office, 2026-03-04
+  student1@uni.edu: missed exam2 for the away game, sat the makeup
+```
+
+Free text about one student. It changes no grade — it is the reason the other settings were changed, kept in the file that changed them, so that the answer to "why does this student have a waiver?" outlives the email thread that produced it.
+
+Emails are matched and checked like every other student setting: a note on an address nobody has is a note filed under nobody, and is refused.
 
 ### Grade thresholds
 
@@ -319,8 +346,10 @@ A problem that belongs to one assignment is shown against that assignment, on it
 Every option documented above has a control:
 
 - **Categories** — weight, drop-lowest, and late penalty (rate, excused days, grace period), beside a table giving every assignment's points, its share of its category, its share of the whole grade, the mean among non-zero scores, and how many students submitted it. Every column sorts on click.
-- **Assignments live in that table**, because there is only one list of assignments in a course and so there is one on screen. Click a name to leave it out of grading, drag one name onto another to give the whole class the better of the two, and the last row adds work you haven't set yet. (`exclude_complete_thresh` has no control — sorting by *submitted* and clicking the few you mean is clearer than a threshold.)
+- **Assignments live in that table**, because there is only one list of assignments in a course and so there is one on screen. Click a name to leave it out of grading, drag one name onto another to give the whole class the better of the two, tick *extra credit* to let an assignment raise a grade without being part of what it is a share of, and the last row adds work you haven't set yet. (`exclude_complete_thresh` has no control — sorting by *submitted* and clicking the few you mean is clearer than a threshold.)
 - **Students** — search by name to see every score they have, grouped by category. **Clicking a score waives it**, and clicking it again puts it back. A score that was never handed in reads *none*, a submitted zero reads *0%*, and one you haven't set yet reads *not set* — three things that are all zero points and mean entirely different things. **Dragging one score onto another** gives that student the better of the two — the makeup only they sat. Each appears in a `max` row of the same grid, spelled out as `hw4 = max(hw4, hw3)` with an × to undo it, since a drag is easy to make by accident and otherwise leaves no mark on the score it changed. Below the scores, every assignment a late penalty could act on appears again with its late days and the exact time (`2d = 1d 23h`), where a click forgives the penalty — before it is incurred as readily as after.
+
+Each student also has **a note box**, which stores free text in the policy and changes nothing about the grade. It is where the reason for an adjustment goes, so that the waiver and the reason for it are in the same file a term later.
 
 Beside their scores, each student carries **a log of how their grade was computed**: what stood in for what, what was waived, what was late and what that cost, which of their scores `drop_low` discarded, and how the categories combined. It's the answer to the question that always follows a final grade. Late days appear too: how many were used, how many were excused, how many ran over, and what the penalty cost — a category mean carries its penalty inside it, so 78% could be a 78% or an 86% with two days against it. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
 - **Letter grades** — the cutoff table, editable, resettable to the defaults.

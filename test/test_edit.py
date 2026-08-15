@@ -374,6 +374,96 @@ class TestEmailList:
         assert cfg(out).email_list == []
 
 
+class TestExtraCredit:
+    def test_set(self):
+        out = edit.apply('', 'set_extra', dict(ass_list=['hw4', 'bonus']))
+
+        assert cfg(out).extra_list == ['hw4', 'bonus']
+
+    def test_empty_clears_it(self):
+        out = edit.apply('assignments:\n  extra_credit:\n    - hw4\n',
+                         'set_extra', dict(ass_list=[]))
+
+        assert cfg(out).extra_list == []
+
+    def test_leaves_the_other_assignment_settings_alone(self):
+        out = edit.apply(YAML_FULL, 'set_extra', dict(ass_list=['hw4']))
+
+        assert cfg(out).sub_dict == {'quiz1': ['quiz1v2']}
+
+    def test_the_list_lands_under_its_own_key(self):
+        """ a blank line separating two sections must not land inside one
+
+        The blank after the last key of a block is ruamel's, hung on that
+        key; a list written there would appear below it, so the items read
+        as though they belonged to the section that follows.
+        """
+        text = 'assignments:\n  exclude_complete_thresh:\n  exclude:\n' \
+               '  substitute:\n\nwaive:\n\ngrade_thresh:\n  .9: A\n  0: F\n'
+
+        out = edit.apply(text, 'set_extra', dict(ass_list=['hw8']))
+
+        assert '  extra_credit:\n  - hw8\n\nwaive:\n' in out
+        assert cfg(out).extra_list == ['hw8']
+
+    def test_the_blank_survives_a_second_edit(self):
+        text = 'assignments:\n  exclude:\n\nwaive:\n'
+
+        out = edit.apply(text, 'set_extra', dict(ass_list=['hw8']))
+        out = edit.apply(out, 'set_extra', dict(ass_list=['hw8', 'hw7']))
+
+        assert '  - hw8\n  - hw7\n\nwaive:\n' in out
+
+
+class TestNote:
+    """ text about one student, kept in the policy that adjusted their grade
+    """
+
+    def test_set_and_read_back(self):
+        out = edit.apply('', 'set_note', dict(
+            email='alice@u.edu', note='extension agreed with the dean'))
+
+        assert cfg(out).note_dict == {
+            'alice@u.edu': 'extension agreed with the dean'}
+
+    def test_empty_removes_it(self):
+        out = edit.apply('note:\n  alice@u.edu: why\n', 'set_note',
+                         dict(email='alice@u.edu', note=''))
+
+        assert cfg(out).note_dict == {}
+        assert 'alice' not in out
+
+    def test_whitespace_only_removes_it(self):
+        out = edit.apply('note:\n  alice@u.edu: why\n', 'set_note',
+                         dict(email='alice@u.edu', note='   '))
+
+        assert cfg(out).note_dict == {}
+
+    def test_one_student_at_a_time(self):
+        out = edit.apply('', 'set_note', dict(email='alice@u.edu', note='a'))
+        out = edit.apply(out, 'set_note', dict(email='bob@u.edu', note='b'))
+
+        assert cfg(out).note_dict == {'alice@u.edu': 'a', 'bob@u.edu': 'b'}
+
+    def test_changes_no_grade(self, f_scope_std):
+        plain = edit.apply('', 'add_category', dict(cat='hw'))
+        plain = edit.apply(plain, 'add_category', dict(cat='quiz'))
+        noted = edit.apply(plain, 'set_note',
+                           dict(email='alice@u.edu', note='hospital'))
+
+        _, df_plain = cfg(plain)(str(f_scope_std))
+        _, df_noted = cfg(noted)(str(f_scope_std))
+
+        assert df_plain.to_csv() == df_noted.to_csv()
+
+    def test_comments_survive(self):
+        out = edit.apply(YAML_FULL, 'set_note',
+                         dict(email='alice@u.edu', note='hospital'))
+
+        assert '# my course, spring 2026' in out
+        assert cfg(out).waive_dict == {'alice@u.edu': ['hw1']}
+
+
 class TestBadInput:
     def test_unknown_edit(self):
         with pytest.raises(PolicyError, match='not an edit'):

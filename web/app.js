@@ -42,6 +42,10 @@ const state = {
   grades: null,
   // last mean seen per student, so an edit can show what it moved
   meanSeen: {},
+  // which folds the reader has opened, by data-fold key.  an edit redraws
+  // the markup they live in, and a log that shuts itself the moment you
+  // change the thing it explains is a log you cannot read while working
+  fold: {},
   view: 'total',
   mode: 'final',
   seq: 0,
@@ -333,12 +337,19 @@ const SORT_TUP = [
   { key: 'category', label: 'category', num: false },
   { key: 'assignment', label: 'assignment', num: false },
   { key: 'points', label: 'points', num: true },
+  { key: 'extra', label: 'extra credit', num: true },
   { key: 'weight_in_cat', label: 'of category', num: true },
   { key: 'weight_total', label: 'of grade', num: true },
   { key: 'mean_nonzero', label: 'mean*', num: true },
   { key: 'complete_frac', label: 'submitted', num: true },
   { key: 'max', label: 'maximum', num: false },
 ];
+
+/* Fixed, in the order SORT_TUP declares.  The maximum column grows a chip
+ * the moment one assignment is dropped onto another, and a table sized by
+ * its contents would re-lay every other column out from under the cursor. */
+const COL_WIDTH_TUP = ['8%', '17%', '6%', '12%', '11%', '9%', '8%', '9%',
+                       '20%'];
 
 function sortRows(rowList) {
   const sort = state.sort;
@@ -365,6 +376,7 @@ function sortValue(row, key) {
   if (key === 'max') {
     return (maxOf(row.assignment) || []).join(', ') || null;
   }
+  if (key === 'extra') return isExtra(row.assignment) ? 1 : 0;
   const v = row[key];
   return v === undefined ? null : v;
 }
@@ -373,6 +385,12 @@ function maxOf(ass) {
   const hit = ((state.form || {}).sub_list || [])
     .find((s) => s.target === ass);
   return hit ? hit.ass_list : null;
+}
+
+/* Names in the policy are matched the way python matches them: as fragments,
+ * so `extra_credit: [bonus]` catches every bonus without naming each. */
+function isExtra(ass) {
+  return ((state.form || {}).extra_list || []).some((e) => ass.includes(e));
 }
 
 function drawWeightTable() {
@@ -421,6 +439,7 @@ function drawWeightTable() {
       <td class="cat">${escapeHtml(cat)}</td>
       <td class="name">${assChip(r, off)}${note}${whyNote(r)}</td>
       <td class="num">${r.points === null ? '–' : fmtNum(r.points)}</td>
+      <td class="num">${extraCell(r)}</td>
       <td class="num">${frac(r.weight_in_cat)}</td>
       <td class="num strong">${frac(r.weight_total)}</td>
       <td class="num">${pct(r.mean_nonzero)}</td>
@@ -431,6 +450,8 @@ function drawWeightTable() {
   }).join('');
 
   $('weight-table').innerHTML = `<table class="weights">
+    <colgroup>${COL_WIDTH_TUP.map((w) => `<col style="width:${w}">`)
+    .join('')}</colgroup>
     <thead><tr>${SORT_TUP.map(headCell).join('')}</tr></thead>
     <tbody>${row}${addRow()}</tbody></table>
     <p class="hint">* mean among non-zero scores</p>`;
@@ -482,6 +503,17 @@ function assChip(r, off) {
       >&times;</button>` : '');
 }
 
+/* Extra credit counts towards what a student earned and not towards what
+ * was available, so it can only raise a grade -- and skipping it costs
+ * nothing, which is the difference between extra credit and an assignment. */
+function extraCell(r) {
+  const on = isExtra(r.assignment);
+  return `<input type="checkbox" data-extra="${escapeHtml(r.assignment)}"${
+    on ? ' checked' : ''} title="${on
+    ? 'extra credit: its points are not part of the grade it is a share of'
+    : 'make this extra credit: it can raise a grade but never lower one'}">`;
+}
+
 function whyNote(r) {
   return r.excluded_by
     ? `<div class="row-warn">${escapeHtml(r.excluded_by)}</div>` : '';
@@ -514,7 +546,7 @@ function addRow() {
     <td><input type="text" id="plan-name" placeholder="assignment"></td>
     <td class="num"><input type="number" id="plan-points" min="1" step="1"
       placeholder="pts" class="pct"></td>
-    <td colspan="5"></td>
+    <td colspan="6"></td>
   </tr>`;
 }
 
@@ -603,12 +635,24 @@ function drawStudent(form) {
              </span>`
           : '<span class="empty">no grade yet</span>'}
       </div>
+      ${noteBox(form, stud)}
       ${graded ? catRow(graded) : ''}
       ${graded ? scoreGrid(graded, stud) : ''}
       ${graded ? lateGrid(graded) : ''}
       ${excuseRow(form, stud)}
       ${graded ? auditLog(graded) : ''}
     </div>`;
+}
+
+/* Why this student's grade was adjusted, in the instructor's own words.  It
+ * is kept in the policy next to the adjustment it explains, so that the
+ * reason outlives the email thread that produced it -- and so that the
+ * person asking in May is answered by the file rather than by memory. */
+function noteBox(form, stud) {
+  const note = (form.note_dict || {})[stud.email] || '';
+  return `<div class="stud-note"><textarea id="stud-note" rows="1"
+    placeholder="note — why this grade was adjusted">${
+  escapeHtml(note)}</textarea></div>`;
 }
 
 function catRow(graded) {
@@ -784,6 +828,17 @@ function lateChip(a) {
     `<span class="chip-v">${escapeHtml(value)}</span></button>`;
 }
 
+/* Whether a fold was open last time it was drawn.  toggle doesn't bubble,
+ * so the listener that records this captures instead. */
+function foldOpen(key) {
+  return state.fold[key] ? ' open' : '';
+}
+
+document.addEventListener('toggle', (e) => {
+  const key = e.target.getAttribute && e.target.getAttribute('data-fold');
+  if (key !== null && key !== undefined) state.fold[key] = e.target.open;
+}, true);
+
 /* Every step that moved this number, in order.  The question after a final
  * grade is always how it was arrived at, and a list of decisions answers it
  * where a number cannot. */
@@ -791,7 +846,7 @@ function auditLog(graded) {
   const list = graded.log_list || [];
   if (!list.length) return '';
 
-  return `<details class="audit">
+  return `<details class="audit" data-fold="audit"${foldOpen('audit')}>
     <summary>computation log <span class="sub">${list.length} steps</span>
     </summary>
     <ol class="audit-list">${list.map((e) =>
@@ -961,6 +1016,12 @@ function drawWaiveList(form) {
     }
   }
 
+  // a note changes no grade, but it is the record of why one was changed,
+  // and this list is where you go to find out what was done for whom
+  for (const [email, note] of Object.entries(form.note_dict || {})) {
+    row.push({ email, kind: 'note', what: note, undo: `note:${email}` });
+  }
+
   // always present, so that "is there anything set for anyone?" is answered
   // by opening it rather than by noticing whether it exists
   $('waive-count').textContent = row.length === 1
@@ -997,6 +1058,9 @@ function undoAdjustment(token) {
   if (kind === 'excuse') {
     return applyEdit('set_excuse_offset',
                      { cat: part[2], email, days: 0 });
+  }
+  if (kind === 'note') {
+    return applyEdit('set_note', { email, note: '' });
   }
 }
 
@@ -1498,7 +1562,14 @@ $('thresh-reset').addEventListener('click', () =>
  * assignment onto another.  Class-wide, where the student card's identical
  * gestures are for one person. */
 
+$('weight-table').addEventListener('change', (e) => {
+  const extra = e.target.getAttribute('data-extra');
+  if (extra !== null) toggleExtra(extra);
+});
+
 $('weight-table').addEventListener('click', (e) => {
+  if (e.target.getAttribute('data-extra') !== null) return;
+
   const sort = e.target.closest('[data-sort]');
   if (sort) {
     const key = sort.getAttribute('data-sort');
@@ -1555,13 +1626,24 @@ function addPlanned() {
 /* An assignment is excluded by name, and the name is what the chip says, so
  * removing it again is removing that name rather than anything cleverer. */
 function toggleExclude(ass) {
-  const cur = (state.form || {}).exclude_list || [];
-  const hit = cur.filter((s) => ass.includes(s));
-
   applyEdit('set_exclude', {
-    ass_list: hit.length ? cur.filter((s) => !hit.includes(s))
-      : [...cur, ass],
+    ass_list: without((state.form || {}).exclude_list, ass),
   });
+}
+
+function toggleExtra(ass) {
+  applyEdit('set_extra', {
+    ass_list: without((state.form || {}).extra_list, ass),
+  });
+}
+
+/* An assignment is named by the chip, and the name in the policy may be a
+ * fragment of it, so switching a setting off removes whatever named it
+ * rather than looking for the full name and finding nothing. */
+function without(cur, ass) {
+  const list = cur || [];
+  const hit = list.filter((s) => ass.includes(s));
+  return hit.length ? list.filter((s) => !hit.includes(s)) : [...list, ass];
 }
 
 /* the same pointer drag as the student card, on the class-wide table */
@@ -1632,6 +1714,13 @@ $('stud-clear').addEventListener('click', () => {
 
 $('stud-card').addEventListener('change', (e) => {
   const stud = pickedStudent();
+
+  if (e.target.id === 'stud-note') {
+    if (!stud) return;
+    return applyEdit('set_note',
+                     { email: stud.email, note: e.target.value });
+  }
+
   const cat = e.target.getAttribute('data-excuse');
   if (stud && cat !== null) {
     applyEdit('set_excuse_offset',
@@ -1664,7 +1753,12 @@ function chipAtSel(x, y, sel) {
 function markDrag(over, from, x, y) {
   const ghost = $('drag-ghost');
   if (ghost) {
-    ghost.style.left = `${x + 14}px`;
+    // kept inside the window: a label hanging off the right edge gives the
+    // page a horizontal scrollbar, which narrows the table underneath it
+    // and moves the very column the drop is aimed at
+    const wide = ghost.offsetWidth || 0;
+    ghost.style.left = `${Math.max(
+      2, Math.min(x + 14, window.innerWidth - wide - 8))}px`;
     ghost.style.top = `${y + 14}px`;
   }
 

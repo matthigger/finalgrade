@@ -99,6 +99,41 @@ class TestCheck:
             [c.ass_list for c in rep_cli.cat_list]
 
 
+class TestSamePolicyAsTheCli:
+    """ the page grades with the whole policy, not most of it
+
+    web.grade averages the gradebook twice, so it spells out what to average
+    with -- and a setting left out of that call works on the command line
+    and silently does nothing in the browser, which is the worst of both.
+    """
+
+    def test_every_setting_reaches_the_average(self, csv_text, f_scope_std):
+        import inspect as inspect_mod
+
+        from finalgrade.gradebook import Gradebook
+
+        arg_set = set(inspect_mod.signature(Gradebook.average).parameters)
+        arg_set.discard('self')
+
+        assert arg_set == set(Policy().average_kwargs())
+
+    def test_extra_credit_moves_the_browser_grade(self, csv_text,
+                                                  f_scope_std):
+        yaml_extra = YAML_STD + 'assignments:\n  extra_credit:\n    - hw3\n'
+
+        plain = web.grade(csv_text, YAML_STD)
+        extra = web.grade(csv_text, yaml_extra)
+
+        assert plain['ok'] and extra['ok']
+        # hw3's 10 points leave the denominator, so nobody can be worse off
+        # and alice, who scored on it, must be better off
+        assert extra['mean_avg'] > plain['mean_avg']
+
+        _, df_cli = Policy(cat_weight_dict={'hw': 50, 'quiz': 50},
+                           extra_list=['hw3'])(str(f_scope_std))
+        assert extra['csv'] == df_cli.to_csv()
+
+
 class TestGrade:
     def test_returns_a_csv(self, csv_text):
         res = web.grade(csv_text, YAML_STD)

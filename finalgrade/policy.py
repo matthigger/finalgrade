@@ -23,12 +23,14 @@ YAML_KEY_DICT = {
     'remove_list': ('assignments', 'exclude'),
     'sub_dict': ('assignments', 'substitute'),
     'plan_dict': ('assignments', 'planned'),
+    'extra_list': ('assignments', 'extra_credit'),
     'exclude_complete_thresh': ('assignments', 'exclude_complete_thresh'),
     'max_dict': ('max',),
     'waive_dict': ('waive',),
     'late_waive_dict': ('waive_late',),
     'grade_thresh': ('grade_thresh',),
     'email_list': ('email_list',),
+    'note_dict': ('note',),
 }
 
 # what a late_penalty entry may say.  these are passed straight through as
@@ -133,7 +135,8 @@ SECTION_TYPE_DICT = {
     'cat_weight_dict': dict, 'cat_drop_dict': dict, 'cat_late_dict': dict,
     'sub_dict': dict, 'waive_dict': dict, 'late_waive_dict': dict,
     'grade_thresh': dict, 'remove_list': list, 'email_list': list,
-    'plan_dict': dict, 'max_dict': dict,
+    'plan_dict': dict, 'max_dict': dict, 'extra_list': list,
+    'note_dict': dict,
 }
 
 SECTION_SHAPE_DICT = {
@@ -153,6 +156,7 @@ class Policy:
     remove_list: list = field(default_factory=list)
     sub_dict: dict = field(default_factory=dict)
     plan_dict: dict = field(default_factory=dict)
+    extra_list: list = field(default_factory=list)
     max_dict: dict = field(default_factory=dict)
     waive_dict: dict = field(default_factory=dict)
     email_list: list = field(default_factory=list)
@@ -161,12 +165,17 @@ class Policy:
     grade_thresh: dict = None
     late_waive_dict: dict = field(default_factory=dict)
 
+    # why a student's grade was adjusted, in the instructor's own words.
+    # nothing here changes a grade -- it is here so that the reason lives
+    # next to the adjustment instead of in an email nobody can find in may
+    note_dict: dict = field(default_factory=dict)
+
     # yaml gives None for an empty section; normalize that to an empty
     # container so that every attribute has a predictable type
     EMPTY_DICT_TUP = ('cat_weight_dict', 'cat_drop_dict', 'sub_dict',
                       'waive_dict', 'cat_late_dict', 'late_waive_dict',
-                      'plan_dict', 'max_dict')
-    EMPTY_LIST_TUP = ('remove_list', 'email_list')
+                      'plan_dict', 'max_dict', 'note_dict')
+    EMPTY_LIST_TUP = ('remove_list', 'email_list', 'extra_list')
 
     def __post_init__(self):
         for name in self.EMPTY_DICT_TUP:
@@ -232,6 +241,8 @@ class Policy:
 
         self.remove_list = [normalize(a) for a in self.remove_list]
 
+        self.extra_list = [normalize(a) for a in self.extra_list]
+
         self.sub_dict = {normalize(s0): list(map(normalize, s1_list))
                          for s0, s1_list in self.sub_dict.items()}
 
@@ -274,6 +285,12 @@ class Policy:
 
         # lowercase email list entries
         self.email_list = [e.lower() for e in self.email_list]
+
+        # a note is free text: kept as written, on a student whose address
+        # is matched the same way every other section's is
+        self.note_dict = {email.lower(): str(note)
+                          for email, note in self.note_dict.items()
+                          if str(note).strip()}
 
         self._validate()
 
@@ -371,6 +388,10 @@ class Policy:
             yield email, 'waive_late'
         for email in self.max_dict:
             yield email, 'max'
+        for email in self.note_dict:
+            # a note on an address nobody has is filed under nobody: it
+            # never appears beside the student it explains
+            yield email, 'note'
         for cat, late_dict in self.cat_late_dict.items():
             if not isinstance(late_dict, dict):
                 continue
@@ -508,14 +529,33 @@ class Policy:
 
         self.prepare(gradebook)
 
-        df_grade_full = gradebook.average_full(
-            cat_weight_dict=self.cat_weight_dict,
-            cat_drop_dict=self.cat_drop_dict,
-            cat_late_dict=self.cat_late_dict,
-            grade_thresh=self.grade_thresh,
-            late_waive_dict=self.late_waive_dict)
+        df_grade_full = gradebook.average_full(**self.average_kwargs())
 
         return gradebook, df_grade_full
+
+    def average_kwargs(self, **override):
+        """ everything Gradebook.average needs from this policy
+
+        Spelled once.  The browser averages the same gradebook twice -- with
+        the policy and without its drops and penalties -- so it cannot call
+        this method, and a second hand-written argument list is how a new
+        setting comes to work on the command line and not in the page.
+
+        Args:
+            override (dict): arguments to replace, for an average that is
+                deliberately not the policy's own
+
+        Returns:
+            kwargs (dict)
+        """
+        kwargs = dict(cat_weight_dict=self.cat_weight_dict,
+                      cat_drop_dict=self.cat_drop_dict,
+                      cat_late_dict=self.cat_late_dict,
+                      grade_thresh=self.grade_thresh,
+                      late_waive_dict=self.late_waive_dict,
+                      extra_list=self.extra_list)
+        kwargs.update(override)
+        return kwargs
 
     @classmethod
     def from_file(cls, f_policy):
