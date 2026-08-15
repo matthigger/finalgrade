@@ -273,6 +273,65 @@ class TestEditConfig:
             dict(email='alice@u.edu', ass_list=['hw1'])]
 
 
+class TestStudentCsv:
+    """ the file --per_student writes, for one student, on demand """
+
+    def test_holds_the_whole_row(self, csv_text):
+        res = web.student_csv(csv_text, YAML_STD, 'alice@u.edu')
+
+        assert res['ok'], res.get('error')
+        assert 'mean_hw' in res['csv']
+        assert 'hw1' in res['csv']
+        assert 'letter' in res['csv']
+
+    def test_it_is_that_student_and_no_other(self, csv_text):
+        res = web.student_csv(csv_text, YAML_STD, 'alice@u.edu')
+
+        assert 'alice@u.edu' in res['csv']
+        assert 'bob@u.edu' not in res['csv']
+
+    def test_named_after_the_student(self, csv_text):
+        res = web.student_csv(csv_text, YAML_STD, 'alice@u.edu')
+
+        assert res['filename'] == 'anders_alice.csv'
+
+    def test_matches_what_the_cli_writes(self, csv_text, f_scope_std,
+                                         tmp_path):
+        """ same file, so an emailed breakdown cannot disagree with a run """
+        import pandas as pd
+
+        from finalgrade.__main__ import main, parser
+
+        config = Config(cat_weight_dict={'hw': 50, 'quiz': 50})
+        _, df_grade = config(str(f_scope_std))
+        f_config = tmp_path / 'config.yaml'
+        f_config.write_text(YAML_STD)
+
+        main(parser.parse_args(['grade', str(f_scope_std), '--config',
+                                str(f_config), '--per_student', '-q']))
+
+        f_cli = f_scope_std.parent / 'per_student' / 'anders_alice.csv'
+        res = web.student_csv(csv_text, YAML_STD, 'alice@u.edu')
+
+        assert res['csv'] == f_cli.read_text()
+        assert 'alice' in pd.read_csv(f_cli).columns[1]
+
+    def test_an_unknown_student(self, csv_text):
+        res = web.student_csv(csv_text, YAML_STD, 'nobody@u.edu')
+
+        assert not res['ok']
+        assert 'nobody@u.edu' in res['error']
+
+    def test_a_broken_config_is_a_message(self, csv_text):
+        res = web.student_csv(csv_text, 'category:\n  weight:\n    no: 1\n',
+                              'alice@u.edu')
+
+        assert not res['ok']
+
+    def test_is_plain_data(self, csv_text):
+        assert is_plain(web.student_csv(csv_text, YAML_STD, 'alice@u.edu'))
+
+
 class TestNoStrayFiles:
     def test_nothing_is_left_behind(self, csv_text, tmp_path, monkeypatch):
         """ a browser has no filesystem to litter, but a temp dir still does

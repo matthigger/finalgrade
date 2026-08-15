@@ -501,7 +501,24 @@ function drawStudent(form) {
       ${graded ? studGrades(graded) : ''}
       ${waiveChecks(form, stud)}
       ${excuseRow(form, stud)}
+      ${graded ? `<div class="waive-row">
+        <span class="field-k">their own csv</span>
+        <button type="button" class="link" id="stud-csv">download
+          this student's breakdown</button>
+      </div>` : ''}
     </div>`;
+}
+
+/* The same file --per_student writes: everything behind one grade, which is
+ * what you attach to the email asking why it is what it is. */
+function downloadStudentCsv() {
+  const stud = pickedStudent();
+  if (!stud) return;
+
+  const res = toJs(state.api.student_csv(state.csv, state.yaml, stud.email,
+                                         state.name));
+  if (!res.ok) return;
+  download(res.csv, res.filename, 'text/csv');
 }
 
 function studGrades(graded) {
@@ -556,11 +573,14 @@ function drawWaiveList(form) {
     ...form.waive_late_list.map((w) => ({ ...w, kind: 'waive_late' })),
   ];
 
+  $('waive-all').hidden = !rows.length;
+  $('waive-count').textContent = rows.length === 1
+    ? '1 student' : `${rows.length} students`;
+
   if (!rows.length) return ($('waive-list').innerHTML = '');
 
   $('waive-list').innerHTML =
-    '<table class="waive-table"><caption>waivers in this config</caption>' +
-    '<tbody>' + rows.map((w) => `<tr>
+    '<table class="waive-table"><tbody>' + rows.map((w) => `<tr>
       <td><button type="button" class="link" data-goto="${
         escapeHtml(w.email)}">${escapeHtml(w.email)}</button></td>
       <td>${escapeHtml(w.ass_list.join(', '))}</td>
@@ -649,10 +669,6 @@ function drawInspector() {
 }
 
 function drawStats(res) {
-  const letters = res.letter_list.map((l) =>
-    `<span class="ltr-chip"><b>${escapeHtml(l.letter)}</b> ${l.n}</span>`
-  ).join('');
-
   $('stats').innerHTML = `<div class="stats">
     <div class="stat"><span class="k">students</span>
       <span class="v">${res.n_student}</span></div>
@@ -660,8 +676,6 @@ function drawStats(res) {
       <span class="v">${pct(res.mean_avg)}</span></div>
     <div class="stat"><span class="k">median</span>
       <span class="v">${pct(res.mean_median)}</span></div>
-    <div class="stat wide"><span class="k">letters</span>
-      <span class="ltr-row">${letters}</span></div>
   </div>`;
 }
 
@@ -801,7 +815,57 @@ function drawFiles() {
   $('files').innerHTML = part.join('<span class="file-sep">·</span>');
 }
 
+/* The canvas template is the gradebook canvas exported: grades are merged
+ * back into it by SIS user id, which is the only thing the two files share.
+ * When the file being graded is itself a canvas export, it is already the
+ * template and the box says so rather than asking again. */
+function drawCanvasDrop() {
+  const box = $('canvas-drop');
+  const set = !!state.canvasText;
+
+  box.classList.toggle('is-set', set);
+
+  if (!set) {
+    $('canvas-drop-msg').textContent = 'Drop your canvas gradebook here';
+    $('canvas-drop-sub').innerHTML =
+      'Grades &rsaquo; Export — canvas matches students by its own SIS user ' +
+      'id, which only that file carries. ' +
+      '<button type="button" id="canvas-browse" class="link">choose a ' +
+      'file</button>';
+    return;
+  }
+
+  $('canvas-drop-msg').innerHTML =
+    `<span class="tick">&check;</span> canvas template set`;
+  $('canvas-drop-sub').innerHTML =
+    `<code>${escapeHtml(state.canvasName)}</code>` +
+    (state.sourceIsCanvas
+      ? ' — the file you are grading is a canvas export, so it is the '
+        + 'template too. '
+      : ' ') +
+    '<button type="button" id="canvas-browse" class="link">use a different ' +
+    'file</button>';
+}
+
+function setCanvasTemplate(name, text) {
+  const info = toJs(state.api.load_csv(text, name));
+  if (!info.ok || info.source !== 'canvas') {
+    $('export-hint').textContent = info.ok
+      ? `${name} is not a canvas gradebook export — it has no SIS user id ` +
+        'column to match students by.'
+      : info.error;
+    return;
+  }
+  state.canvasText = text;
+  state.canvasName = name;
+  drawCanvasDrop();
+  drawFiles();
+  drawExport();
+}
+
 function drawExport() {
+  drawCanvasDrop();
+
   if (!state.grades) {
     $('export-row').innerHTML = '';
     $('export-hint').textContent =
@@ -820,9 +884,7 @@ function drawExport() {
   $('export-hint').textContent = canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by ' +
       'SIS user id, scaled to 100 so canvas does not round them.'
-    : 'To export for canvas, drop your canvas gradebook export ' +
-      '(Grades › Export) onto the box above — canvas matches students by its ' +
-      'own SIS user id, which only that file carries.';
+    : 'Set a canvas template above to enable the canvas export.';
 
   $('dl-grades').addEventListener('click', () =>
     download(state.grades.csv, 'grade_full.csv', 'text/csv'));
@@ -1093,6 +1155,36 @@ $('email-save').addEventListener('click', () =>
 $('email-clear').addEventListener('click', () => {
   $('email-list').value = '';
   applyEdit('set_email_list', { email_list: [] });
+});
+
+$('stud-card').addEventListener('click', (e) => {
+  if (e.target.id === 'stud-csv') downloadStudentCsv();
+});
+
+/* the export box takes one kind of file and means one thing by it, so a csv
+ * dropped here is always the template, never a new gradebook to grade */
+const canvasDrop = $('canvas-drop');
+['dragenter', 'dragover'].forEach((ev) =>
+  canvasDrop.addEventListener(ev, (e) => {
+    e.preventDefault();
+    canvasDrop.classList.add('over');
+  }));
+['dragleave', 'drop'].forEach((ev) =>
+  canvasDrop.addEventListener(ev, (e) => {
+    e.preventDefault();
+    canvasDrop.classList.remove('over');
+  }));
+canvasDrop.addEventListener('drop', (e) => {
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file, (text) => setCanvasTemplate(file.name, text));
+});
+canvasDrop.addEventListener('click', (e) => {
+  if (e.target.id === 'canvas-browse') $('canvas-file').click();
+});
+$('canvas-file').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) readFile(file, (text) => setCanvasTemplate(file.name, text));
+  e.target.value = '';
 });
 
 $('banner-go').addEventListener('click', runBanner);

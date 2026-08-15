@@ -28,7 +28,7 @@ from .seed import seed_text
 
 __all__ = ['load_csv', 'check_config', 'grade', 'seed_config', 'default_yaml',
            'form_state', 'edit_config', 'bin_values', 'canvas_export',
-           'banner_export']
+           'banner_export', 'student_csv']
 
 
 class _Csv:
@@ -234,6 +234,57 @@ def canvas_export(csv_text, yaml_text, canvas_text, name='scope.csv',
 
     return dict(ok=True, error=None, warn_list=warn_list,
                 csv=df_out.to_csv(index=False), n_row=len(df_out))
+
+
+def student_csv(csv_text, yaml_text, email, name='scope.csv'):
+    """ one student's whole row, the way --per_student writes it
+
+    The same file an instructor attaches to an email asking why a grade is
+    what it is, so it holds everything: the metadata, every category mean,
+    the final grade and every assignment behind it.
+
+    Args:
+        csv_text (str): the grade source
+        yaml_text (str): contents of a config.yaml
+        email (str): the student, as the gradebook keys them
+        name (str): the source csv's filename
+
+    Returns:
+        result (dict): ok, the csv text, and a filename to save it under
+    """
+    config, error = _read_config(yaml_text)
+    if config is None:
+        return dict(ok=False, error=error)
+
+    with _Csv(csv_text, name) as f_csv:
+        try:
+            df_grade, _ = _warn_list(lambda: config(f_csv)[1])
+        except GradescopeMeanError as e:
+            return dict(ok=False, error=str(e))
+
+    if email not in df_grade.index:
+        return dict(ok=False,
+                    error=f'{email} is not among the students being graded')
+
+    row = df_grade.loc[email]
+
+    return dict(ok=True, error=None,
+                csv=pd.DataFrame(row).to_csv(),
+                filename=_student_stem(row, email) + '.csv')
+
+
+def _student_stem(row, email):
+    """ a filename for one student, as the cli's per_student folder names """
+    def safe(text):
+        stem = ''.join(c if (c.isalnum() or c in '-_') else '_'
+                       for c in str(text)).strip('_')
+        return stem or 'unknown'
+
+    last = safe(row.get('lastname', ''))
+    first = safe(row.get('firstname', ''))
+    if last == 'unknown' and first == 'unknown':
+        return safe(str(email).split('@')[0])
+    return f'{last}_{first}'
 
 
 def banner_export(csv_text, yaml_text, term_code, crn_json='[]',

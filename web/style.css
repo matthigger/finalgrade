@@ -212,22 +212,26 @@ table.weights tr.grp td { border-top: 1px solid var(--line); }
 table.weights td.strong { font-weight: 600; }
 table.weights th, table.weights td { padding-right: .8rem; }
 
-/* ---- letter chips in the stat row ---- */
+/* ---- the canvas template box ---- */
 
-.stat.wide { flex: 1 1 14rem; }
-
-.ltr-row { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .2rem; }
-
-.ltr-chip {
-  font-size: .8rem;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: .05rem .5rem;
-  font-variant-numeric: tabular-nums;
+.drop-inline {
+  padding: .8rem 1rem;
+  margin-bottom: .8rem;
+  text-align: left;
 }
 
-.ltr-chip b { font-family: var(--mono); }
+.drop-inline .drop-main { font-size: .95rem; }
+.drop-inline .drop-sub { margin-top: .2rem; }
+
+.drop-inline.is-set {
+  border-style: solid;
+  border-color: var(--good);
+  background: var(--good-soft);
+}
+
+.drop-inline.is-set .drop-main { color: var(--good); }
+
+.tick { font-weight: 700; margin-right: .2rem; }
 
 .filebar {
   display: flex;
@@ -243,9 +247,11 @@ table.weights th, table.weights td { padding-right: .8rem; }
 
 /* ---- two column layout ---- */
 
+/* equal halves.  the old 5:7 split was for a config pane beside a wide
+   report; with that gone, every pair here is two peers */
 .cols {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   align-items: start;
 }

@@ -122,38 +122,47 @@
           hidden>clear</button>
       </div>
       <div id="stud-card"></div>
-      <div id="waive-list"></div>
 
-      <details id="roster-filter">
-        <summary>limit grading to a roster <span class="sub"
-          id="roster-count"></span></summary>
-        <p class="hint">One email per line. Anyone not listed is dropped from
-          the output — useful for removing students who withdrew. Leave empty
-          to grade everyone in the csv.</p>
-        <textarea id="email-list" rows="5" spellcheck="false"
-          aria-label="roster"></textarea>
-        <div class="row">
-          <button type="button" id="email-save" class="small">apply
-            roster</button>
-          <button type="button" id="email-clear"
-            class="small secondary">grade everyone</button>
-        </div>
+      <details id="waive-all">
+        <summary>waivers in this config <span class="sub"
+          id="waive-count"></span></summary>
+        <div id="waive-list"></div>
       </details>
     </div>
 
   </div>
 
-  <details class="panel" id="letters">
-    <summary>letter grades <span class="sub" id="letters-sub"></span></summary>
-    <div id="thresh-list"></div>
-    <div class="row">
-      <button type="button" id="thresh-add" class="small">add a letter</button>
-      <button type="button" id="thresh-reset"
-        class="small secondary">back to defaults</button>
+  <div class="cols">
+
+    <div class="panel">
+      <h2>letter grades <span class="sub" id="letters-sub"></span></h2>
+      <div id="thresh-list"></div>
+      <div class="row">
+        <button type="button" id="thresh-add" class="small">add a
+          letter</button>
+        <button type="button" id="thresh-reset"
+          class="small secondary">back to defaults</button>
+      </div>
+      <p class="hint">The lowest percentage that earns each letter. One must
+        reach 0, or a low grade would have no letter at all.</p>
     </div>
-    <p class="hint">The lowest percentage that earns each letter. One must
-      reach 0, or a low grade would have no letter at all.</p>
-  </details>
+
+    <div class="panel">
+      <h2>roster <span class="sub" id="roster-count"></span></h2>
+      <p class="hint">One email per line. Anyone not listed is dropped from
+        the output — useful for removing students who withdrew. Leave empty
+        to grade everyone in the csv.</p>
+      <textarea id="email-list" rows="6" spellcheck="false"
+        aria-label="roster"></textarea>
+      <div class="row">
+        <button type="button" id="email-save" class="small">apply
+          roster</button>
+        <button type="button" id="email-clear"
+          class="small secondary">grade everyone</button>
+      </div>
+    </div>
+
+  </div>
 
   <div class="panel" id="inspect-panel" hidden>
     <div class="grades-head">
@@ -174,6 +183,18 @@
 
   <div class="panel" id="export-panel">
     <h2>export</h2>
+
+    <div id="canvas-drop" class="drop drop-inline">
+      <p id="canvas-drop-msg" class="drop-main">Drop your canvas gradebook
+        here</p>
+      <p class="drop-sub" id="canvas-drop-sub">Grades &rsaquo; Export — canvas
+        matches students by its own SIS user id, which only that file
+        carries.
+        <button type="button" id="canvas-browse" class="link">choose a
+          file</button></p>
+      <input type="file" id="canvas-file" accept=".csv,text/csv" hidden>
+    </div>
+
     <div class="row" id="export-row"></div>
     <p class="hint" id="export-hint"></p>
 

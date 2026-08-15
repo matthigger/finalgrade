@@ -293,7 +293,7 @@ Every option documented above has a control:
 
 - **Categories** — weight, drop-lowest, and late penalty (rate, excused days, grace period), above a table giving every assignment's points, its share of its category, its share of the whole grade, the mean among non-zero scores, and how many students submitted it.
 - **Assignments** — exclusions picked from a list, substitutions (with a button offering the exclusion that a substitution almost always needs), and the completion threshold.
-- **Students** — search by name to see that student's final grade, letter, category means and every assignment score, then waive assignments, waive only late penalties, or grant extra late days.
+- **Students** — search by name to see that student's final grade, letter, category means and every assignment score, then waive assignments, waive only late penalties, or grant extra late days. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
 - **Letter grades** — the cutoff table, editable, resettable to the defaults.
 - **Roster** — paste a list to grade only those students.
 
@@ -309,7 +309,7 @@ Every view toggles between **before** and **after** your policy, or both overlai
 
 `grade_full.csv` downloads directly.
 
-For **Canvas**, drop your Canvas gradebook export onto the same box: Canvas matches students by its own SIS user id, which only that file carries, so the export merges the grades into it — scaled to 100 so Canvas doesn't round them. That is the same merge `finalgrade canvas` performs.
+For **Canvas**, drop your Canvas gradebook export onto the box in the export section: Canvas matches students by its own SIS user id, which only that file carries, so the export merges the grades into it — scaled to 100 so Canvas doesn't round them. That is the same merge `finalgrade canvas` performs. (If the file you're grading is *itself* a Canvas export, it's already the template and the box says so.)
 
 For **Banner**, give a term code and any CRNs and it builds the `.xlsx`, exactly as `finalgrade banner` does (the test suite checks the two produce the same ids and grades). Banner only matches a row when its CRN, term code and 9-digit student id all line up, which is why it asks for the two a gradebook can't know.
 
