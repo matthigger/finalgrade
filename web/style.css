@@ -398,13 +398,30 @@ button.chip:hover { border-color: var(--accent); }
 
 /* ---- dragging one score onto another ---- */
 
-.chip[draggable="true"] { cursor: grab; }
-.chip.dragging { opacity: .45; }
+/* touch-action, or a touch drag scrolls the page instead of dragging */
+#stud-card [data-score] { cursor: grab; touch-action: none; }
+
+.chip.dragging { opacity: .4; cursor: grabbing; }
 
 .chip.drop-target {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   background: var(--accent-soft);
+}
+
+/* the thing under the cursor while dragging: without it there is no way to
+   tell a drag that started from one that silently didn't */
+#drag-ghost {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: .78rem;
+  padding: .12rem .5rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
 }
 
 /* ---- the audit log ---- */

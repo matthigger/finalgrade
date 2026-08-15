@@ -634,11 +634,10 @@ function scoreChip(a) {
           + 'drag to another assignment to copy'
         : 'click to waive, drag to another assignment to copy';
 
-  // a span rather than a button: firefox will not start a drag on a form
-  // control however it is marked, so a draggable <button> is draggable in
-  // chrome only.  role and tabindex keep it a button to everything else
+  // a span rather than a button, dragged by pointer events rather than the
+  // draggable attribute: see the pointerdown handler for why
   return `<span class="chip ${cls}" data-score="${escapeHtml(a.name)}"
-    draggable="true" role="button" tabindex="0"
+    role="button" tabindex="0"
     title="${escapeHtml(why)}">` +
     `<span class="chip-k">${escapeHtml(a.name)}</span>` +
     `<span class="chip-v">${text}</span></span>`;
@@ -1446,45 +1445,97 @@ $('stud-card').addEventListener('change', (e) => {
   }
 });
 
-let dragFrom = null;
+/* Dragging a score onto another, on pointer events rather than html5 drag
+ * and drop.  That api refuses to begin a drag for reasons the page cannot
+ * see -- a child that isn't draggable, a browser that won't drag a form
+ * control, a text selection starting instead -- and when it declines, no
+ * event fires at all.  Pointer events always fire, so this either works or
+ * leaves a trace of where it stopped.
+ */
+let drag = null;
+let suppressClick = false;
 
-$('stud-card').addEventListener('dragstart', (e) => {
-  const chip = e.target.closest('[data-score]');
-  if (!chip) return;
-  dragFrom = chip.getAttribute('data-score');
-  e.dataTransfer.effectAllowed = 'link';
-  e.dataTransfer.setData('text/plain', dragFrom);
-  chip.classList.add('dragging');
-});
+function chipAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el ? el.closest('#stud-card [data-score]') : null;
+}
 
-$('stud-card').addEventListener('dragend', (e) => {
+function clearDragMarks() {
   document.querySelectorAll('.dragging, .drop-target').forEach(
     (el) => el.classList.remove('dragging', 'drop-target'));
-  dragFrom = null;
-});
+  const ghost = $('drag-ghost');
+  if (ghost) ghost.remove();
+}
 
-$('stud-card').addEventListener('dragover', (e) => {
-  const chip = e.target.closest('[data-score]');
-  if (!chip || !dragFrom || chip.getAttribute('data-score') === dragFrom) {
-    return;
-  }
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'link';
-  chip.classList.add('drop-target');
-});
-
-$('stud-card').addEventListener('dragleave', (e) => {
-  const chip = e.target.closest('[data-score]');
-  if (chip) chip.classList.remove('drop-target');
-});
-
-$('stud-card').addEventListener('drop', (e) => {
+$('stud-card').addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
   const chip = e.target.closest('[data-score]');
   if (!chip) return;
-  e.preventDefault();
-  const from = dragFrom || e.dataTransfer.getData('text/plain');
-  dragFrom = null;
-  dropSubstitute(from, chip.getAttribute('data-score'));
+
+  drag = { from: chip.getAttribute('data-score'), chip,
+           x: e.clientX, y: e.clientY, moved: false };
+
+  // capture, so a pointer that outruns the chip still reports back to it.
+  // it is an optimisation, not a requirement -- the drop is worked out from
+  // the coordinates -- so a browser that refuses must not stop the drag
+  try {
+    chip.setPointerCapture(e.pointerId);
+  } catch (err) { /* carry on without it */ }
+});
+
+$('stud-card').addEventListener('pointermove', (e) => {
+  if (!drag) return;
+
+  if (!drag.moved) {
+    // a few pixels of slop, so a click with a shaky hand stays a click
+    if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
+    drag.moved = true;
+    drag.chip.classList.add('dragging');
+
+    const ghost = document.createElement('div');
+    ghost.id = 'drag-ghost';
+    ghost.textContent = drag.from;
+    document.body.appendChild(ghost);
+  }
+
+  const ghost = $('drag-ghost');
+  if (ghost) {
+    ghost.style.left = `${e.clientX + 14}px`;
+    ghost.style.top = `${e.clientY + 14}px`;
+  }
+
+  const over = chipAt(e.clientX, e.clientY);
+  document.querySelectorAll('.drop-target').forEach(
+    (el) => el.classList.remove('drop-target'));
+  if (over && over.getAttribute('data-score') !== drag.from) {
+    over.classList.add('drop-target');
+  }
+});
+
+$('stud-card').addEventListener('pointerup', (e) => {
+  if (!drag) return;
+
+  const from = drag.from;
+  const moved = drag.moved;
+  const over = moved ? chipAt(e.clientX, e.clientY) : null;
+  drag = null;
+  clearDragMarks();
+
+  if (!moved) return;
+
+  // a pointerup is followed by a click, and the chip's click waives; a drag
+  // is not a waiver
+  suppressClick = true;
+  setTimeout(() => { suppressClick = false; }, 0);
+
+  if (over && over.getAttribute('data-score') !== from) {
+    dropSubstitute(from, over.getAttribute('data-score'));
+  }
+});
+
+$('stud-card').addEventListener('pointercancel', () => {
+  drag = null;
+  clearDragMarks();
 });
 
 /* one click, one waiver: the chip is the control */
@@ -1497,6 +1548,7 @@ $('stud-card').addEventListener('keydown', (e) => {
 });
 
 $('stud-card').addEventListener('click', (e) => {
+  if (suppressClick) return;
   const stud = pickedStudent();
   if (!stud) return;
 
