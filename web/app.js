@@ -542,6 +542,7 @@ function drawStudent(form) {
       </div>
       ${graded ? catRow(graded) : ''}
       ${graded ? scoreGrid(graded) : ''}
+      ${subRow(form, stud)}
       ${graded ? lateGrid(graded) : ''}
       ${excuseRow(form, stud)}
       ${graded ? auditLog(graded) : ''}
@@ -604,13 +605,39 @@ function scoreChip(a) {
 
   const why = a.waived ? 'waived — click to count it again'
     : a.planned ? 'not assigned yet'
-      : !a.submitted ? 'nothing submitted, counts as zero — click to waive'
-        : 'click to waive · drag onto another to let this stand in for it';
+      : !a.submitted
+        ? 'nothing submitted, counts as zero — click to waive, '
+          + 'drag to another assignment to copy'
+        : 'click to waive, drag to another assignment to copy';
 
   return `<button type="button" class="chip ${cls}" data-score="${
     escapeHtml(a.name)}" draggable="true" title="${escapeHtml(why)}">` +
     `<span class="chip-k">${escapeHtml(a.name)}</span>` +
     `<span class="chip-v">${text}</span></button>`;
+}
+
+/* Every substitution standing for this student, each undoable.  A drag is
+ * easy to make by accident and leaves no trace on the score it changed --
+ * the chip is where it becomes visible and reversible. */
+function subRow(form, stud) {
+  const cur = (form.stud_sub_list || []).find((s) => s.email === stud.email);
+  const entries = Object.entries((cur || {}).target_dict || {});
+  if (!entries.length) return '';
+
+  const chip = entries.map(([target, fromList]) =>
+    `<span class="chip is-sub">
+      <span class="chip-k">${escapeHtml(target)}</span>
+      <span class="chip-v">&larr; best of ${escapeHtml(fromList.join(', '))}
+      </span>
+      <button type="button" data-unsub="${escapeHtml(target)}"
+        title="undo this substitution">&times;</button>
+    </span>`).join('');
+
+  return `<div class="waive-row block">
+    <span class="field-k">substitutions <span class="sub">for this
+      student</span></span>
+    <div class="chips">${chip}</div>
+  </div>`;
 }
 
 /* Dragging one score onto another gives that student the better of the two,
@@ -1460,6 +1487,12 @@ $('stud-card').addEventListener('drop', (e) => {
 $('stud-card').addEventListener('click', (e) => {
   const stud = pickedStudent();
   if (!stud) return;
+
+  const undo = e.target.getAttribute('data-unsub');
+  if (undo !== null) {
+    return applyEdit('set_student_sub',
+                     { email: stud.email, target: undo, ass_list: [] });
+  }
 
   const chip = e.target.closest('[data-score], [data-late]');
   if (!chip) return;

@@ -85,6 +85,26 @@ class TestWhatHappened:
         assert kinds(log)[-1] == 'final'
         assert 'final grade' in log[-1]['text']
 
+    def test_lateness_with_no_penalty_is_not_an_event(self, f_scope_std):
+        """ bob is late on hw1, but if hw carries no penalty it changed
+        nothing, and a log of what moved a grade should not list it """
+        res = web.grade(f_scope_std.read_text(),
+                        'category:\n  weight:\n    hw: 75\n    quiz: 25\n')
+
+        log = log_of(res, 'bob@u.edu')
+        assert not [e for e in log if e['kind'] in ('late', 'penalty')]
+
+    def test_only_the_penalised_category_is_listed(self, f_scope_std):
+        """ quiz lateness is trivia when only hw is penalised """
+        res = web.grade(
+            f_scope_std.read_text(),
+            'category:\n  weight:\n    hw: 75\n    quiz: 25\n'
+            '  late_penalty:\n    quiz:\n      penalty_per_day: .1\n')
+
+        log = log_of(res, 'bob@u.edu')
+        assert not [e for e in log
+                    if e['kind'] == 'late' and 'hw' in e['text']]
+
     def test_a_student_with_nothing_unusual_still_gets_a_log(self, graded):
         log = log_of(graded, 'alice@u.edu')
 

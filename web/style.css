@@ -344,6 +344,27 @@ button.chip:hover { border-color: var(--accent); }
 .chip.is-late { background: var(--warn-soft); border-color: transparent; }
 .chip.is-late .chip-v { color: var(--warn); font-weight: 600; }
 
+/* a substitution standing for this student, with the way out of it */
+.chip.is-sub {
+  background: var(--accent-soft);
+  border-color: transparent;
+  padding-right: .2rem;
+}
+
+.chip.is-sub .chip-v { color: var(--accent); }
+
+.chip.is-sub button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 .2rem;
+  cursor: pointer;
+}
+
+.chip.is-sub button:hover { color: var(--bad); }
+
 .chip .dim { color: var(--ink-faint); }
 
 /* ---- category creation beside its table ---- */

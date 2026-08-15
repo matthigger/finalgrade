@@ -55,8 +55,18 @@ def build_log(gradebook, policy, df_grade, log=None, late_dict=None):
 
 
 def _add_late(gradebook, policy, out, late_dict):
-    """ what was late, and what the lateness cost the category """
-    if not gradebook.has_lateness:
+    """ what was late, and what the lateness cost the category
+
+    Only where a penalty exists.  Elsewhere lateness changed nothing, and a
+    log of how a grade was computed that lists things which didn't affect it
+    is a log nobody finishes reading.
+    """
+    if not gradebook.has_lateness or not policy.cat_late_dict:
+        return
+
+    charged_list = [ass for ass in gradebook.ass_list
+                    if any(cat in ass for cat in policy.cat_late_dict)]
+    if not charged_list:
         return
 
     df_day = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
@@ -65,7 +75,7 @@ def _add_late(gradebook, policy, out, late_dict):
         if email not in gradebook.df_late_minutes.index:
             continue
 
-        for ass in gradebook.ass_list:
+        for ass in charged_list:
             minutes = gradebook.df_late_minutes.at[email, ass]
             day = df_day.at[email, ass]
             if not minutes or minutes != minutes:
