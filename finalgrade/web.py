@@ -383,9 +383,57 @@ def _graded_student_list(gradebook, df_grade, policy):
             letter=str(row['letter']) if 'letter' in df_grade.columns else '',
             cat_dict={cat: val(row, f'mean_{cat}') for cat in cat_list},
             ass_dict={ass: val(row, ass) for ass in gradebook.ass_list},
+            ass_list=_student_ass_list(gradebook, policy, email, row,
+                                       day_dict.get(str(email), {})),
             late_dict={cat: d.get(email) for cat, d in late_dict.items()},
-            late_day_dict=day_dict.get(email, {})))
+            late_day_dict=day_dict.get(str(email), {})))
     return out_list
+
+
+def _cat_of(policy, ass):
+    """ the weighted categories catching an assignment, as average() sees it
+    """
+    return [cat for cat in policy.cat_weight_dict if cat in ass]
+
+
+def _student_ass_list(gradebook, policy, email, row, day_dict):
+    """ one record per assignment for one student, with why it is what it is
+
+    A zero on screen can mean three different things -- nothing handed in, a
+    submission that earned nothing, or work that was waived -- and a student
+    asking about their grade is usually asking which.
+    """
+    waived = set(_resolve_waive(gradebook, policy.waive_dict).get(email, ()))
+    late_waived = set(
+        _resolve_waive(gradebook, policy.late_waive_dict).get(email, ()))
+
+    out_list = []
+    for ass in gradebook.ass_list:
+        perc = row.get(ass)
+        submitted = bool(gradebook.df_submit.at[email, ass]) \
+            if gradebook.df_submit is not None \
+            and ass in gradebook.df_submit.columns else True
+
+        cat_hit = _cat_of(policy, ass)
+        out_list.append(dict(
+            name=ass,
+            category=cat_hit[0] if cat_hit else None,
+            perc=None if pd.isna(perc) else float(perc),
+            submitted=submitted,
+            waived=ass in waived,
+            late_days=float(day_dict.get(ass, 0) or 0),
+            late_waived=ass in late_waived,
+            planned=ass in policy.plan_dict and not submitted,
+            points=float(gradebook.points[ass])))
+    return out_list
+
+
+def _resolve_waive(gradebook, waive_dict):
+    """ a waiver section keyed by the emails the gradebook actually uses """
+    out = dict()
+    for email, ass_list in (waive_dict or {}).items():
+        out.setdefault(gradebook._resolve_email(email), []).extend(ass_list)
+    return out
 
 
 def _late_detail(gradebook, policy):
@@ -487,6 +535,8 @@ def form_state(yaml_text):
         waive_list=_waive_list(data.get('waive')),
         waive_late_list=_waive_list(data.get('waive_late')),
         exclude_list=_str_list(ass_dict.get('exclude')),
+        plan_list=[dict(name=str(k), points=v)
+                   for k, v in (ass_dict.get('planned') or {}).items()],
         complete_thresh=ass_dict.get('exclude_complete_thresh'),
         email_list=_str_list(data.get('email_list')),
         sub_list=_sub_list(ass_dict.get('substitute')),

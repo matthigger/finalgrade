@@ -47,6 +47,22 @@ def build_wheel(folder):
     return wheel_list[0].name
 
 
+def bust_cache(out):
+    """ stamps app.js and style.css with a hash of themselves
+
+    Without this a browser holds the previous build indefinitely -- the page
+    is one html file that never changes name, so a fix can ship and simply
+    not arrive, which is worse than not shipping it.
+    """
+    import hashlib
+
+    text = (out / 'index.html').read_text()
+    for name in ('app.js', 'style.css'):
+        digest = hashlib.sha256((out / name).read_bytes()).hexdigest()[:10]
+        text = text.replace(f'"{name}"', f'"{name}?v={digest}"')
+    (out / 'index.html').write_text(text)
+
+
 def fetch_vendor(folder):
     """ downloads the pure-python wheels pyodide doesn't ship """
     before_set = set(folder.glob('*.whl'))
@@ -79,6 +95,8 @@ def main():
 
     for name in ASSET_TUP:
         shutil.copy(WEB / name, out / name)
+
+    bust_cache(out)
 
     # the example the 'try an example' button loads: a hundred students whose
     # awkward cases are each named after what they do (web/make_example.py)

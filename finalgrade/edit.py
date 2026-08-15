@@ -234,6 +234,21 @@ def set_exclude(data, ass_list):
             section['exclude'] = None
 
 
+def set_planned(data, ass, points):
+    """ adds (or with points 0, removes) work that hasn't been set yet
+
+    So that a whole term's policy can be written in one sitting: the
+    assignment exists to be weighted and categorised, and weighs on nobody
+    until real scores replace it.
+    """
+    section = _section(data, 'assignments', 'planned')
+    if points:
+        _put(section, ass, _num(points))
+    else:
+        section.pop(ass, None)
+    _clear_if_empty(data, 'assignments', 'planned')
+
+
 def set_complete_thresh(data, thresh):
     """ sets the completion threshold (None or 0 removes it) """
     section = _section(data, 'assignments')
@@ -296,6 +311,7 @@ ACTION_DICT = {
     'set_exclude': set_exclude,
     'set_complete_thresh': set_complete_thresh,
     'set_substitute': set_substitute,
+    'set_planned': set_planned,
     'set_grade_thresh': set_grade_thresh,
     'set_email_list': set_email_list,
 }

@@ -280,6 +280,72 @@ tr.dropped .row-warn { color: var(--ink-faint); }
   font-style: italic;
 }
 
+/* ---- the score / late grids in the student card ---- */
+
+.waive-row.block { display: block; }
+.waive-row.block .field-k { display: block; margin-bottom: .4rem; }
+.waive-row .field-k .sub { text-transform: none; letter-spacing: 0; }
+
+.grid-group {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  margin-bottom: .35rem;
+  flex-wrap: wrap;
+}
+
+.grid-k {
+  font-family: var(--mono);
+  font-size: .76rem;
+  color: var(--ink-faint);
+  min-width: 3.2rem;
+}
+
+.cat-means { margin-bottom: .5rem; }
+
+button.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .3rem;
+  font: inherit;
+  font-size: .78rem;
+  padding: .12rem .5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button.chip:hover { border-color: var(--accent); }
+
+.chip-k { font-family: var(--mono); color: var(--ink-faint); }
+.chip-v { font-variant-numeric: tabular-nums; }
+
+/* a blank and a zero are both nothing, and mean different things */
+.chip.is-missing { border-style: dashed; }
+.chip.is-missing .chip-v { color: var(--ink-faint); font-style: italic; }
+.chip.is-zero .chip-v { color: var(--bad); font-weight: 600; }
+
+.chip.is-waived {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.chip.is-waived .chip-v { color: var(--accent); font-style: italic; }
+
+.chip.is-planned {
+  border-style: dotted;
+  opacity: .8;
+}
+
+.chip.is-planned .chip-v { color: var(--ink-faint); font-style: italic; }
+
+.chip.is-late { background: var(--warn-soft); border-color: transparent; }
+.chip.is-late .chip-v { color: var(--warn); font-weight: 600; }
+
+.chip .dim { color: var(--ink-faint); }
+
 .filebar {
   display: flex;
   align-items: baseline;

@@ -241,6 +241,7 @@ function drawForm() {
   drawCategories(form);
   drawQuick(form);
   drawExclude(form);
+  drawPlanned(form);
   drawSubstitute(form);
   drawThresh(form);
   drawStudent(form);
@@ -416,6 +417,19 @@ function drawExclude(form) {
   }).join('');
 }
 
+function drawPlanned(form) {
+  if (!form.plan_list.length) {
+    return ($('plan-list').innerHTML =
+      '<span class="empty">nothing planned</span>');
+  }
+
+  $('plan-list').innerHTML = form.plan_list.map((p) =>
+    `<span class="chip" title="not set yet, worth ${p.points} points">` +
+    `${escapeHtml(p.name)} <span class="dim">${escapeHtml(p.points)}pt</span>` +
+    `<button type="button" data-plan="${escapeHtml(p.name)}"
+      title="remove">&times;</button></span>`).join('');
+}
+
 function drawSubstitute(form) {
   if (!form.sub_list.length) {
     return ($('sub-list').innerHTML =
@@ -526,11 +540,114 @@ function drawStudent(form) {
              </span>`
           : '<span class="empty">no grade yet</span>'}
       </div>
-      ${graded ? studGrades(graded, form, stud) : ''}
-      ${graded ? lateRow(graded) : ''}
-      ${waiveChecks(form, stud)}
+      ${graded ? catRow(graded) : ''}
+      ${graded ? scoreGrid(graded) : ''}
+      ${graded ? lateGrid(graded) : ''}
       ${excuseRow(form, stud)}
     </div>`;
+}
+
+function catRow(graded) {
+  const cell = ([k, v]) =>
+    `<span class="mini"><span class="mini-k">${escapeHtml(k)}</span>` +
+    `<span class="mini-v">${pct(v)}</span></span>`;
+
+  const cat = Object.entries(graded.cat_dict).map(cell).join('');
+  return cat ? `<div class="mini-row cat-means">${cat}</div>` : '';
+}
+
+/* Every score, grouped by the categories the policy already defines, because
+ * fifteen chips in one row is a list and four rows of four is a gradebook.
+ * Clicking one waives it: the thing an instructor came here to do. */
+function scoreGrid(graded) {
+  const group = new Map();
+  for (const a of graded.ass_list) {
+    const key = a.category || 'other';
+    if (!group.has(key)) group.set(key, []);
+    group.get(key).push(a);
+  }
+
+  const block = [...group.entries()].map(([cat, list]) => `
+    <div class="grid-group">
+      <span class="grid-k">${escapeHtml(cat)}</span>
+      <div class="chips">${list.map(scoreChip).join('')}</div>
+    </div>`).join('');
+
+  return `<div class="waive-row block">
+    <span class="field-k">scores <span class="sub">click to waive</span></span>
+    <div class="grid">${block}</div>
+  </div>`;
+}
+
+function scoreChip(a) {
+  let cls = 'score';
+  let text;
+
+  if (a.waived) {
+    cls += ' is-waived';
+    text = 'waived';
+  } else if (a.planned) {
+    cls += ' is-planned';
+    text = 'not set';
+  } else if (!a.submitted) {
+    // a blank and a zero are both 0 points and mean different things
+    cls += ' is-missing';
+    text = 'none';
+  } else if (a.perc === null) {
+    cls += ' is-waived';
+    text = '—';
+  } else {
+    if (a.perc === 0) cls += ' is-zero';
+    text = `${Math.round(a.perc * 100)}%`;
+  }
+
+  const why = a.waived ? 'waived — click to count it again'
+    : a.planned ? 'not assigned yet'
+      : !a.submitted ? 'nothing submitted, counts as zero — click to waive'
+        : 'click to waive';
+
+  return `<button type="button" class="chip ${cls}" data-score="${
+    escapeHtml(a.name)}" title="${escapeHtml(why)}">` +
+    `<span class="chip-k">${escapeHtml(a.name)}</span>` +
+    `<span class="chip-v">${text}</span></button>`;
+}
+
+/* Every assignment, not only the late ones, so that a late penalty can be
+ * forgiven before it is incurred as readily as after. */
+function lateGrid(graded) {
+  const list = graded.ass_list.filter((a) => a.submitted || a.late_days);
+  if (!list.length) return '';
+
+  const late = graded.late_dict || {};
+  const summary = Object.entries(late)
+    .filter(([, v]) => v && (v.days_used || v.penalty))
+    .map(([name, v]) => `<span class="mini late-mini">
+      <span class="mini-k">${escapeHtml(name)}</span>
+      <span class="mini-v">${v.days_used} used · ${v.days_excused} excused${
+        v.days_unexcused ? ` · <b>${v.days_unexcused} over</b>` : ''}</span>
+      ${v.penalty ? `<span class="late-hit">${pct(v.penalty)}</span>` : ''}
+    </span>`).join('');
+
+  return `<div class="waive-row block">
+    <span class="field-k">late <span class="sub">click to forgive</span></span>
+    <div class="grid">
+      ${summary ? `<div class="mini-row">${summary}</div>` : ''}
+      <div class="chips">${list.map(lateChip).join('')}</div>
+    </div>
+  </div>`;
+}
+
+function lateChip(a) {
+  const cls = a.late_waived ? 'late-c is-waived'
+    : a.late_days ? 'late-c is-late' : 'late-c';
+
+  return `<button type="button" class="chip ${cls}" data-late="${
+    escapeHtml(a.name)}" title="${a.late_waived
+      ? 'late penalty forgiven — click to count it again'
+      : 'click to forgive any late penalty on this'}">` +
+    `<span class="chip-k">${escapeHtml(a.name)}</span>` +
+    `<span class="chip-v">${a.late_waived ? 'forgiven'
+      : a.late_days ? `${a.late_days}d` : 'on time'}</span></button>`;
 }
 
 /* A category mean carries its late penalty inside it, so 78% could be a 78%
@@ -632,23 +749,6 @@ function studGrades(graded, form, stud) {
     ${cat ? `<div class="mini-row">${cat}</div>` : ''}
     <div class="mini-row dim">${ass}</div>
   </div>`;
-}
-
-function waiveChecks(form, stud) {
-  const row = (kind, label) => {
-    const cur = waiveOf(form, kind).find((w) => w.email === stud.email);
-    const have = new Set(cur ? cur.ass_list : []);
-    return `<div class="waive-row">
-      <span class="field-k">${label}</span>
-      <div class="checks">${state.assList.map((a) => `<label class="f">
-        <input type="checkbox" data-waive="${escapeHtml(a.name)}"
-          data-kind="${kind}" ${have.has(a.name) ? 'checked' : ''}>
-        ${escapeHtml(a.name)}</label>`).join('')}</div>
-    </div>`;
-  };
-
-  return row('waive', 'waive assignment') +
-         row('waive_late', 'waive late penalty');
 }
 
 function excuseRow(form, stud) {
@@ -1065,13 +1165,23 @@ function downloadBytes(b64, name, type) {
   saveBlob(new Blob([buf], { type }), name);
 }
 
+/* The anchor goes into the document and the url is released later on
+ * purpose.  A detached anchor is ignored by some browsers, and revoking the
+ * url in the same tick as the click can beat the download to the blob --
+ * which saves a file named for the url with no extension and nothing in it. */
 function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 30000);
 }
 
 function escapeHtml(s) {
@@ -1168,6 +1278,20 @@ $('excl-list').addEventListener('click', (e) => {
             { ass_list: state.form.exclude_list.filter((s) => s !== name) });
 });
 
+$('plan-go').addEventListener('click', () => {
+  const name = $('plan-name').value.trim().replace(/\s+/g, '').toLowerCase();
+  const points = Number($('plan-points').value) || 0;
+  if (!name || points <= 0) return;
+  $('plan-name').value = '';
+  $('plan-points').value = '';
+  applyEdit('set_planned', { ass: name, points });
+});
+
+$('plan-list').addEventListener('click', (e) => {
+  const name = e.target.getAttribute('data-plan');
+  if (name !== null) applyEdit('set_planned', { ass: name, points: 0 });
+});
+
 $('sub-go').addEventListener('click', () => {
   const target = $('sub-target').value;
   const alt = $('sub-alt').value;
@@ -1223,23 +1347,31 @@ $('stud-clear').addEventListener('click', () => {
 
 $('stud-card').addEventListener('change', (e) => {
   const stud = pickedStudent();
-  if (!stud) return;
-
-  const ass = e.target.getAttribute('data-waive');
-  if (ass !== null) {
-    const kind = e.target.getAttribute('data-kind');
-    const cur = waiveOf(state.form, kind).find((w) => w.email === stud.email);
-    const set = new Set(cur ? cur.ass_list : []);
-    if (e.target.checked) set.add(ass); else set.delete(ass);
-    return applyEdit('set_waive',
-                     { email: stud.email, ass_list: [...set], field: kind });
-  }
-
   const cat = e.target.getAttribute('data-excuse');
-  if (cat !== null) {
+  if (stud && cat !== null) {
     applyEdit('set_excuse_offset',
               { cat, email: stud.email, days: Number(e.target.value) });
   }
+});
+
+/* one click, one waiver: the chip is the control */
+$('stud-card').addEventListener('click', (e) => {
+  const stud = pickedStudent();
+  if (!stud) return;
+
+  const chip = e.target.closest('[data-score], [data-late]');
+  if (!chip) return;
+
+  const late = chip.hasAttribute('data-late');
+  const ass = chip.getAttribute(late ? 'data-late' : 'data-score');
+  const field = late ? 'waive_late' : 'waive';
+
+  const cur = waiveOf(state.form, field).find((w) => w.email === stud.email);
+  const set = new Set(cur ? cur.ass_list : []);
+  if (set.has(ass)) set.delete(ass); else set.add(ass);
+
+  applyEdit('set_waive',
+            { email: stud.email, ass_list: [...set], field });
 });
 
 $('waive-list').addEventListener('click', (e) => {

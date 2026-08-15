@@ -22,6 +22,7 @@ YAML_KEY_DICT = {
     'cat_late_dict': ('category', 'late_penalty'),
     'remove_list': ('assignments', 'exclude'),
     'sub_dict': ('assignments', 'substitute'),
+    'plan_dict': ('assignments', 'planned'),
     'exclude_complete_thresh': ('assignments', 'exclude_complete_thresh'),
     'waive_dict': ('waive',),
     'late_waive_dict': ('waive_late',),
@@ -131,6 +132,7 @@ SECTION_TYPE_DICT = {
     'cat_weight_dict': dict, 'cat_drop_dict': dict, 'cat_late_dict': dict,
     'sub_dict': dict, 'waive_dict': dict, 'late_waive_dict': dict,
     'grade_thresh': dict, 'remove_list': list, 'email_list': list,
+    'plan_dict': dict,
 }
 
 SECTION_SHAPE_DICT = {
@@ -149,6 +151,7 @@ class Policy:
     cat_drop_dict: dict = field(default_factory=dict)
     remove_list: list = field(default_factory=list)
     sub_dict: dict = field(default_factory=dict)
+    plan_dict: dict = field(default_factory=dict)
     waive_dict: dict = field(default_factory=dict)
     email_list: list = field(default_factory=list)
     cat_late_dict: dict = field(default_factory=dict)
@@ -159,7 +162,8 @@ class Policy:
     # yaml gives None for an empty section; normalize that to an empty
     # container so that every attribute has a predictable type
     EMPTY_DICT_TUP = ('cat_weight_dict', 'cat_drop_dict', 'sub_dict',
-                      'waive_dict', 'cat_late_dict', 'late_waive_dict')
+                      'waive_dict', 'cat_late_dict', 'late_waive_dict',
+                      'plan_dict')
     EMPTY_LIST_TUP = ('remove_list', 'email_list')
 
     def __post_init__(self):
@@ -228,6 +232,9 @@ class Policy:
 
         self.sub_dict = {normalize(s0): list(map(normalize, s1_list))
                          for s0, s1_list in self.sub_dict.items()}
+
+        self.plan_dict = {normalize(a): p
+                          for a, p in self.plan_dict.items()}
 
         self.waive_dict = {
             email.lower(): self._parse_waive_value(a_list, email, 'waive')
@@ -310,6 +317,13 @@ class Policy:
             raise PolicyError(
                 'at least one category weight must be positive, got all '
                 f'zero: {self.cat_weight_dict}')
+
+        # a planned assignment is worth points like any other
+        for ass, points in self.plan_dict.items():
+            if not self._is_number(points) or points <= 0:
+                raise PolicyError(
+                    f'a planned assignment needs a positive max points, '
+                    f'got {points!r} for "{ass}"')
 
         # drop counts are non-negative integers
         for cat, d in self.cat_drop_dict.items():
@@ -418,6 +432,13 @@ class Policy:
 
         for ass in gradebook.zero_point_list:
             record[ass] = 'worth 0 points'
+
+        # 0b. work that hasn't been set yet, so that a policy can be written
+        #     for a whole term before the term has happened.  nobody has a
+        #     score, which is nan, which every mean already skips -- so it
+        #     weighs on nobody until the real column arrives and replaces it
+        if self.plan_dict:
+            gradebook.add_planned(self.plan_dict)
 
         # 1. prune first, so that every later step (completion threshold in
         #    particular) sees only the students actually being graded

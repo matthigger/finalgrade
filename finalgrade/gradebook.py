@@ -83,6 +83,13 @@ def read_scope(f_scope):
     meta_col_list = [col for col in df_scope.columns
                      if col not in ass_col_set]
 
+    # whether anything was handed in, captured before the fillna below
+    # destroys the distinction.  a blank cell and a submitted zero are both
+    # 0 points and mean entirely different things to the student
+    df_submit = pd.DataFrame(
+        {ass: df_scope[ass].notna() for ass in ass_list},
+        index=df_scope.index)
+
     # a missing score means "no submission", which counts as 0.  a missing
     # lateness cell means "not late".  (a blanket fillna(0) would put an int
     # into the H:M:S strings, which then fails to parse)
@@ -118,11 +125,11 @@ def read_scope(f_scope):
             df_scope[ass + ass_list.LATE].map(get_late_minutes)
 
     return dict(df_score=df_score, points=points, df_meta=df_meta,
-                df_late_minutes=df_late_minutes)
+                df_late_minutes=df_late_minutes, df_submit=df_submit)
 
 
 def finalize(df_score, points, df_meta, df_late_minutes=None,
-             cat_hint_list=None):
+             cat_hint_list=None, df_submit=None):
     """ the shared tail of both readers: drop the unusable, take percentages
 
     Args:
@@ -146,6 +153,8 @@ def finalize(df_score, points, df_meta, df_late_minutes=None,
              f'{", ".join(zero_list)}')
         points = points.drop(index=zero_list)
         df_score = df_score.drop(columns=zero_list)
+        if df_submit is not None:
+            df_submit = df_submit.drop(columns=zero_list)
         if df_late_minutes is not None:
             df_late_minutes = df_late_minutes.drop(columns=zero_list)
 
@@ -166,9 +175,15 @@ def finalize(df_score, points, df_meta, df_late_minutes=None,
         df_late_minutes = pd.DataFrame(0, index=df_score.index,
                                        columns=df_score.columns)
 
+    if df_submit is None:
+        # a source that doesn't say: treat every score as handed in, which
+        # is what the gradebook looked like before it could tell
+        df_submit = pd.DataFrame(True, index=df_score.index,
+                                 columns=df_score.columns)
+
     return dict(df_perc=df_perc, df_late_minutes=df_late_minutes,
                 points=points, df_meta=df_meta, has_lateness=has_lateness,
-                zero_point_list=zero_list,
+                zero_point_list=zero_list, df_submit=df_submit,
                 cat_hint_list=list(cat_hint_list or []))
 
 
@@ -250,6 +265,7 @@ class Gradebook:
         self.df_meta = part_dict['df_meta']
         self.has_lateness = part_dict['has_lateness']
         self.zero_point_list = part_dict.get('zero_point_list', [])
+        self.df_submit = part_dict.get('df_submit')
         self.cat_hint_list = part_dict.get('cat_hint_list', [])
 
     @property
@@ -332,6 +348,37 @@ class Gradebook:
                 # penalty follow the waiver
                 self.df_late_minutes.loc[email, _ass] = np.nan
 
+    def add_planned(self, plan_dict):
+        """ adds assignments nobody has been given yet
+
+        A planned assignment exists so that a policy can name it -- put it in
+        a category, weight it, drop it -- before anyone has a score.  Every
+        student's score is nan, which is what a waiver is, so it changes no
+        grade at all until the real column turns up and takes its place.
+
+        Args:
+            plan_dict (dict): assignment name -> max points
+        """
+        for ass, points in plan_dict.items():
+            if ass in self.df_perc.columns:
+                # the real thing arrived; it outranks the plan for it
+                continue
+
+            self.df_perc[ass] = np.nan
+            self.df_late_minutes[ass] = np.nan
+            self.points[ass] = float(points)
+            if self.df_submit is not None:
+                self.df_submit[ass] = False
+
+        # assignment order is a property of the gradebook, not of the order
+        # things were added to it
+        col_list = sorted(self.df_perc.columns)
+        self.df_perc = self.df_perc.loc[:, col_list]
+        self.df_late_minutes = self.df_late_minutes.loc[:, col_list]
+        self.points = self.points.loc[col_list]
+        if self.df_submit is not None:
+            self.df_submit = self.df_submit.loc[:, col_list]
+
     def substitute(self, sub_dict):
         """ substitutes some assignment percentages (if sub is higher)
 
@@ -409,6 +456,8 @@ class Gradebook:
         self.df_perc = self.df_perc.loc[idx_keep, :]
         self.df_meta = self.df_meta.loc[idx_keep, :]
         self.df_late_minutes = self.df_late_minutes.loc[idx_keep, :]
+        if self.df_submit is not None:
+            self.df_submit = self.df_submit.loc[idx_keep, :]
 
     def remove_thresh(self, min_complete_thresh):
         """ removes assignments which not enough students have submitted
@@ -420,7 +469,16 @@ class Gradebook:
         """
         # find percent missing per assignment per ass, rm if above thresh
         s_complete_perc = 1 - (self.df_perc.fillna(0) == 0).mean(axis=0)
+
+        # an assignment nobody has a score for at all hasn't been set yet
+        # (add_planned puts it there); dropping it for low completion would
+        # delete the thing the policy was written to describe
+        not_yet = self.df_perc.isna().all(axis=0)
+
         for ass, comp_perc in s_complete_perc.sort_values().items():
+            if not_yet.get(ass, False):
+                logger.info(f'not yet assigned, kept: {ass}')
+                continue
             if comp_perc < min_complete_thresh:
                 msg = f'removed: {comp_perc * 100:.0f}% complete {ass}'
                 self.remove(ass, skip_match=True)
@@ -452,6 +510,8 @@ class Gradebook:
         self.df_perc = self.df_perc.drop(columns=[ass])
         self.df_late_minutes = self.df_late_minutes.drop(columns=[ass])
         self.points = self.points.drop(index=[ass])
+        if self.df_submit is not None and ass in self.df_submit.columns:
+            self.df_submit = self.df_submit.drop(columns=[ass])
 
     def get_late_penalty(self, cat, penalty_per_day, excuse_day=0,
                          excuse_day_offset=None, waive_dict=None,

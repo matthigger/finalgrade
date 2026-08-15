@@ -140,6 +140,17 @@ assignments:
 
 Auto-excludes any assignment where fewer than 60% of students received a non-zero score (no submissions count as zero). Applied after other exclusions and substitutions. By default no threshold is applied.
 
+### Work you haven't set yet
+
+```yaml
+assignments:
+  planned:
+    hw9: 10
+    final_project: 100
+```
+
+Adds an assignment nobody has a score for, so that a whole term's policy can be written in one sitting. It can be weighted, categorised and dropped like any other, and counts for nobody — every student's score is empty, which every mean already skips — until the real column turns up in your export and takes its place. A completion threshold won't remove it either: 0% submitted is exactly what not-yet-assigned looks like.
+
 ### Substitute assignments
 
 ```yaml
@@ -295,7 +306,7 @@ Every option documented above has a control:
 
 - **Categories** — weight, drop-lowest, and late penalty (rate, excused days, grace period), above a table giving every assignment's points, its share of its category, its share of the whole grade, the mean among non-zero scores, and how many students submitted it.
 - **Assignments** — exclusions picked from a list, substitutions (with a button offering the exclusion that a substitution almost always needs), and the completion threshold.
-- **Students** — search by name to see that student's final grade, letter, category means and every assignment score, then waive assignments, waive only late penalties, or grant extra late days. Late days appear too: how many were used, how many were excused, how many ran over, and what the penalty cost — a category mean carries its penalty inside it, so 78% could be a 78% or an 86% with two days against it. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
+- **Students** — search by name to see every score they have, grouped by category. **Clicking a score waives it**, and clicking it again puts it back. A score that was never handed in reads *none*, a submitted zero reads *0%*, and one you haven't set yet reads *not set* — three things that are all zero points and mean entirely different things. Below that, every assignment appears again with its late days, where a click forgives the late penalty, before it is incurred as readily as after. Late days appear too: how many were used, how many were excused, how many ran over, and what the penalty cost — a category mean carries its penalty inside it, so 78% could be a 78% or an 86% with two days against it. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
 - **Letter grades** — the cutoff table, editable, resettable to the defaults.
 - **Roster** — paste a list to grade only those students.
 

@@ -109,9 +109,16 @@ def read_canvas(f_canvas):
     df_score.index = index
     df_score.columns = [normalize(name_dict[col]) for col in col_ass_list]
 
+    # a blank canvas cell is ungraded, which counts as 0 and is not the same
+    # as a 0 somebody was actually given
+    df_submit = df_body[col_ass_list].fillna('').astype(str).map(
+        lambda s: bool(s.strip()))
+    df_submit.index = index
+    df_submit.columns = df_score.columns
+
     points = _get_points(s_point, col_ass_list, name_dict)
 
-    return dict(df_score=df_score, points=points,
+    return dict(df_score=df_score, points=points, df_submit=df_submit,
                 df_meta=_get_meta(df_body, index),
                 cat_hint_list=_get_cat_hint_list(df, s_point))
 
