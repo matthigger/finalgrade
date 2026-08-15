@@ -16,21 +16,21 @@ Your grading policy lives in one small file, is applied identically to every stu
 
         finalgrade grade scope.csv
 
-   This produces [grade_full.csv](doc/grade_full.csv) and creates a `config.yaml` in the same directory. That config is written for *your* csv: it lists your assignments by the names a config has to use, and suggests a category split (commented out) based on them.
+   This produces [grade_full.csv](doc/grade_full.csv) and creates a `policy.yaml` in the same directory. That policy is written for *your* csv: it lists your assignments by the names a policy has to use, and suggests a category split (commented out) based on them.
 
-3. Edit `config.yaml` to set up your grading policy (see below), then check what it will do:
+3. Edit `policy.yaml` to set up your grading policy (see below), then check what it will do:
 
         finalgrade check scope.csv
 
 4. When the split looks right, re-run:
 
-        finalgrade grade scope.csv --config config.yaml
+        finalgrade grade scope.csv --policy policy.yaml
 
-That's it. The rest of this README covers what you can put in that config file and the additional flags available.
+That's it. The rest of this README covers what you can put in that policy file and the additional flags available.
 
-### Checking a config
+### Checking a policy
 
-Categories match assignments by substring, which is easy to get subtly wrong — and a mistake shows up as a plausible-looking grade rather than an error. `check` answers "what does this config actually do?" without computing any grades:
+Categories match assignments by substring, which is easy to get subtly wrong — and a mistake shows up as a plausible-looking grade rather than an error. `check` answers "what does this policy actually do?" without computing any grades:
 
     $ finalgrade check scope.csv
     grade source : scope.csv (gradescope)
@@ -52,7 +52,7 @@ Categories match assignments by substring, which is easy to get subtly wrong —
     error: category matches no assignment: exam
     warn : assignment not in any category: quiz1
 
-    config has an error, grading would stop here
+    policy has an error, grading would stop here
 
 It exits non-zero when grading would fail, so it works in a script. Unlike grading, it reports every problem it finds at once rather than stopping at the first.
 
@@ -60,21 +60,21 @@ It exits non-zero when grading would fail, so it works in a script. Unlike gradi
 
 `grade` also accepts a Canvas gradebook export (`Grades > Export`), told apart from a Gradescope one by its columns:
 
-    finalgrade grade canvas.csv --config config.yaml
+    finalgrade grade canvas.csv --policy policy.yaml
 
 Everything downstream is the same. Three differences are worth knowing, all of them forced by what Canvas puts in its csv:
 
-- **Late penalties aren't available.** Canvas' export has no submission times, so a `late_penalty` in your config is an error rather than a penalty that quietly computes to zero for everyone. (Canvas does know lateness, but only through its API.)
+- **Late penalties aren't available.** Canvas' export has no submission times, so a `late_penalty` in your policy is an error rather than a penalty that quietly computes to zero for everyone. (Canvas does know lateness, but only through its API.)
 - **Students may be keyed by SIS ID rather than email.** Canvas has no email column; its `SIS Login ID` holds one in some courses and an ID in others. Whichever is used is logged on every run, and it's the key that `waive`, `waive_late`, `excuse_day_offset` and `email_list` must then use.
 - **Excused (`EX`) becomes a waiver**, and a blank cell counts as 0 — the same meaning a blank Gradescope cell has.
 
 Assignments worth 0 points are dropped, as always. That covers most of what this tool uploads back to Canvas (`mean_hw`, `letter`, ...) along with solution handouts, so re-importing a course you've already exported to is a no-op rather than a feedback loop.
 
-One thing works *better* from Canvas: a config created for a Canvas export seeds its suggested categories from your Canvas assignment groups (read off the rollup columns Canvas exports), rather than guessing from assignment names.
+One thing works *better* from Canvas: a policy created for a Canvas export seeds its suggested categories from your Canvas assignment groups (read off the rollup columns Canvas exports), rather than guessing from assignment names.
 
-## Configuration
+## Grading policy
 
-All grading policy lives in `config.yaml`. A default copy is created on your first run — open it up and fill in the sections that apply to your course. Tabs aren't allowed in YAML, so use spaces (2 or 4 per indent level, consistently).
+All grading policy lives in `policy.yaml`. A default copy is created on your first run — open it up and fill in the sections that apply to your course. Tabs aren't allowed in YAML, so use spaces (2 or 4 per indent level, consistently).
 
 ### Category weights
 
@@ -211,11 +211,11 @@ By default every student in Gradescope is included.
 
 ### Email matching
 
-Everywhere an email appears in the config — `waive`, `waive_late`, `excuse_day_offset`, and `email_list` — matching is done by the **prefix** (everything before `@`). This means `student@husky.neu.edu` in the config will correctly match `student@northeastern.edu` in Gradescope. All comparisons are case-insensitive.
+Everywhere an email appears in the policy — `waive`, `waive_late`, `excuse_day_offset`, and `email_list` — matching is done by the **prefix** (everything before `@`). This means `student@husky.neu.edu` in the policy will correctly match `student@northeastern.edu` in Gradescope. All comparisons are case-insensitive.
 
 ## What gets checked
 
-Grades are hard to eyeball, so a config that can't mean what you intended is
+Grades are hard to eyeball, so a policy that can't mean what you intended is
 reported as an error rather than quietly producing plausible-looking numbers:
 
 - a `drop_low` or `late_penalty` category with no entry in `category/weight`
@@ -252,22 +252,22 @@ All flags go on the `grade` subcommand. Run `finalgrade grade --help` for the fu
 
 ```bash
 # choose where the output CSV goes
-finalgrade grade scope.csv --config config.yaml -o final_grades.csv
+finalgrade grade scope.csv --policy policy.yaml -o final_grades.csv
 
 # generate a histogram of grades per category
-finalgrade grade scope.csv --config config.yaml --plot
+finalgrade grade scope.csv --policy policy.yaml --plot
 
 # export a CSV of late days per student-assignment pair
-finalgrade grade scope.csv --config config.yaml --late_csv late_days.csv
+finalgrade grade scope.csv --policy policy.yaml --late_csv late_days.csv
 
 # create per-student CSVs (handy for emailing individual breakdowns)
-finalgrade grade scope.csv --config config.yaml --per_student
+finalgrade grade scope.csv --policy policy.yaml --per_student
 
 # suppress status messages
-finalgrade grade scope.csv --config config.yaml -q
+finalgrade grade scope.csv --policy policy.yaml -q
 
-# force a fresh default config (existing one is kept with a timestamp)
-finalgrade grade scope.csv --new-config
+# force a fresh default policy (existing one is kept with a timestamp)
+finalgrade grade scope.csv --new-policy
 ```
 
 `--plot` accepts an optional filename (e.g. `--plot my_hist.html`); without one it defaults to `hist.html`.
@@ -285,15 +285,17 @@ It is worth being precise about what that does and doesn't do:
 - **Nothing is uploaded.** The page downloads a Python interpreter ([Pyodide](https://pyodide.org)) and a wheel of this package, then runs them in your browser. Your csv is read by JavaScript and handed to Python in the same tab. There is no server to send it to — you can disconnect from the network once the page has loaded and it still works.
 - **It is the same code**, not a reimplementation. The browser and the command line call the same functions, so they cannot disagree about a grade; the test suite asserts that they don't.
 - **First load fetches ~15 MB** (Python plus pandas), then caches it.
-- **The config is the same `config.yaml`.** Download it and use it with the CLI, or drop a CLI-written one into the page.
+- **The policy is the same `policy.yaml`.** Download it and use it with the CLI, or drop a CLI-written one into the page.
 
-Drop a file on the box at the top right — a gradebook csv, or a `config.yaml` you saved earlier. Whatever you load is listed underneath as a download link, alongside the config as it currently stands, so the policy you build is always one click from being saved. Everything recomputes on every change, so a policy edit and its effect are never more than a moment apart.
+Drop a file on the box at the top right — a gradebook csv, or a `policy.yaml` you saved earlier. Whatever you load is listed underneath as a download link, alongside the policy as it currently stands, so the policy you build is always one click from being saved. Everything recomputes on every change, so a policy edit and its effect are never more than a moment apart.
+
+A problem that belongs to one assignment is shown against that assignment, on its row in the weights table, rather than in a list of complaints somewhere else. What's left over — a file that isn't a gradebook at all, a roster email matching nobody, a letter threshold out of range — has no row to sit on, so those stay in a message list at the top.
 
 Every option documented above has a control:
 
 - **Categories** — weight, drop-lowest, and late penalty (rate, excused days, grace period), above a table giving every assignment's points, its share of its category, its share of the whole grade, the mean among non-zero scores, and how many students submitted it.
 - **Assignments** — exclusions picked from a list, substitutions (with a button offering the exclusion that a substitution almost always needs), and the completion threshold.
-- **Students** — search by name to see that student's final grade, letter, category means and every assignment score, then waive assignments, waive only late penalties, or grant extra late days. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
+- **Students** — search by name to see that student's final grade, letter, category means and every assignment score, then waive assignments, waive only late penalties, or grant extra late days. Late days appear too: how many were used, how many were excused, how many ran over, and what the penalty cost — a category mean carries its penalty inside it, so 78% could be a 78% or an 86% with two days against it. Their whole breakdown downloads as its own csv, the same file `--per_student` writes, which is what you attach to the email asking why a grade is what it is.
 - **Letter grades** — the cutoff table, editable, resettable to the defaults.
 - **Roster** — paste a list to grade only those students.
 
@@ -315,9 +317,9 @@ For **Banner**, give a term code and any CRNs and it builds the `.xlsx`, exactly
 
 There is no Gradescope export: Gradescope is a place grades come *from*, and has no grade-import format to write.
 
-### The config file is still the config file
+### The policy file is still the policy file
 
-Widgets don't hold state; they edit `config.yaml`, and that file is what grading reads. The edit goes through a round-trip YAML writer, so it keeps comments, key order, blank lines, and any section the widgets don't cover. Download it and use it with the CLI, hand it to a TA, or drop it back in next term.
+Widgets don't hold state; they edit `policy.yaml`, and that file is what grading reads. The edit goes through a round-trip YAML writer, so it keeps comments, key order, blank lines, and any section the widgets don't cover. Download it and use it with the CLI, hand it to a TA, or drop it back in next term.
 
 ### Building the site
 

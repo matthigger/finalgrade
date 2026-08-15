@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .assign_list import AssignmentList, AssignmentNotFoundError, normalize
-from .errors import ConfigError, GradebookError
+from .errors import PolicyError, GradebookError
 from .get_mean_drop_low import get_mean_drop_low
 from .perc_to_letter import perc_to_letter
 
@@ -132,7 +132,7 @@ def finalize(df_score, points, df_meta, df_late_minutes=None,
         df_late_minutes (pd.DataFrame): minutes late per student-assignment,
             or None when the source records no lateness (a canvas csv)
         cat_hint_list (list): category names the source already knows about
-            (canvas assignment groups), for seeding a new config.  a
+            (canvas assignment groups), for seeding a new policy.  a
             gradescope csv has no such notion and passes None.
 
     Returns:
@@ -196,7 +196,7 @@ class Gradebook:
         points (pd.Series): max points, indexed by assignment name
         has_lateness (bool): whether the source recorded lateness at all.
             a canvas csv doesn't, so df_late_minutes is all zeros there and
-            a configured late penalty is an error rather than a silent no-op.
+            a set late penalty is an error rather than a silent no-op.
         zero_point_list (list): assignments dropped at load for being worth 0
             points.  kept so that `check` can say where they went, rather
             than leaving a hole in the assignment list.
@@ -316,7 +316,7 @@ class Gradebook:
             if email not in self.df_perc.index:
                 # writing to a label that isn't there would *add* the row,
                 # inventing a student.  a typo is caught earlier by
-                # Config.check_email; reaching here means the student was
+                # Policy.check_email; reaching here means the student was
                 # pruned by email_list, so there is nothing to waive
                 logger.info(
                     f'waive skipped, student not being graded: {email}')
@@ -355,7 +355,7 @@ class Gradebook:
 
             missing_list = sorted(set(ass_all_list) - set(self.df_perc.columns))
             if missing_list:
-                raise ConfigError(
+                raise PolicyError(
                     f'substitute assignment not found: '
                     f'{", ".join(missing_list)} (assignments are: '
                     f'{", ".join(self.df_perc.columns)})')
@@ -487,14 +487,14 @@ class Gradebook:
             s_penalty (pd.Series): index is email.  values are adjustments
         """
         if penalty_per_day < 0:
-            raise ConfigError(
+            raise PolicyError(
                 'penalty_per_day should be positive to lower credit when late')
 
         if not self.has_lateness:
             # applying a penalty here would compute zero for everybody, which
             # reads as "nobody was late" rather than "we can't tell"
-            raise ConfigError(
-                f'late_penalty configured for category {cat!r}, but this '
+            raise PolicyError(
+                f'late_penalty set for category {cat!r}, but this '
                 'grade source records no submission times (a canvas csv '
                 'export has no lateness columns)')
 
@@ -505,7 +505,7 @@ class Gradebook:
         # df_late_minutes, so they carry through as nan here)
         ass_cat_list = list(self.ass_list.match_iter(s_assign=cat))
         if not ass_cat_list:
-            raise ConfigError(
+            raise PolicyError(
                 f'late_penalty category matches no assignment: "{cat}"')
 
         df_late = self.get_lateday(
@@ -587,7 +587,7 @@ class Gradebook:
         else:
             unknown_set = set(cat_drop_dict.keys()) - set(cat_weight_dict)
             if unknown_set:
-                raise ConfigError(
+                raise PolicyError(
                     f'drop_low category has no weight: '
                     f'{", ".join(sorted(unknown_set))}')
 
@@ -599,7 +599,7 @@ class Gradebook:
         empty_list = sorted(cat for cat, a_list in cat_ass_dict.items()
                             if not a_list)
         if empty_list:
-            raise ConfigError(
+            raise PolicyError(
                 f'category matches no assignment: {", ".join(empty_list)} '
                 f'(assignments are: {", ".join(ass_list)})')
 

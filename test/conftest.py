@@ -1,4 +1,4 @@
-"""Shared pytest configuration and fixture builders.
+"""Shared pytest policy and fixture builders.
 
 Puts the repository root on sys.path so the test suite runs against the
 working tree without requiring an editable install.
@@ -110,9 +110,9 @@ def f_scope_std(tmp_path):
 
 
 @pytest.fixture
-def write_config(tmp_path):
-    """ returns a fn which writes yaml text to a config file """
-    def _write(text, name='config.yaml'):
+def write_policy(tmp_path):
+    """ returns a fn which writes yaml text to a policy file """
+    def _write(text, name='policy.yaml'):
         f = tmp_path / name
         f.write_text(text)
         return f

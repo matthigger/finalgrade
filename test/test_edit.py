@@ -1,4 +1,4 @@
-""" editing a config the way the browser's widgets do
+""" editing a policy the way the browser's widgets do
 
 The point of every test here is the same: an edit changes what it was asked
 to change and nothing else.  A form that quietly dropped the user's comments,
@@ -8,8 +8,8 @@ it was touched.
 import pytest
 
 from finalgrade import edit, web
-from finalgrade.config import Config
-from finalgrade.errors import ConfigError
+from finalgrade.policy import Policy
+from finalgrade.errors import PolicyError
 
 # a file with something in every corner the widgets don't touch
 YAML_FULL = """\
@@ -36,14 +36,14 @@ grade_thresh:
 
 
 def cfg(text):
-    """ the policy a config text means """
+    """ the policy a policy text means """
     import pathlib
     import tempfile
 
     with tempfile.TemporaryDirectory() as folder:
-        f = pathlib.Path(folder) / 'config.yaml'
+        f = pathlib.Path(folder) / 'policy.yaml'
         f.write_text(text)
-        return Config.from_file(f)
+        return Policy.from_file(f)
 
 
 class TestKeepsEverythingElse:
@@ -66,7 +66,7 @@ class TestKeepsEverythingElse:
             < out.index('waive:') < out.index('grade_thresh:')
 
     def test_a_seeded_config_keeps_its_assignment_table(self, f_scope_std):
-        seeded = web.seed_config(f_scope_std.read_text(), 'scope.csv')
+        seeded = web.seed_policy(f_scope_std.read_text(), 'scope.csv')
 
         out = edit.apply(seeded, 'add_category', dict(cat='hw'))
 
@@ -75,7 +75,7 @@ class TestKeepsEverythingElse:
 
     def test_the_commented_guess_stays_commented(self, f_scope_std):
         """ round-tripping must not un-comment the block it sits next to """
-        seeded = web.seed_config(f_scope_std.read_text(), 'scope.csv')
+        seeded = web.seed_policy(f_scope_std.read_text(), 'scope.csv')
 
         out = edit.apply(seeded, 'add_category', dict(cat='hw'))
 
@@ -109,7 +109,7 @@ class TestCategory:
         assert cfg(out).cat_weight_dict == {'hw': 70, 'exam': 40}
 
     def test_weight_is_written_without_a_decimal(self):
-        """ a widget hands over 70.0; nobody types that into a config """
+        """ a widget hands over 70.0; nobody types that into a policy """
         out = edit.apply(YAML_FULL, 'set_weight', dict(cat='hw', weight=70.0))
 
         assert 'hw: 70' in out
@@ -120,10 +120,10 @@ class TestCategory:
             cat='hw', late_dict={'penalty_per_day': .1}))
         out = edit.apply(out, 'remove_category', dict(cat='hw'))
 
-        config = cfg(out)
-        assert config.cat_weight_dict == {'exam': 40}
-        assert config.cat_drop_dict == {}
-        assert config.cat_late_dict == {}
+        policy = cfg(out)
+        assert policy.cat_weight_dict == {'exam': 40}
+        assert policy.cat_drop_dict == {}
+        assert policy.cat_late_dict == {}
 
     def test_removing_the_last_one_leaves_a_readable_file(self):
         out = YAML_FULL
@@ -200,12 +200,12 @@ class TestWaive:
         out = edit.apply('', 'set_waive', dict(
             email='a@u.edu', ass_list=['hw1'], field='waive_late'))
 
-        config = cfg(out)
-        assert config.late_waive_dict == {'a@u.edu': ['hw1']}
-        assert config.waive_dict == {}
+        policy = cfg(out)
+        assert policy.late_waive_dict == {'a@u.edu': ['hw1']}
+        assert policy.waive_dict == {}
 
     def test_a_made_up_section_is_refused(self):
-        with pytest.raises(ConfigError, match='waiver section'):
+        with pytest.raises(PolicyError, match='waiver section'):
             edit.apply('', 'set_waive', dict(
                 email='a@u.edu', ass_list=['hw1'], field='waive_everything'))
 
@@ -316,7 +316,7 @@ category:
 
     def test_without_a_late_penalty_it_is_refused(self):
         """ it would be a setting under a category nothing penalises """
-        with pytest.raises(ConfigError, match='no late penalty'):
+        with pytest.raises(PolicyError, match='no late penalty'):
             edit.apply('category:\n  weight:\n    hw: 100\n',
                        'set_excuse_offset',
                        dict(cat='hw', email='a@u.edu', days=3))
@@ -376,16 +376,16 @@ class TestEmailList:
 
 class TestBadInput:
     def test_unknown_edit(self):
-        with pytest.raises(ConfigError, match='not an edit'):
+        with pytest.raises(PolicyError, match='not an edit'):
             edit.apply('', 'set_everything', dict())
 
     def test_unreadable_yaml(self):
-        with pytest.raises(ConfigError, match='could not read'):
+        with pytest.raises(PolicyError, match='could not read'):
             edit.apply('category:\n\tweight: 1\n', 'add_category',
                        dict(cat='hw'))
 
     def test_a_document_that_is_not_a_mapping(self):
-        with pytest.raises(ConfigError, match='mapping'):
+        with pytest.raises(PolicyError, match='mapping'):
             edit.apply('- one\n- two\n', 'add_category', dict(cat='hw'))
 
     def test_empty_document_is_fine(self):

@@ -23,12 +23,12 @@ import pandas as pd
 N_BIN = 30
 
 
-def build_view(gradebook, config, df_final, df_raw):
+def build_view(gradebook, policy, df_final, df_raw):
     """ every series the inspector can draw, in one payload
 
     Args:
-        gradebook (Gradebook): after config.prepare
-        config (Config): the policy df_final was computed with
+        gradebook (Gradebook): after policy.prepare
+        policy (Policy): the policy df_final was computed with
         df_final (pd.DataFrame): average_full with the policy applied
         df_raw (pd.DataFrame): average_full with no drops or late penalties
 
@@ -38,7 +38,7 @@ def build_view(gradebook, config, df_final, df_raw):
     view_list = [dict(key='total', label='final grade', kind='total')]
     value_dict = {'total': _pair(df_final.get('mean'), df_raw.get('mean'))}
 
-    for cat in config.cat_weight_dict:
+    for cat in policy.cat_weight_dict:
         key = f'cat:{cat}'
         col = f'mean_{cat}'
         view_list.append(dict(key=key, label=cat, kind='category'))
@@ -54,17 +54,17 @@ def build_view(gradebook, config, df_final, df_raw):
     return dict(view_list=view_list, value_dict=value_dict)
 
 
-def build_table(gradebook, config):
+def build_table(gradebook, policy):
     """ one row per assignment: what it is worth, and what the class did
 
-    The weights are the ones the config implies, not the ones any particular
+    The weights are the ones the policy implies, not the ones any particular
     student got: inside a category assignments are weighted by their points,
     and drop_low then removes whichever is worst *for that student*, so a
     single number here would be a lie for everybody it wasn't computed on.
 
     Args:
-        gradebook (Gradebook): after config.prepare
-        config (Config): the policy
+        gradebook (Gradebook): after policy.prepare
+        policy (Policy): the policy
 
     Returns:
         row_list (list): dicts, in category then assignment order
@@ -72,7 +72,7 @@ def build_table(gradebook, config):
     ass_list = list(gradebook.ass_list)
     n_student = len(gradebook.df_perc)
 
-    weight_dict = config.cat_weight_dict
+    weight_dict = policy.cat_weight_dict
     total = sum(weight_dict.values()) or 1
 
     # no categories: every assignment is weighted by its own points, which is

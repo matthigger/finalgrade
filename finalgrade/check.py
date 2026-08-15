@@ -1,6 +1,6 @@
-""" what a config would do to a gradebook, without computing any grades
+""" what a policy would do to a gradebook, without computing any grades
 
-The config's hardest question is which assignments a category catches:
+The policy's hardest question is which assignments a category catches:
 categories match by substring, so `hw: 50` quietly takes in `hw1` and also
 `review_hw` -- and you only found out by running the thing and reading the
 warnings that scrolled past.  Report() answers that question up front.
@@ -12,13 +12,13 @@ also computes.
 import warnings
 from dataclasses import dataclass, field
 
-from .errors import GradescopeMeanError
+from .errors import FinalgradeError
 from .gradebook import Gradebook
 
 
 @dataclass
 class AssignmentRow:
-    """ one assignment, and what the config does with it """
+    """ one assignment, and what the policy does with it """
     name: str
     points: float = None
     n_complete: int = None
@@ -48,7 +48,7 @@ class CategoryRow:
 
 @dataclass
 class Report:
-    """ a config and a gradebook, as far as they can be checked together """
+    """ a policy and a gradebook, as far as they can be checked together """
     f_grade: str = ''
     source: str = 'gradescope'
     n_student: int = 0
@@ -57,6 +57,11 @@ class Report:
     cat_list: list = field(default_factory=list)
     error_list: list = field(default_factory=list)
     warn_list: list = field(default_factory=list)
+    # problems that belong to one assignment, so a reader can be shown them
+    # against that assignment rather than in a list somewhere else.  they are
+    # not repeated in warn_list: a complaint in two places is read twice and
+    # fixed once
+    ass_problem_dict: dict = field(default_factory=dict)
     # true when no category is weighted: every assignment counts by points
     weight_by_point: bool = False
 
@@ -65,15 +70,15 @@ class Report:
         return not self.error_list
 
 
-def build_report(config, f_grade):
+def build_report(policy, f_grade):
     """ runs everything but the averaging, and says what happened
 
     Problems are collected rather than raised: a check that stops at the first
     error can only ever show you one, and the whole point is to see the shape
-    of the config at once.
+    of the policy at once.
 
     Args:
-        config (Config): grading policy
+        policy (Policy): grading policy
         f_grade (str): a gradescope or canvas csv
 
     Returns:
@@ -89,7 +94,7 @@ def build_report(config, f_grade):
         warnings.simplefilter('always')
         try:
             gradebook = Gradebook.from_file(f_grade)
-        except GradescopeMeanError as e:
+        except FinalgradeError as e:
             report.error_list.append(str(e))
             return report
         finally:
@@ -105,8 +110,8 @@ def build_report(config, f_grade):
     with warnings.catch_warnings(record=True) as warn_list:
         warnings.simplefilter('always')
         try:
-            config.prepare(gradebook, record=record)
-        except GradescopeMeanError as e:
+            policy.prepare(gradebook, record=record)
+        except FinalgradeError as e:
             report.error_list.append(str(e))
         finally:
             report.warn_list += [str(w.message) for w in warn_list]
@@ -114,8 +119,8 @@ def build_report(config, f_grade):
     report.n_student = len(gradebook.df_perc)
     complete = (gradebook.df_perc.fillna(0) != 0).sum()
 
-    cat_ass_dict = _get_cat_ass_dict(config, gradebook)
-    report.weight_by_point = not config.cat_weight_dict
+    cat_ass_dict = _get_cat_ass_dict(policy, gradebook)
+    report.weight_by_point = not policy.cat_weight_dict
 
     for ass in gradebook.ass_list:
         report.ass_list.append(AssignmentRow(
@@ -137,30 +142,30 @@ def build_report(config, f_grade):
             n_student=n_student_0 if has_stat else None,
             excluded_by=reason))
 
-    weight_sum = sum(config.cat_weight_dict.values()) or 1
-    for cat, weight in config.cat_weight_dict.items():
+    weight_sum = sum(policy.cat_weight_dict.values()) or 1
+    for cat, weight in policy.cat_weight_dict.items():
         report.cat_list.append(CategoryRow(
             name=cat,
             weight=weight,
             weight_frac=weight / weight_sum,
-            drop_low=config.cat_drop_dict.get(cat, 0),
-            late=config.cat_late_dict.get(cat),
+            drop_low=policy.cat_drop_dict.get(cat, 0),
+            late=policy.cat_late_dict.get(cat),
             ass_list=cat_ass_dict[cat]))
 
-    _add_problem(report, config, gradebook)
+    _add_problem(report, policy, gradebook)
 
     return report
 
 
-def _get_cat_ass_dict(config, gradebook):
+def _get_cat_ass_dict(policy, gradebook):
     """ category -> assignments it catches, exactly as average() computes it
     """
     ass_list = list(gradebook.ass_list)
     return {cat: [ass for ass in ass_list if cat in ass]
-            for cat in config.cat_weight_dict}
+            for cat in policy.cat_weight_dict}
 
 
-def _add_problem(report, config, gradebook):
+def _add_problem(report, policy, gradebook):
     """ the checks average() makes, as report entries rather than exceptions
     """
     empty_list = sorted(cat.name for cat in report.cat_list
@@ -170,25 +175,29 @@ def _add_problem(report, config, gradebook):
             f'category matches no assignment: {", ".join(empty_list)} '
             f'(assignments are: {", ".join(a.name for a in report.ass_list)})')
 
-    if config.cat_late_dict and not gradebook.has_lateness:
+    if policy.cat_late_dict and not gradebook.has_lateness:
         report.error_list.append(
-            f'late_penalty configured for '
-            f'{", ".join(sorted(config.cat_late_dict))}, but a canvas csv '
+            f'late_penalty set for '
+            f'{", ".join(sorted(policy.cat_late_dict))}, but a canvas csv '
             'export records no submission times')
 
-    if config.cat_weight_dict:
-        none_list = [a.name for a in report.ass_list if not a.cat_list]
-        if none_list:
-            report.warn_list.append(
-                f'assignment not in any category: {", ".join(none_list)}')
-
-        many_list = [a.name for a in report.ass_list if len(a.cat_list) > 1]
-        if many_list:
-            report.warn_list.append(
-                f'assignment in multiple categories: {", ".join(many_list)}')
+    if policy.cat_weight_dict:
+        for ass in report.ass_list:
+            if not ass.cat_list:
+                _blame(report, ass.name,
+                       'in no category, so it is not counted at all')
+            elif len(ass.cat_list) > 1:
+                _blame(report, ass.name,
+                       'in more than one category, so it counts twice: '
+                       + ', '.join(ass.cat_list))
 
     if not report.ass_list:
         report.error_list.append('no assignment is left to grade')
+
+
+def _blame(report, ass, problem):
+    """ files a problem against the assignment it is about """
+    report.ass_problem_dict.setdefault(ass, []).append(problem)
 
 
 def _fmt_late(late):
@@ -287,7 +296,7 @@ def render(report):
             line_list.append(f'warn : {s}')
 
     line_list.append('')
-    line_list.append('config looks usable' if report.ok
-                     else 'config has an error, grading would stop here')
+    line_list.append('policy looks usable' if report.ok
+                     else 'policy has an error, grading would stop here')
 
     return '\n'.join(line_list)

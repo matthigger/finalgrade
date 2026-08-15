@@ -28,7 +28,7 @@ hypothesis = "^6.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
-# warnings are part of this package's user interface (missing emails, config
+# warnings are part of this package's user interface (missing emails, policy
 # problems).  make them loud in the test suite so they can't be ignored.
 filterwarnings = ["error"]
 

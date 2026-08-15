@@ -1,7 +1,7 @@
-""" a new config that already knows the course's assignment names
+""" a new policy that already knows the course's assignment names
 
 The seeded block is comments, so these tests care about two things only: that
-the names in it are the ones the config would have to use, and that reading
+the names in it are the ones the policy would have to use, and that reading
 the file back yields exactly the same policy as the packaged default (the
 guess must not grade anybody until someone uncomments it).
 """
@@ -9,7 +9,7 @@ import warnings
 
 import pytest
 
-from finalgrade.config import F_CONFIG_DEFAULT, Config
+from finalgrade.policy import F_POLICY_DEFAULT, Policy
 from finalgrade.gradebook import Gradebook
 from finalgrade.seed import guess_cat_list, seed_text
 
@@ -20,7 +20,7 @@ from test_canvas_read import write_canvas
 def text_seed(f_scope_std):
     gradebook = Gradebook.from_file(str(f_scope_std))
     return seed_text(gradebook, str(f_scope_std),
-                     F_CONFIG_DEFAULT.read_text())
+                     F_POLICY_DEFAULT.read_text())
 
 
 class TestGuess:
@@ -57,25 +57,25 @@ class TestSeedText:
 
     def test_names_them_as_the_config_must_spell_them(self, f_scope_std,
                                                       text_seed):
-        """ the csv says 'HW1'; a config has to say hw1 """
+        """ the csv says 'HW1'; a policy has to say hw1 """
         assert 'HW1' not in text_seed
         assert 'hw1' in text_seed
 
     def test_guess_is_commented_out(self, text_seed, tmp_path):
         """ an uninvited weight is a wrong grade, so it must not take effect
         """
-        f_config = tmp_path / 'seeded.yaml'
-        f_config.write_text(text_seed)
+        f_policy = tmp_path / 'seeded.yaml'
+        f_policy.write_text(text_seed)
 
-        assert Config.from_file(f_config).cat_weight_dict == {}
+        assert Policy.from_file(f_policy).cat_weight_dict == {}
 
     def test_reads_back_as_the_packaged_default(self, text_seed, tmp_path):
         f_seed = tmp_path / 'seeded.yaml'
         f_seed.write_text(text_seed)
 
-        config_seed = Config.from_file(f_seed)
-        config_default = Config.from_file(F_CONFIG_DEFAULT)
-        assert config_seed == config_default
+        policy_seed = Policy.from_file(f_seed)
+        policy_default = Policy.from_file(F_POLICY_DEFAULT)
+        assert policy_seed == policy_default
 
     def test_guess_shows_what_each_category_would_catch(self, text_seed):
         line = next(ln for ln in text_seed.splitlines()
@@ -100,7 +100,7 @@ class TestSeedText:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
             gradebook = Gradebook.from_file(str(f_scope))
-        text = seed_text(gradebook, str(f_scope), F_CONFIG_DEFAULT.read_text())
+        text = seed_text(gradebook, str(f_scope), F_POLICY_DEFAULT.read_text())
 
         assert 'worth 0 points: survey' in text
 
@@ -109,7 +109,7 @@ class TestSeedCanvas:
     def test_uses_canvas_assignment_groups(self, tmp_path):
         gradebook = Gradebook.from_file(write_canvas(tmp_path / 'canvas.csv'))
         text = seed_text(gradebook, 'canvas.csv',
-                         F_CONFIG_DEFAULT.read_text())
+                         F_POLICY_DEFAULT.read_text())
 
         assert 'your canvas assignment groups' in text
         # 'HW Current Points' is a rollup for a group named HW
@@ -127,31 +127,31 @@ class TestSeedCanvas:
 
 class TestResolveConfig:
     def test_new_config_is_seeded(self, f_scope_std):
-        Config.resolve_config(f_scope_std.parent, f_grade=str(f_scope_std))
+        Policy.resolve_policy(f_scope_std.parent, f_grade=str(f_scope_std))
 
-        text = (f_scope_std.parent / 'config.yaml').read_text()
+        text = (f_scope_std.parent / 'policy.yaml').read_text()
         assert 'quiz1' in text
 
     def test_without_a_csv_the_packaged_default_is_copied(self, tmp_path):
-        Config.resolve_config(tmp_path)
+        Policy.resolve_policy(tmp_path)
 
-        assert (tmp_path / 'config.yaml').read_text() == \
-            F_CONFIG_DEFAULT.read_text()
+        assert (tmp_path / 'policy.yaml').read_text() == \
+            F_POLICY_DEFAULT.read_text()
 
     def test_unreadable_csv_still_yields_a_config(self, tmp_path):
         """ failing to be helpful must not stop the tool working """
         f_csv = tmp_path / 'nonsense.csv'
         f_csv.write_text('not,a,gradebook\n1,2,3\n')
 
-        Config.resolve_config(tmp_path, f_grade=str(f_csv))
+        Policy.resolve_policy(tmp_path, f_grade=str(f_csv))
 
-        assert (tmp_path / 'config.yaml').read_text() == \
-            F_CONFIG_DEFAULT.read_text()
+        assert (tmp_path / 'policy.yaml').read_text() == \
+            F_POLICY_DEFAULT.read_text()
 
-    def test_existing_config_is_left_alone(self, f_scope_std, write_config):
-        write_config('category:\n  weight:\n    hw: 100\n')
+    def test_existing_config_is_left_alone(self, f_scope_std, write_policy):
+        write_policy('category:\n  weight:\n    hw: 100\n')
 
-        config = Config.resolve_config(f_scope_std.parent,
+        policy = Policy.resolve_policy(f_scope_std.parent,
                                        f_grade=str(f_scope_std))
 
-        assert config.cat_weight_dict == {'hw': 100}
+        assert policy.cat_weight_dict == {'hw': 100}

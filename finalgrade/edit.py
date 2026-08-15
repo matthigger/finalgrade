@@ -1,4 +1,4 @@
-""" editing a config file without losing what the user wrote around it
+""" editing a policy file without losing what the user wrote around it
 
 The browser's widgets and the yaml textarea are the same document: a widget
 edits the file, and the file is what grading reads.  That only works if an
@@ -9,7 +9,7 @@ so the seeded assignment list and anyone's own notes survive being edited by
 a form.
 
 Each edit is small and total: given a document and a few values, produce the
-document that says the new thing.  Nothing here validates policy; Config
+document that says the new thing.  Nothing here validates policy; Policy
 does that when the result is read back.
 """
 import io
@@ -17,22 +17,22 @@ import io
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 
-from .errors import ConfigError
+from .errors import PolicyError
 
 # round trip: the default mode, spelled out because it is the whole point
 yaml_rt = YAML()
 yaml_rt.preserve_quotes = True
-# the seeded config's comment table is wide; don't let dumping reflow it
+# the seeded policy's comment table is wide; don't let dumping reflow it
 yaml_rt.width = 4096
 
 LATE_DEFAULT = {'penalty_per_day': .1, 'excuse_day': 0}
 
 
 def load(text):
-    """ a config document, comments and all
+    """ a policy document, comments and all
 
     Args:
-        text (str): contents of a config.yaml
+        text (str): contents of a policy.yaml
 
     Returns:
         data (CommentedMap)
@@ -40,17 +40,17 @@ def load(text):
     try:
         data = yaml_rt.load(text or '')
     except Exception as e:
-        raise ConfigError(f'could not read config: {e}') from e
+        raise PolicyError(f'could not read policy: {e}') from e
 
     if data is None:
         return CommentedMap()
     if not isinstance(data, dict):
-        raise ConfigError('config must be a mapping of settings')
+        raise PolicyError('policy must be a mapping of settings')
     return data
 
 
 def dump(data):
-    """ a config document back to text """
+    """ a policy document back to text """
     stream = io.StringIO()
     yaml_rt.dump(data, stream)
     return stream.getvalue()
@@ -97,7 +97,7 @@ def _section(data, *key_tup):
 
 
 def _clear_if_empty(data, *key_tup):
-    """ an emptied section reads as null, the way the packaged config does """
+    """ an emptied section reads as null, the way the packaged policy does """
     node = data
     for key in key_tup[:-1]:
         node = node.get(key)
@@ -184,7 +184,7 @@ def set_excuse_offset(data, cat, email, days):
     late_dict = data.get('category', {}).get('late_penalty') \
         if isinstance(data.get('category'), dict) else None
     if not isinstance(late_dict, dict) or cat not in late_dict:
-        raise ConfigError(
+        raise PolicyError(
             f'no late penalty on category "{cat}" to excuse days against')
 
     if days:
@@ -211,7 +211,7 @@ def set_waive(data, email, ass_list, field='waive'):
     term's worth of waivers readable.
     """
     if field not in ('waive', 'waive_late'):
-        raise ConfigError(f'not a waiver section: {field}')
+        raise PolicyError(f'not a waiver section: {field}')
 
     section = _section(data, field)
     if ass_list:
@@ -270,7 +270,7 @@ def set_grade_thresh(data, thresh_list):
         return
 
     # highest first, which is the order a reader expects and the order the
-    # packaged config ships in
+    # packaged policy ships in
     pair_list = sorted(((row['perc'], str(row['letter']))
                         for row in thresh_list), reverse=True)
 
@@ -302,19 +302,19 @@ ACTION_DICT = {
 
 
 def apply(text, action, arg_dict=None):
-    """ applies one named edit to a config document
+    """ applies one named edit to a policy document
 
     Args:
-        text (str): contents of a config.yaml
+        text (str): contents of a policy.yaml
         action (str): a key of ACTION_DICT
         arg_dict (dict): keyword arguments for it
 
     Returns:
-        text (str): the edited config
+        text (str): the edited policy
     """
     fn = ACTION_DICT.get(action)
     if fn is None:
-        raise ConfigError(f'not an edit this understands: {action}')
+        raise PolicyError(f'not an edit this understands: {action}')
 
     data = load(text)
     fn(data, **(arg_dict or {}))

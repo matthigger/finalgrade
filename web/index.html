@@ -25,24 +25,21 @@
         category weights, dropped lowests, late penalties,
         per&#8209;student waivers.</p>
       <p class="policy-note">
-        <strong>Your whole grading policy is one small file.</strong>
-        Every weight, dropped lowest, late penalty and waiver you set here is
-        written to a <code>config.yaml</code> you can download and keep —
-        hand it to a TA, put it in your syllabus repo, or drop it back on
-        this page next term and pick up where you left off. The command line
-        tool reads the very same file, so nothing here is a dead end.
+        <strong>Your whole grading policy in one yaml file.</strong>
+        Every weight, dropped lowest, late penalty and waiver is stored in
+        <code>policy.yaml</code>. Download this file when complete, then
+        re-upload to pick up where you left off.
       </p>
       <p class="privacy">
         <strong>Your grades never leave this computer:</strong>
-        it all runs inside this page. (Try disabling the network after it
-        loads.)
+        it all runs inside this page.
       </p>
     </div>
 
     <div id="drop" class="drop">
       <p class="drop-main">Drop a file here</p>
       <p class="drop-sub">a gradebook <code>.csv</code> or a saved
-        <code>config.yaml</code></p>
+        <code>policy.yaml</code></p>
       <p class="drop-how">
         <span class="where">Gradescope</span>
         Assignments &rsaquo; Download Grades &rsaquo; CSV<br>
@@ -131,7 +128,7 @@
       <div id="stud-card"></div>
 
       <details id="waive-all">
-        <summary>waivers in this config <span class="sub"
+        <summary>waivers in this policy <span class="sub"
           id="waive-count"></span></summary>
         <div id="waive-list"></div>
       </details>
@@ -190,6 +187,12 @@
 
   <div class="panel" id="export-panel">
     <h2>export</h2>
+    <p class="hint">Each of these is a spreadsheet ready to upload to the
+      platform it is named for — the columns and the student ids are already
+      in the shape that platform matches on.</p>
+
+    <div class="row" id="export-row"></div>
+    <p class="hint" id="export-hint"></p>
 
     <div id="canvas-drop" class="drop drop-inline">
       <p id="canvas-drop-msg" class="drop-main">Drop your canvas gradebook
@@ -201,9 +204,6 @@
           file</button></p>
       <input type="file" id="canvas-file" accept=".csv,text/csv" hidden>
     </div>
-
-    <div class="row" id="export-row"></div>
-    <p class="hint" id="export-hint"></p>
 
     <div id="banner-form" hidden>
       <div class="field">

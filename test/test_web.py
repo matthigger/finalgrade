@@ -11,7 +11,7 @@ import pathlib
 import pytest
 
 from finalgrade import web
-from finalgrade.config import Config
+from finalgrade.policy import Policy
 
 
 @pytest.fixture
@@ -64,24 +64,24 @@ class TestLoad:
 
 class TestCheck:
     def test_reports_the_split(self, csv_text):
-        rep = web.check_config(csv_text, YAML_STD)
+        rep = web.check_policy(csv_text, YAML_STD)
 
         assert rep['ok']
         cat_dict = {c['name']: c['ass_list'] for c in rep['cat_list']}
         assert cat_dict == {'hw': ['hw1', 'hw2', 'hw3'], 'quiz': ['quiz1']}
 
     def test_is_plain_data(self, csv_text):
-        assert is_plain(web.check_config(csv_text, YAML_STD))
+        assert is_plain(web.check_policy(csv_text, YAML_STD))
 
     def test_names_the_users_file_not_a_temp_path(self, csv_text):
-        rep = web.check_config(csv_text, YAML_STD, name='spring25.csv')
+        rep = web.check_policy(csv_text, YAML_STD, name='spring25.csv')
 
         assert rep['f_grade'] == 'spring25.csv'
         assert 'spring25.csv' in rep['text']
         assert '/tmp' not in rep['text']
 
     def test_unparseable_yaml_is_a_message(self, csv_text):
-        rep = web.check_config(csv_text, 'category:\n\tweight: 1\n')
+        rep = web.check_policy(csv_text, 'category:\n\tweight: 1\n')
 
         assert not rep['ok']
         assert rep['error_list']
@@ -90,8 +90,8 @@ class TestCheck:
         """ the page must show what `check` shows """
         from finalgrade.check import build_report
 
-        rep_web = web.check_config(csv_text, YAML_STD)
-        rep_cli = build_report(Config(cat_weight_dict={'hw': 50, 'quiz': 50}),
+        rep_web = web.check_policy(csv_text, YAML_STD)
+        rep_cli = build_report(Policy(cat_weight_dict={'hw': 50, 'quiz': 50}),
                                str(f_scope_std))
 
         assert rep_web['ok'] == rep_cli.ok
@@ -114,8 +114,8 @@ class TestGrade:
         """ the whole claim of the browser build, in one assertion """
         res = web.grade(csv_text, YAML_STD)
 
-        config = Config(cat_weight_dict={'hw': 50, 'quiz': 50})
-        gradebook, df_grade = config(str(f_scope_std))
+        policy = Policy(cat_weight_dict={'hw': 50, 'quiz': 50})
+        gradebook, df_grade = policy(str(f_scope_std))
 
         assert res['csv'] == df_grade.to_csv()
 
@@ -143,19 +143,19 @@ class TestGrade:
 
 class TestSeed:
     def test_seeds_from_the_csv(self, csv_text):
-        text = web.seed_config(csv_text, 'scope.csv')
+        text = web.seed_policy(csv_text, 'scope.csv')
 
         assert 'quiz1' in text
         assert 'scope.csv' in text
 
     def test_bad_csv_still_yields_an_editable_config(self):
-        text = web.seed_config('not,a,gradebook\n1,2,3\n')
+        text = web.seed_policy('not,a,gradebook\n1,2,3\n')
 
         assert text == web.default_yaml()
 
     def test_seeded_config_checks_clean(self, csv_text):
         """ what the page puts in the editor must not start out broken """
-        rep = web.check_config(csv_text, web.seed_config(csv_text))
+        rep = web.check_policy(csv_text, web.seed_policy(csv_text))
 
         assert rep['ok']
 
@@ -208,7 +208,7 @@ class TestFormState:
         assert state['waive_list'][0]['ass_list'] == ['hw1', 'hw2']
 
     def test_is_plain_data(self, csv_text):
-        assert is_plain(web.form_state(web.seed_config(csv_text)))
+        assert is_plain(web.form_state(web.seed_policy(csv_text)))
 
     def test_half_typed_yaml_says_so_rather_than_raising(self):
         state = web.form_state('category:\n\tweight: 1\n')
@@ -225,43 +225,43 @@ class TestFormState:
 
 class TestEditConfig:
     def test_applies_an_edit(self):
-        res = web.edit_config('', 'add_category', '{"cat": "hw"}')
+        res = web.edit_policy('', 'add_category', '{"cat": "hw"}')
 
         assert res['ok']
         assert 'hw' in res['yaml']
 
     def test_keeps_the_file_when_an_edit_cannot_apply(self):
         text = 'category:\n\tweight: 1\n'
-        res = web.edit_config(text, 'add_category', '{"cat": "hw"}')
+        res = web.edit_policy(text, 'add_category', '{"cat": "hw"}')
 
         assert not res['ok']
         assert res['yaml'] == text
 
     def test_unknown_action(self):
-        res = web.edit_config('', 'drop_everything', '{}')
+        res = web.edit_policy('', 'drop_everything', '{}')
 
         assert not res['ok']
 
     def test_bad_json_is_a_message(self):
-        res = web.edit_config('', 'add_category', 'not json')
+        res = web.edit_policy('', 'add_category', 'not json')
 
         assert not res['ok']
         assert res['yaml'] == ''
 
     def test_a_policy_built_only_by_edits_grades(self, csv_text, f_scope_std):
         """ end to end: what the widgets produce is what grading reads """
-        yaml_text = web.seed_config(csv_text)
+        yaml_text = web.seed_policy(csv_text)
         for action, args in (
                 ('add_category', '{"cat": "hw"}'),
                 ('add_category', '{"cat": "quiz"}'),
                 ('set_drop_low', '{"cat": "hw", "n": 1}'),
                 ('set_waive', '{"email": "alice@u.edu",'
                               ' "ass_list": ["hw1"]}')):
-            res = web.edit_config(yaml_text, action, args)
+            res = web.edit_policy(yaml_text, action, args)
             assert res['ok'], res['error']
             yaml_text = res['yaml']
 
-        assert web.check_config(csv_text, yaml_text)['ok']
+        assert web.check_policy(csv_text, yaml_text)['ok']
 
         result = web.grade(csv_text, yaml_text)
         assert result['ok']
@@ -334,13 +334,13 @@ class TestStudentCsv:
 
         from finalgrade.__main__ import main, parser
 
-        config = Config(cat_weight_dict={'hw': 50, 'quiz': 50})
-        _, df_grade = config(str(f_scope_std))
-        f_config = tmp_path / 'config.yaml'
-        f_config.write_text(YAML_STD)
+        policy = Policy(cat_weight_dict={'hw': 50, 'quiz': 50})
+        _, df_grade = policy(str(f_scope_std))
+        f_policy = tmp_path / 'policy.yaml'
+        f_policy.write_text(YAML_STD)
 
-        main(parser.parse_args(['grade', str(f_scope_std), '--config',
-                                str(f_config), '--per_student', '-q']))
+        main(parser.parse_args(['grade', str(f_scope_std), '--policy',
+                                str(f_policy), '--per_student', '-q']))
 
         f_cli = f_scope_std.parent / 'per_student' / 'anders_alice.csv'
         res = web.student_csv(csv_text, YAML_STD, 'alice@u.edu')
@@ -374,9 +374,9 @@ class TestNoStrayFiles:
         before_set = set(pathlib.Path(tmp_path).iterdir())
 
         web.load_csv(csv_text)
-        web.check_config(csv_text, YAML_STD)
+        web.check_policy(csv_text, YAML_STD)
         web.grade(csv_text, YAML_STD)
-        web.seed_config(csv_text)
+        web.seed_policy(csv_text)
 
         assert set(pathlib.Path(tmp_path).iterdir()) == before_set
 

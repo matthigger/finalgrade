@@ -1,6 +1,6 @@
-""" a new config.yaml that already knows this course's assignments
+""" a new policy.yaml that already knows this course's assignments
 
-The packaged config.yaml is the same file for everybody: every section null,
+The packaged policy.yaml is the same file for everybody: every section null,
 with examples about student0@uni.edu and a fictional hw1.  So the first thing
 anyone does is invent assignment names and find out later, from a warning,
 that they never matched anything.
@@ -19,7 +19,7 @@ from .check import text_table
 # category: 'hw1' -> 'hw', 'exam-midterm' -> 'exam'
 RE_PREFIX = re.compile(r'[^\W\d_]+')
 
-# where the seeded block is spliced into the packaged config
+# where the seeded block is spliced into the packaged policy
 ANCHOR = 'category:'
 
 
@@ -127,15 +127,15 @@ def _category_block(gradebook):
 
 
 def seed_text(gradebook, f_grade, text_default):
-    """ the packaged config, with this course's assignments written in
+    """ the packaged policy, with this course's assignments written in
 
     Args:
-        gradebook (Gradebook): as read, before any config is applied
+        gradebook (Gradebook): as read, before any policy is applied
         f_grade (str): the csv it was read from, named in the comment
-        text_default (str): contents of the packaged config.yaml
+        text_default (str): contents of the packaged policy.yaml
 
     Returns:
-        text (str): contents for a new config.yaml
+        text (str): contents for a new policy.yaml
     """
     import pathlib
 
@@ -153,6 +153,6 @@ def seed_text(gradebook, f_grade, text_default):
             return ''.join(line_default_list[:idx]) + block + \
                 ''.join(line_default_list[idx:])
 
-    # no anchor: the packaged config was rewritten without a category section.
+    # no anchor: the packaged policy was rewritten without a category section.
     # appending still beats losing the assignment list
     return text_default + '\n' + block

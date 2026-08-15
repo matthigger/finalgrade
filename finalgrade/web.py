@@ -20,14 +20,14 @@ import pandas as pd
 
 from . import edit
 from .check import build_report, render
-from .config import F_CONFIG_DEFAULT, Config
-from .errors import GradescopeMeanError
+from .policy import F_POLICY_DEFAULT, Policy
+from .errors import FinalgradeError
 from .gradebook import Gradebook
 from .inspect import build_table, build_view, histogram
 from .seed import seed_text
 
-__all__ = ['load_csv', 'check_config', 'grade', 'seed_config', 'default_yaml',
-           'form_state', 'edit_config', 'bin_values', 'canvas_export',
+__all__ = ['load_csv', 'check_policy', 'grade', 'seed_policy', 'default_yaml',
+           'form_state', 'edit_policy', 'bin_values', 'canvas_export',
            'banner_export', 'student_csv']
 
 
@@ -60,12 +60,12 @@ def _warn_list(fn):
 
 
 def default_yaml():
-    """ the packaged config, for a page with no csv yet """
-    return F_CONFIG_DEFAULT.read_text()
+    """ the packaged policy, for a page with no csv yet """
+    return F_POLICY_DEFAULT.read_text()
 
 
 def load_csv(csv_text, name='scope.csv'):
-    """ what this csv is, before any config is applied
+    """ what this csv is, before any policy is applied
 
     Args:
         csv_text (str): contents of a gradescope or canvas export
@@ -80,7 +80,7 @@ def load_csv(csv_text, name='scope.csv'):
         try:
             gradebook, warn_list = _warn_list(
                 lambda: Gradebook.from_file(f_csv))
-        except GradescopeMeanError as e:
+        except FinalgradeError as e:
             return dict(ok=False, error=str(e), warn_list=[])
 
         complete = (gradebook.df_perc.fillna(0) != 0).sum()
@@ -114,24 +114,24 @@ def _student_list(gradebook):
             for email in gradebook.df_perc.index]
 
 
-def check_config(csv_text, yaml_text, name='scope.csv'):
-    """ what this config would do to this csv, as plain data
+def check_policy(csv_text, yaml_text, name='scope.csv'):
+    """ what this policy would do to this csv, as plain data
 
     Args:
         csv_text (str): contents of a gradescope or canvas export
-        yaml_text (str): contents of a config.yaml
+        yaml_text (str): contents of a policy.yaml
         name (str): the csv's filename
 
     Returns:
         report (dict): a check.Report, plus its rendered text
     """
-    config, error = _read_config(yaml_text)
-    if config is None:
+    policy, error = _read_policy(yaml_text)
+    if policy is None:
         return dict(ok=False, error_list=[error], warn_list=[],
                     ass_list=[], excluded_list=[], cat_list=[], text=error)
 
     with _Csv(csv_text, name) as f_csv:
-        report = build_report(config=config, f_grade=f_csv)
+        report = build_report(policy=policy, f_grade=f_csv)
 
     out = dataclasses.asdict(report)
     # the page names the file the user picked, not a temp directory
@@ -152,22 +152,22 @@ def grade(csv_text, yaml_text, name='scope.csv'):
 
     Args:
         csv_text (str): contents of a gradescope or canvas export
-        yaml_text (str): contents of a config.yaml
+        yaml_text (str): contents of a policy.yaml
         name (str): the csv's filename
 
     Returns:
         result (dict): ok, the output csv, a distribution, and every series
             the inspector can draw
     """
-    config, error = _read_config(yaml_text)
-    if config is None:
+    policy, error = _read_policy(yaml_text)
+    if policy is None:
         return dict(ok=False, error=error, warn_list=[])
 
     with _Csv(csv_text, name) as f_csv:
         try:
             (gradebook, df_grade, df_raw), warn_list = _warn_list(
-                lambda: _grade_twice(config, f_csv))
-        except GradescopeMeanError as e:
+                lambda: _grade_twice(policy, f_csv))
+        except FinalgradeError as e:
             return dict(ok=False, error=str(e), warn_list=[])
 
     s_mean = df_grade['mean'].dropna()
@@ -185,12 +185,12 @@ def grade(csv_text, yaml_text, name='scope.csv'):
         mean_median=float(s_mean.median()) if len(s_mean) else None,
         # ordered by grade, best first, rather than by how many earned it
         letter_list=[dict(letter=str(letter), n=int(letter_count[letter]))
-                     for letter in _letter_order(config, letter_count)],
-        thresh_list=_thresh_list(config.grade_thresh),
-        student_list=_graded_student_list(gradebook, df_grade, config),
-        row_list=build_table(gradebook, config))
+                     for letter in _letter_order(policy, letter_count)],
+        thresh_list=_thresh_list(policy.grade_thresh),
+        student_list=_graded_student_list(gradebook, df_grade, policy),
+        row_list=build_table(gradebook, policy))
 
-    out.update(build_view(gradebook, config, df_grade, df_raw))
+    out.update(build_view(gradebook, policy, df_grade, df_raw))
     return out
 
 
@@ -203,7 +203,7 @@ def canvas_export(csv_text, yaml_text, canvas_text, name='scope.csv',
 
     Args:
         csv_text (str): the grade source
-        yaml_text (str): contents of a config.yaml
+        yaml_text (str): contents of a policy.yaml
         canvas_text (str): a canvas gradebook export to merge into
         name (str): the source csv's filename
         scale100 (bool): grades out of 100 rather than 1, which avoids
@@ -226,7 +226,7 @@ def canvas_export(csv_text, yaml_text, canvas_text, name='scope.csv',
                 lambda: (canvas_merge(f_canvas=f_canvas, df_grade=df_grade,
                                       rm_gradescope_meta=True,
                                       scale100=scale100), None))
-        except GradescopeMeanError as e:
+        except FinalgradeError as e:
             return dict(ok=False, error=str(e), warn_list=[])
         except Exception as e:
             return dict(ok=False, error=f'could not merge into canvas: {e}',
@@ -245,21 +245,21 @@ def student_csv(csv_text, yaml_text, email, name='scope.csv'):
 
     Args:
         csv_text (str): the grade source
-        yaml_text (str): contents of a config.yaml
+        yaml_text (str): contents of a policy.yaml
         email (str): the student, as the gradebook keys them
         name (str): the source csv's filename
 
     Returns:
         result (dict): ok, the csv text, and a filename to save it under
     """
-    config, error = _read_config(yaml_text)
-    if config is None:
+    policy, error = _read_policy(yaml_text)
+    if policy is None:
         return dict(ok=False, error=error)
 
     with _Csv(csv_text, name) as f_csv:
         try:
-            df_grade, _ = _warn_list(lambda: config(f_csv)[1])
-        except GradescopeMeanError as e:
+            df_grade, _ = _warn_list(lambda: policy(f_csv)[1])
+        except FinalgradeError as e:
             return dict(ok=False, error=str(e))
 
     if email not in df_grade.index:
@@ -299,7 +299,7 @@ def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
 
     Args:
         csv_text (str): the grade source
-        yaml_text (str): contents of a config.yaml
+        yaml_text (str): contents of a policy.yaml
         term_code (str): banner's 6 digit term, e.g. '202310'
         crn_json (str): json list of 5 digit CRNs
         name (str): the source csv's filename
@@ -341,30 +341,29 @@ def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
                 n_row=len(df_out))
 
 
-def _grade_twice(config, f_csv):
+def _grade_twice(policy, f_csv):
     """ the prepared gradebook, averaged with the policy and without it """
     gradebook = Gradebook.from_file(f_csv)
-    config.prepare(gradebook)
+    policy.prepare(gradebook)
 
     def average(cat_drop_dict, cat_late_dict):
         return gradebook.average_full(
-            cat_weight_dict=config.cat_weight_dict,
+            cat_weight_dict=policy.cat_weight_dict,
             cat_drop_dict=cat_drop_dict,
             cat_late_dict=cat_late_dict,
-            grade_thresh=config.grade_thresh,
-            late_waive_dict=config.late_waive_dict)
+            grade_thresh=policy.grade_thresh,
+            late_waive_dict=policy.late_waive_dict)
 
-    df_grade = average(config.cat_drop_dict, config.cat_late_dict)
+    df_grade = average(policy.cat_drop_dict, policy.cat_late_dict)
     df_raw = average(dict(), dict())
     return gradebook, df_grade, df_raw
 
 
-def _graded_student_list(gradebook, df_grade, config):
+def _graded_student_list(gradebook, df_grade, policy):
     """ one row per student: who they are and what they got """
-    import pandas as pd
-
     meta = gradebook.df_meta
-    cat_list = list(config.cat_weight_dict)
+    cat_list = list(policy.cat_weight_dict)
+    late_dict, day_dict = _late_detail(gradebook, policy)
 
     def val(row, col):
         if col not in df_grade.columns:
@@ -383,12 +382,60 @@ def _graded_student_list(gradebook, df_grade, config):
             mean=val(row, 'mean'),
             letter=str(row['letter']) if 'letter' in df_grade.columns else '',
             cat_dict={cat: val(row, f'mean_{cat}') for cat in cat_list},
-            ass_dict={ass: val(row, ass) for ass in gradebook.ass_list}))
+            ass_dict={ass: val(row, ass) for ass in gradebook.ass_list},
+            late_dict={cat: d.get(email) for cat, d in late_dict.items()},
+            late_day_dict=day_dict.get(email, {})))
     return out_list
 
 
-def seed_config(csv_text, name='scope.csv'):
-    """ a config.yaml written for this csv's assignments
+def _late_detail(gradebook, policy):
+    """ what the late penalty did to each student, per category
+
+    A category mean carries its late penalty inside it, so a student looking
+    at 78% cannot see whether it is a 78% or an 86% with two unexcused days
+    against it.  This is the arithmetic that turns one into the other.
+
+    Returns:
+        late_dict (dict): category -> email -> the days and the penalty
+        day_dict (dict): email -> assignment -> late days used
+    """
+    if not policy.cat_late_dict or not gradebook.has_lateness:
+        return dict(), dict()
+
+    late_dict = dict()
+    for cat, kwargs in policy.cat_late_dict.items():
+        try:
+            s_unexcused, s_penalty = gradebook.get_late_penalty(
+                cat=cat, waive_dict=policy.late_waive_dict, **kwargs)
+        except FinalgradeError:
+            continue
+
+        excused = kwargs.get('excuse_day', 0) or 0
+        offset_dict = kwargs.get('excuse_day_offset') or {}
+
+        late_dict[cat] = {}
+        for email in gradebook.df_perc.index:
+            unexcused = float(s_unexcused.get(email, 0))
+            allowed = excused + float(offset_dict.get(email, 0))
+            late_dict[cat][str(email)] = dict(
+                # unexcused is days used minus days allowed, so used is the
+                # sum of the two -- the number a student actually recognises
+                days_used=round(unexcused + allowed, 2),
+                days_excused=allowed,
+                days_unexcused=max(round(unexcused, 2), 0),
+                penalty=float(s_penalty.get(email, 0)))
+
+    df_day = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
+    day_dict = {
+        str(email): {ass: float(v) for ass, v in row.items()
+                     if pd.notna(v) and v}
+        for email, row in df_day.iterrows()}
+
+    return late_dict, day_dict
+
+
+def seed_policy(csv_text, name='scope.csv'):
+    """ a policy.yaml written for this csv's assignments
 
     Returns the packaged default when the csv can't be read: an editable
     file beats an error raised while trying to be helpful about one.
@@ -402,21 +449,21 @@ def seed_config(csv_text, name='scope.csv'):
 
 
 def form_state(yaml_text):
-    """ the config as the widgets need it: sections, in file order
+    """ the policy as the widgets need it: sections, in file order
 
-    Read from the file rather than from a Config, so that a half-typed
-    policy still draws something.  Whether it is *valid* is check_config's
+    Read from the file rather than from a Policy, so that a half-typed
+    policy still draws something.  Whether it is *valid* is check_policy's
     question, and the page asks that separately.
 
     Args:
-        yaml_text (str): contents of a config.yaml
+        yaml_text (str): contents of a policy.yaml
 
     Returns:
         state (dict): ok, and one entry per section the widgets edit
     """
     try:
         data = _plain(edit.load(yaml_text))
-    except GradescopeMeanError as e:
+    except FinalgradeError as e:
         return dict(ok=False, error=str(e))
 
     cat_dict = data.get('category') or {}
@@ -486,7 +533,7 @@ def _thresh_list(section):
         try:
             pair_list.append((float(perc), str(letter)))
         except (TypeError, ValueError):
-            # a threshold that isn't a number: Config will refuse it, and
+            # a threshold that isn't a number: Policy will refuse it, and
             # saying so is check's job, not this one's
             continue
 
@@ -494,7 +541,7 @@ def _thresh_list(section):
             for perc, letter in sorted(pair_list, reverse=True)]
 
 
-def edit_config(yaml_text, action, args_json='{}'):
+def edit_policy(yaml_text, action, args_json='{}'):
     """ applies one widget edit, keeping the rest of the file as written
 
     Arguments arrive as json rather than as keywords: it is one unambiguous
@@ -502,7 +549,7 @@ def edit_config(yaml_text, action, args_json='{}'):
     object alive on the other side.
 
     Args:
-        yaml_text (str): contents of a config.yaml
+        yaml_text (str): contents of a policy.yaml
         action (str): a key of edit.ACTION_DICT
         args_json (str): json object of keyword arguments
 
@@ -513,7 +560,7 @@ def edit_config(yaml_text, action, args_json='{}'):
         arg_dict = json.loads(args_json or '{}')
         return dict(ok=True, error=None,
                     yaml=edit.apply(yaml_text, action, arg_dict))
-    except GradescopeMeanError as e:
+    except FinalgradeError as e:
         return dict(ok=False, error=str(e), yaml=yaml_text)
     except Exception as e:
         return dict(ok=False, error=f'could not apply that edit: {e}',
@@ -563,11 +610,11 @@ def _plain(obj):
     return obj
 
 
-def _letter_order(config, letter_count):
+def _letter_order(policy, letter_count):
     """ the letters actually earned, ordered by the threshold earning them """
     from .perc_to_letter import GRADE_THRESH
 
-    thresh_dict = config.grade_thresh or GRADE_THRESH
+    thresh_dict = policy.grade_thresh or GRADE_THRESH
     order_list = [letter for _, letter in
                   sorted(thresh_dict.items(), reverse=True)]
 
@@ -577,16 +624,16 @@ def _letter_order(config, letter_count):
     return ordered_list + sorted(seen_set - set(ordered_list))
 
 
-def _read_config(yaml_text):
-    """ a Config from yaml text, or (None, why not) """
+def _read_policy(yaml_text):
+    """ a Policy from yaml text, or (None, why not) """
     folder = tempfile.TemporaryDirectory()
     try:
-        f_yaml = pathlib.Path(folder.name) / 'config.yaml'
+        f_yaml = pathlib.Path(folder.name) / 'policy.yaml'
         f_yaml.write_text(yaml_text)
-        return Config.from_file(f_yaml), None
-    except GradescopeMeanError as e:
+        return Policy.from_file(f_yaml), None
+    except FinalgradeError as e:
         return None, str(e)
     except Exception as e:
-        return None, f'could not read config: {e}'
+        return None, f'could not read policy: {e}'
     finally:
         folder.cleanup()

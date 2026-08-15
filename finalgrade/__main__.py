@@ -9,7 +9,7 @@ from collections import Counter
 import pandas as pd
 
 import finalgrade
-from finalgrade.errors import GradescopeMeanError
+from finalgrade.errors import FinalgradeError
 
 logger = logging.getLogger('finalgrade')
 
@@ -32,13 +32,13 @@ grade_parser.add_argument(
          'gradebook export (Grades > Export); the two are told apart by '
          'their columns')
 grade_parser.add_argument(
-    '--config', dest='f_config', default=None,
-    help='YAML configuration file. If omitted and config.yaml exists in the '
+    '--policy', dest='f_policy', default=None,
+    help='YAML policy file. If omitted and policy.yaml exists in the '
          'same directory as the CSV it will be used; otherwise the default '
-         'config is copied there. Use --new-config to force a fresh copy.')
+         'policy is copied there. Use --new-policy to force a fresh copy.')
 grade_parser.add_argument(
-    '--new-config', dest='new_config', action='store_true',
-    help='force creation of a fresh default config.yaml (ignores existing)')
+    '--new-policy', dest='new_policy', action='store_true',
+    help='force creation of a fresh default policy.yaml (ignores existing)')
 grade_parser.add_argument(
     '-o', '--output', dest='f_output', default=None,
     help='output CSV path (default: grade_full.csv in same directory as '
@@ -60,14 +60,14 @@ grade_parser.add_argument(
 # ---------- "check" subcommand ----------
 check_parser = subparsers.add_parser(
     'check',
-    help='show which assignments each category catches, and what the config '
+    help='show which assignments each category catches, and what the policy '
          'would do, without computing any grades')
 check_parser.add_argument(
     'f_scope', type=str,
     help='Gradescope CSV, or a Canvas gradebook export')
 check_parser.add_argument(
-    '--config', dest='f_config', default=None,
-    help='YAML configuration file (default: config.yaml beside the CSV)')
+    '--policy', dest='f_policy', default=None,
+    help='YAML policy file (default: policy.yaml beside the CSV)')
 check_parser.add_argument(
     '-q', '--quiet', action='store_true',
     help='suppress informational output')
@@ -113,7 +113,7 @@ banner_parser.add_argument(
 
 
 def _setup_logging(quiet):
-    """Configure logging level based on --quiet flag."""
+    """Set logging level based on --quiet flag."""
     level = logging.WARNING if quiet else logging.INFO
     logging.basicConfig(level=level, format='%(message)s', force=True)
 
@@ -126,10 +126,10 @@ def _safe_stem(text):
 
 
 def _resolve_config(args, folder, force_new=False):
-    """The config named by --config, or the one beside the csv."""
-    if args.f_config is not None:
-        return finalgrade.Config.from_file(args.f_config)
-    return finalgrade.Config.resolve_config(
+    """The policy named by --policy, or the one beside the csv."""
+    if args.f_policy is not None:
+        return finalgrade.Policy.from_file(args.f_policy)
+    return finalgrade.Policy.resolve_policy(
         folder, f_grade=args.f_scope, force_new=force_new)
 
 
@@ -138,9 +138,9 @@ def cmd_check(args):
     _setup_logging(quiet=True)
 
     folder = pathlib.Path(args.f_scope).resolve().parent
-    config = _resolve_config(args, folder)
+    policy = _resolve_config(args, folder)
 
-    report = finalgrade.build_report(config=config, f_grade=args.f_scope)
+    report = finalgrade.build_report(policy=policy, f_grade=args.f_scope)
     print(finalgrade.render(report))
 
     if not report.ok:
@@ -152,10 +152,10 @@ def cmd_grade(args):
     _setup_logging(args.quiet)
 
     folder = pathlib.Path(args.f_scope).resolve().parent
-    config = _resolve_config(args, folder, force_new=args.new_config)
+    policy = _resolve_config(args, folder, force_new=args.new_policy)
 
     # process
-    gradebook, df_grade_full = config(f_scope=args.f_scope)
+    gradebook, df_grade_full = policy(f_scope=args.f_scope)
 
     # output
     f_output = args.f_output or str(folder / 'grade_full.csv')
@@ -182,7 +182,7 @@ def cmd_grade(args):
     # export matches the late days actually penalised)
     if args.f_late_csv is not None:
         f_late = folder / args.f_late_csv
-        df_lateday = gradebook.get_lateday(cat_late_dict=config.cat_late_dict)
+        df_lateday = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
         df_lateday.to_csv(f_late.with_suffix('.csv'))
         logger.info(f'wrote {f_late}')
 
@@ -190,7 +190,7 @@ def cmd_grade(args):
     if args.f_hist:
         fig = finalgrade.plot_hist(
             df_grade_full=df_grade_full,
-            cat_weight_dict=config.cat_weight_dict)
+            cat_weight_dict=policy.cat_weight_dict)
         f_html = folder / args.f_hist
         fig.write_html(str(f_html), include_plotlyjs='cdn')
         logger.info(f'wrote {f_html}')
@@ -251,7 +251,7 @@ def main(args=None):
 
     try:
         dispatch[args.command](args)
-    except GradescopeMeanError as e:
+    except FinalgradeError as e:
         # an expected, actionable problem: the user needs the message, not a
         # traceback
         logger.error(f'error: {e}')

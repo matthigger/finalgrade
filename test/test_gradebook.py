@@ -1,8 +1,8 @@
 import pytest
 
 import finalgrade
-from finalgrade.config import *
-from finalgrade.errors import ConfigError, GradebookError
+from finalgrade.policy import *
+from finalgrade.errors import PolicyError, GradebookError
 from finalgrade.gradebook import *
 
 test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
@@ -174,7 +174,7 @@ class TestGradebook:
         assert 'hw1' not in gradebook.ass_list
 
     def test_get_late_penalty_negative_raises(self, gradebook):
-        with pytest.raises(ConfigError):
+        with pytest.raises(PolicyError):
             gradebook.get_late_penalty(cat='hw1', penalty_per_day=-0.1)
 
     def test_waive_nonexistent_warns(self, gradebook):
@@ -290,12 +290,12 @@ class TestGradebook:
         assert s_pen.loc['last1@nu.edu'] == 0.0
 
     def test_grace_period_via_config(self, tmp_path):
-        """grace_period_minutes works end-to-end through Config"""
+        """grace_period_minutes works end-to-end through Policy"""
         import shutil
         f_scope = tmp_path / 'scope.csv'
         shutil.copy(test_folder / 'scope.csv', f_scope)
 
-        config_content = """\
+        policy_content = """\
 category:
   weight:
     hw: 1
@@ -314,10 +314,10 @@ waive: null
 waive_late: null
 email_list: null
 """
-        f_config = tmp_path / 'config.yaml'
-        f_config.write_text(config_content)
-        config = Config.from_file(f_config)
-        _, df_full = config(f_scope)
+        f_policy = tmp_path / 'policy.yaml'
+        f_policy.write_text(policy_content)
+        policy = Policy.from_file(f_policy)
+        _, df_full = policy(f_scope)
 
         # 1500 min = 25h grace → student1 (24h late) is forgiven
         # so student1 has 0 unexcused late days

@@ -239,6 +239,47 @@ table.weights th, table.weights td { padding-right: .8rem; }
 
 .tick { font-weight: 700; margin-right: .2rem; }
 
+/* ---- a problem shown where the thing it is about is ---- */
+
+.row-warn {
+  font-family: system-ui, sans-serif;
+  font-size: .76rem;
+  color: var(--warn);
+  margin-top: .1rem;
+}
+
+tr.dropped td { opacity: .65; }
+tr.dropped .row-warn { color: var(--ink-faint); }
+
+/* ---- late days in the student card ---- */
+
+.late-mini { gap: .35rem; }
+
+.late-hit {
+  font-variant-numeric: tabular-nums;
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* what the last edit moved, so a one-point change is not read as nothing */
+.delta {
+  font-size: .72rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: .05rem .35rem;
+  margin-right: .35rem;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta.up { background: var(--good-soft); color: var(--good); }
+.delta.down { background: var(--bad-soft); color: var(--bad); }
+
+.mini.waived .mini-v {
+  color: var(--accent);
+  font-style: italic;
+}
+
 .filebar {
   display: flex;
   align-items: baseline;

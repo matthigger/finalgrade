@@ -5,7 +5,7 @@ import pytest
 
 import finalgrade
 from finalgrade.canvas.canvas import canvas_merge
-from finalgrade.config import Config
+from finalgrade.policy import Policy
 
 test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
@@ -30,8 +30,8 @@ def canvas_csv(tmp_path):
 @pytest.fixture
 def df_grade():
     """Process test scope.csv and return grade dataframe"""
-    config = Config()
-    _, df_grade_full = config(f_scope=test_folder / 'scope.csv')
+    policy = Policy()
+    _, df_grade_full = policy(f_scope=test_folder / 'scope.csv')
     return df_grade_full
 
 

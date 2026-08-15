@@ -6,10 +6,10 @@ from datetime import datetime
 from ruamel.yaml import YAML
 
 from .assign_list import normalize
-from .errors import ConfigError
+from .errors import PolicyError
 from .gradebook import Gradebook
 
-F_CONFIG_DEFAULT = (pathlib.Path(__file__).parent / 'config.yaml').resolve()
+F_POLICY_DEFAULT = (pathlib.Path(__file__).parent / 'policy.yaml').resolve()
 yaml = YAML(typ='safe')
 
 # each attribute below corresponds to one section of the yaml file.  keeping
@@ -36,7 +36,7 @@ LATE_KEY_TUP = ('penalty_per_day', 'excuse_day', 'excuse_day_offset',
 
 
 def _key_tree():
-    """ the shape a config file may have, as nested dicts
+    """ the shape a policy file may have, as nested dicts
 
     Derived from YAML_KEY_DICT rather than written out again, so a new
     section can't be added in one place and rejected as unknown in the
@@ -62,12 +62,12 @@ KEY_TREE = _key_tree()
 def _find_problem(d, tree, path=()):
     """ every setting in d that the schema has no place for
 
-    A misspelled key is the quietest failure this config has: nothing reads
+    A misspelled key is the quietest failure this policy has: nothing reads
     it, so `late_penalty123` is not a late penalty misapplied, it is a late
     penalty silently not applied at all.
 
     Args:
-        d (dict): a config file, or a section of one
+        d (dict): a policy file, or a section of one
         tree (dict): the shape it may have.  a None value is a leaf, whose
             contents are the user's own names; a '*' key means every key
             here is a user's name, whose *value* is checked against it
@@ -114,12 +114,12 @@ def check_key(d):
     """ raises unless every setting in d is one this package reads
 
     Args:
-        d (dict): a loaded config file
+        d (dict): a loaded policy file
     """
     problem_list = _find_problem(d, KEY_TREE)
     if problem_list:
-        raise ConfigError(
-            'config has settings that nothing reads, so they would do '
+        raise PolicyError(
+            'policy has settings that nothing reads, so they would do '
             'nothing at all:\n  ' + '\n  '.join(problem_list))
 
 
@@ -140,7 +140,7 @@ SECTION_SHAPE_DICT = {
 
 
 @dataclass
-class Config:
+class Policy:
     """ grading policy: what counts, how much, and for whom
 
     Attribute names mirror the yaml sections via YAML_KEY_DICT.
@@ -192,7 +192,7 @@ class Config:
             val = getattr(self, name)
             if val is None or isinstance(val, want):
                 continue
-            raise ConfigError(
+            raise PolicyError(
                 f'{"/".join(YAML_KEY_DICT[name])} must be '
                 f'{SECTION_SHAPE_DICT[want]}, got {val!r}')
 
@@ -214,7 +214,7 @@ class Config:
         return [normalize(a) for a in str(a_list).split(',') if a.strip()]
 
     def _normalize(self):
-        """Normalizes category/assignment names and validates config values."""
+        """Normalizes category/assignment names and validates policy values."""
         from warnings import warn
 
         # normalize assignment names in category dicts
@@ -276,7 +276,7 @@ class Config:
         unknown_set = set(d.keys()) - set(self.cat_weight_dict.keys())
         if unknown_set:
             known = ', '.join(sorted(self.cat_weight_dict)) or '<none given>'
-            raise ConfigError(
+            raise PolicyError(
                 f'{field_name} category has no entry in category/weight: '
                 f'{", ".join(sorted(unknown_set))}.  '
                 f'weighted categories are: {known}')
@@ -284,37 +284,37 @@ class Config:
     def _validate_grade_thresh(self):
         for thresh, letter in self.grade_thresh.items():
             if not self._is_number(thresh):
-                raise ConfigError(
+                raise PolicyError(
                     f'grade_thresh keys must be numbers, got {thresh!r} '
                     f'for "{letter}"')
             if not 0 <= thresh <= 1:
-                raise ConfigError(
+                raise PolicyError(
                     f'grade_thresh must be a fraction between 0 and 1, got '
                     f'{thresh!r} for "{letter}" (write .93 rather than 93)')
 
         if self.grade_thresh and min(self.grade_thresh) > 0:
-            raise ConfigError(
+            raise PolicyError(
                 'grade_thresh needs an entry at 0 so that every grade maps '
                 f'to a letter, lowest given is {min(self.grade_thresh)}')
 
     def _validate(self):
-        """ validates config values against each other (no gradebook needed)
+        """ validates policy values against each other (no gradebook needed)
         """
         # category weights: non-negative numbers, not all zero
         for cat, w in self.cat_weight_dict.items():
             if not self._is_number(w) or w < 0:
-                raise ConfigError(
+                raise PolicyError(
                     f'category weight must be a non-negative number, '
                     f'got {w!r} for "{cat}"')
         if self.cat_weight_dict and sum(self.cat_weight_dict.values()) <= 0:
-            raise ConfigError(
+            raise PolicyError(
                 'at least one category weight must be positive, got all '
                 f'zero: {self.cat_weight_dict}')
 
         # drop counts are non-negative integers
         for cat, d in self.cat_drop_dict.items():
             if not isinstance(d, int) or isinstance(d, bool) or d < 0:
-                raise ConfigError(
+                raise PolicyError(
                     f'drop_low must be a non-negative integer, '
                     f'got {d!r} for "{cat}"')
 
@@ -327,7 +327,7 @@ class Config:
         if self.exclude_complete_thresh:
             t = self.exclude_complete_thresh
             if not self._is_number(t) or not (0 <= t <= 1):
-                raise ConfigError(
+                raise PolicyError(
                     f'exclude_complete_thresh must be between 0 and 1, '
                     f'got {t!r}')
 
@@ -335,7 +335,7 @@ class Config:
             self._validate_grade_thresh()
 
     def iter_email(self):
-        """ every student email this config names, with the section naming it
+        """ every student email this policy names, with the section naming it
 
         email_list is not among them: it is a roster, and an entry that
         matches nobody means a student who never submitted -- ordinary, and
@@ -352,14 +352,14 @@ class Config:
                 yield email, f'late_penalty/{cat}/excuse_day_offset'
 
     def check_email(self, gradebook):
-        """ raises unless every email the config names is a student
+        """ raises unless every email the policy names is a student
 
         This has to run before prune_email: afterwards a typo and a student
         who dropped the course look exactly alike.
 
         An unmatched email used to be only a warning, which made a typo in
         `waive` a silently un-waived assignment -- a wrong grade that looks
-        entirely reasonable, which is the one thing this config is supposed
+        entirely reasonable, which is the one thing this policy is supposed
         not to produce.
 
         Args:
@@ -390,8 +390,8 @@ class Config:
                     if near_list else '')
             line_list.append(f'  {email} in {where}{near}')
 
-        raise ConfigError(
-            'config names a student who is not in the gradebook, so the '
+        raise PolicyError(
+            'policy names a student who is not in the gradebook, so the '
             'entry would do nothing:\n' + '\n'.join(line_list))
 
     def prepare(self, gradebook, record=None):
@@ -454,7 +454,7 @@ class Config:
         return gradebook
 
     def __call__(self, f_scope):
-        """ runs the processing pipeline given config and f_scope
+        """ runs the processing pipeline given policy and f_scope
 
         Args:
             f_scope (str): raw gradescope csv, or a canvas gradebook export
@@ -480,32 +480,32 @@ class Config:
         return gradebook, df_grade_full
 
     @classmethod
-    def from_file(cls, f_config):
-        """ loads config from yaml file
+    def from_file(cls, f_policy):
+        """ loads policy from yaml file
 
         Args:
-            f_config (str): yaml file
+            f_policy (str): yaml file
 
         Returns:
-            config (Config): configuration
+            policy (Policy): policy
         """
         # load yaml
-        f_config = pathlib.Path(f_config)
+        f_policy = pathlib.Path(f_policy)
         try:
-            d = yaml.load(f_config)
+            d = yaml.load(f_policy)
         except Exception as e:
-            raise ConfigError(
-                f'failed to parse config file {f_config}: {e}') from e
+            raise PolicyError(
+                f'failed to parse policy file {f_policy}: {e}') from e
 
         if d is None:
-            # an empty file is a config with nothing set, which is the
+            # an empty file is a policy with nothing set, which is the
             # default policy -- not a broken file
             d = dict()
 
         if not isinstance(d, dict):
-            raise ConfigError(
-                f'config file must be a YAML mapping, got {type(d).__name__} '
-                f'in {f_config}')
+            raise PolicyError(
+                f'policy file must be a YAML mapping, got {type(d).__name__} '
+                f'in {f_policy}')
 
         # before reading anything: a key nothing reads is a policy the user
         # believes is in force and isn't
@@ -525,58 +525,58 @@ class Config:
                       for attr, key_tup in YAML_KEY_DICT.items()})
 
     @classmethod
-    def resolve_config(cls, folder, f_grade=None, force_new=False):
-        """Resolve config: use existing config.yaml or write a new one.
+    def resolve_policy(cls, folder, f_grade=None, force_new=False):
+        """Resolve policy: use existing policy.yaml or write a new one.
 
-        Non-interactive replacement for the old cli_copy_config. When no
-        --config is specified:
-          - If config.yaml exists in *folder* and force_new is False, use it.
-          - Otherwise write a new config.yaml into *folder* and use that.
-          - If force_new and config.yaml already exists, it is timestamped to
+        Non-interactive replacement for the old cli_copy_policy. When no
+        --policy is specified:
+          - If policy.yaml exists in *folder* and force_new is False, use it.
+          - Otherwise write a new policy.yaml into *folder* and use that.
+          - If force_new and policy.yaml already exists, it is timestamped to
             avoid overwriting.
 
         Args:
-            folder (pathlib.Path): directory to look for / place config
-            f_grade (str): the csv being graded.  when given, the new config
+            folder (pathlib.Path): directory to look for / place policy
+            f_grade (str): the csv being graded.  when given, the new policy
                 is written with this course's assignment names in it, so
                 there is nothing to guess or mistype
-            force_new (bool): if True, always create a fresh config
+            force_new (bool): if True, always create a fresh policy
         """
         import logging
         logger = logging.getLogger('finalgrade')
 
-        f_config = pathlib.Path(folder) / F_CONFIG_DEFAULT.name
+        f_policy = pathlib.Path(folder) / F_POLICY_DEFAULT.name
 
-        if f_config.exists() and not force_new:
-            logger.info(f'using existing config: {f_config.resolve()}')
-            return cls.from_file(f_config)
+        if f_policy.exists() and not force_new:
+            logger.info(f'using existing policy: {f_policy.resolve()}')
+            return cls.from_file(f_policy)
 
-        # need to create a new config
-        if f_config.exists():
+        # need to create a new policy
+        if f_policy.exists():
             # don't overwrite — timestamp the new one
             s_now = datetime.now().strftime('_%Y_%b_%d@%H:%M:%S')
-            f_config = pathlib.Path(
-                str(f_config).replace('.yaml', f'{s_now}.yaml'))
+            f_policy = pathlib.Path(
+                str(f_policy).replace('.yaml', f'{s_now}.yaml'))
 
         text = cls._seed_text(f_grade)
         if text is None:
-            shutil.copy(F_CONFIG_DEFAULT, f_config)
+            shutil.copy(F_POLICY_DEFAULT, f_policy)
         else:
-            f_config.write_text(text)
+            f_policy.write_text(text)
 
         logger.info(
-            f'created default config — edit as needed, see '
-            f'https://github.com/matthigger/finalgrade#configuration'
-            f' for details:\n  {f_config}')
+            f'created default policy — edit as needed, see '
+            f'https://github.com/matthigger/finalgrade#policy'
+            f' for details:\n  {f_policy}')
 
-        return cls.from_file(f_config)
+        return cls.from_file(f_policy)
 
     @staticmethod
     def _seed_text(f_grade):
-        """ contents of a new config that knows f_grade's assignments
+        """ contents of a new policy that knows f_grade's assignments
 
         Returns None when there is no csv to read, or when reading it fails:
-        a config file the user can edit by hand is more use than an error
+        a policy file the user can edit by hand is more use than an error
         raised while trying to be helpful about one.
         """
         if f_grade is None:
@@ -592,14 +592,14 @@ class Config:
                 warnings.simplefilter('ignore')
                 gradebook = Gradebook.from_file(f_grade)
             return seed_text(gradebook, f_grade,
-                             F_CONFIG_DEFAULT.read_text())
+                             F_POLICY_DEFAULT.read_text())
         except Exception:
             return None
 
     @classmethod
-    def cli_copy_config(cls, folder):
-        """Deprecated: use resolve_config instead."""
+    def cli_copy_policy(cls, folder):
+        """Deprecated: use resolve_policy instead."""
         import warnings
-        warnings.warn('cli_copy_config is deprecated, use resolve_config',
+        warnings.warn('cli_copy_policy is deprecated, use resolve_policy',
                       DeprecationWarning, stacklevel=2)
-        return cls.resolve_config(folder)
+        return cls.resolve_policy(folder)

@@ -2,7 +2,7 @@ __version__ = '0.1.0'
 
 from .canvas import *
 from .check import Report, build_report, render
-from .config import *
+from .policy import *
 from .errors import *
 from .gradebook import *
 from .plot import *

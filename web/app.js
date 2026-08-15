@@ -5,7 +5,7 @@
  * line cannot disagree.  Nothing here uploads anything -- the only fetches in
  * this file load python itself and the wheel next to this page.
  *
- * state.yaml is the config file, and the single source of truth.  Widgets hold
+ * state.yaml is the policy file, and the single source of truth.  Widgets hold
  * no state of their own: each one edits that text (through python's round-trip
  * yaml, so comments and anything with no widget survive) and then the page is
  * redrawn from it.  Nothing on screen can disagree with the document that
@@ -30,7 +30,7 @@ const state = {
   yaml: '',
   csv: null,
   name: null,
-  configName: 'config.yaml',
+  policyName: 'policy.yaml',
   // a canvas gradebook kept aside to merge grades back into, when the file
   // being graded isn't itself one
   canvasText: null,
@@ -40,6 +40,8 @@ const state = {
   catHintList: [],
   form: null,
   grades: null,
+  // last mean seen per student, so an edit can show what it moved
+  meanSeen: {},
   view: 'total',
   mode: 'final',
   seq: 0,
@@ -154,7 +156,7 @@ function useCsv(name, text) {
 
   drawRoster();
   fillAssignmentSelects();
-  setYaml(state.api.seed_config(text, name));
+  setYaml(state.api.seed_policy(text, name));
 
   $('work').hidden = false;
   refresh();
@@ -162,10 +164,10 @@ function useCsv(name, text) {
 
 function useYaml(name, text) {
   if (!state.csv) {
-    return showPickError('Load a gradebook csv first — a config on its own ' +
+    return showPickError('Load a gradebook csv first — a policy on its own ' +
       'has nothing to grade.');
   }
-  state.configName = name;
+  state.policyName = name;
   setYaml(text);
   refresh();
 }
@@ -186,7 +188,7 @@ function refresh() {
 }
 
 function applyEdit(action, args) {
-  const res = toJs(state.api.edit_config(state.yaml, action,
+  const res = toJs(state.api.edit_policy(state.yaml, action,
                                          JSON.stringify(args || {})));
   // an edit that cannot apply leaves the document exactly as it was
   if (res.ok) setYaml(res.yaml);
@@ -197,18 +199,14 @@ function applyEdit(action, args) {
 
 function check() {
   const seq = ++state.seq;
-  const rep = toJs(state.api.check_config(state.csv, state.yaml, state.name));
+  const rep = toJs(state.api.check_policy(state.csv, state.yaml, state.name));
   if (seq !== state.seq) return rep.ok;
 
-  const el = $('verdict');
-  if (rep.ok) {
-    el.className = 'verdict ok';
-    el.textContent = 'this config is usable';
-  } else {
-    el.className = 'verdict bad';
-    el.textContent = 'grading cannot run — see below';
-  }
+  state.report = rep;
 
+  // whatever belongs to one assignment is shown on that assignment; what is
+  // left is about the file, the roster or the letters, and has nowhere else
+  // to go
   $('messages').innerHTML =
     msgList(rep.error_list, 'error') + msgList(rep.warn_list, 'warn');
   return rep.ok;
@@ -224,7 +222,7 @@ function msgList(list, kind) {
 
  * The markup below is built as html strings.  Everything interpolated is
  * either a number computed here or passed through escapeHtml() -- assignment
- * and category names come from the user's csv and config, so they are not
+ * and category names come from the user's csv and policy, so they are not
  * trusted markup. */
 
 function drawForm() {
@@ -233,7 +231,7 @@ function drawForm() {
 
   if (!form.ok) {
     $('cats').innerHTML =
-      '<p class="empty">This config file cannot be read as yaml, so the ' +
+      '<p class="empty">This policy file cannot be read as yaml, so the ' +
       'controls are paused.</p>';
     ['quick', 'excl-list', 'sub-list', 'waive-list', 'thresh-list',
       'stud-card', 'weight-table'].forEach((id) => ($(id).innerHTML = ''));
@@ -336,15 +334,24 @@ function drawWeightTable() {
   const res = state.grades;
   if (!res || !res.row_list.length) return ($('weight-table').innerHTML = '');
 
+  const problem = ((state.report || {}).ass_problem_dict) || {};
+
   let last = null;
   const row = res.row_list.map((r) => {
     // a category spans its assignments: naming it once reads as a group
     const cat = r.category === last ? '' : (r.category || '—');
     last = r.category;
 
-    return `<tr${cat ? ' class="grp"' : ''}>
+    // a complaint about an assignment belongs on that assignment's row,
+    // where whoever is reading the weights is already looking
+    const note = (problem[r.assignment] || []).map((s) =>
+      `<div class="row-warn">${escapeHtml(s)}</div>`).join('');
+
+    const cls = [cat ? 'grp' : '', note ? 'flag-none' : ''].filter(Boolean);
+
+    return `<tr${cls.length ? ` class="${cls.join(' ')}"` : ''}>
       <td class="cat">${escapeHtml(cat)}</td>
-      <td class="name">${escapeHtml(r.assignment)}</td>
+      <td class="name">${escapeHtml(r.assignment)}${note}</td>
       <td class="num">${fmtNum(r.points)}</td>
       <td class="num">${frac(r.weight_in_cat)}</td>
       <td class="num strong">${frac(r.weight_total)}</td>
@@ -353,12 +360,26 @@ function drawWeightTable() {
     </tr>`;
   }).join('');
 
+  // an assignment that is not being graded still has to appear, or the table
+  // quietly agrees that it never existed
+  const gone = ((state.report || {}).excluded_list || []).map((a) => `
+    <tr class="dropped">
+      <td class="cat">—</td>
+      <td class="name">${escapeHtml(a.name)}
+        <div class="row-warn">not graded: ${escapeHtml(a.excluded_by)}</div>
+      </td>
+      <td class="num">${a.points === null ? '–' : fmtNum(a.points)}</td>
+      <td class="num">–</td><td class="num">–</td><td class="num">–</td>
+      <td class="num">${a.n_complete === null ? '–'
+        : `${a.n_complete}/${a.n_student}`}</td>
+    </tr>`).join('');
+
   $('weight-table').innerHTML = `<table class="weights">
     <thead><tr>
       <th>category</th><th>assignment</th><th class="num">points</th>
       <th class="num">of category</th><th class="num">of grade</th>
       <th class="num">mean*</th><th class="num">submitted</th>
-    </tr></thead><tbody>${row}</tbody></table>
+    </tr></thead><tbody>${row}${gone}</tbody></table>
     <p class="hint">* mean among non-zero scores</p>`;
 }
 
@@ -500,14 +521,51 @@ function drawStudent(form) {
         ${graded ? `<button type="button" class="link stud-file"
           id="stud-csv">${escapeHtml(studentFile(stud))}</button>` : ''}
         ${graded
-          ? `<span class="stud-grade">${pct(graded.mean)}<span
-              class="stud-letter">${escapeHtml(graded.letter)}</span></span>`
+          ? `<span class="stud-grade">${delta(stud, graded)}${pct(graded.mean)}
+              <span class="stud-letter">${escapeHtml(graded.letter)}</span>
+             </span>`
           : '<span class="empty">no grade yet</span>'}
       </div>
-      ${graded ? studGrades(graded) : ''}
+      ${graded ? studGrades(graded, form, stud) : ''}
+      ${graded ? lateRow(graded) : ''}
       ${waiveChecks(form, stud)}
       ${excuseRow(form, stud)}
     </div>`;
+}
+
+/* A category mean carries its late penalty inside it, so 78% could be a 78%
+ * or an 86% with days against it.  This says which. */
+function lateRow(graded) {
+  const entries = Object.entries(graded.late_dict || {})
+    .filter(([, v]) => v && (v.days_used || v.penalty));
+  const dayList = Object.entries(graded.late_day_dict || {});
+
+  if (!entries.length && !dayList.length) return '';
+
+  const cat = entries.map(([name, v]) => `
+    <span class="mini late-mini">
+      <span class="mini-k">${escapeHtml(name)}</span>
+      <span class="mini-v">${v.days_used} late ${plural(v.days_used, 'day')}
+        · ${v.days_excused} excused${v.days_unexcused
+          ? ` · <b>${v.days_unexcused} over</b>` : ''}</span>
+      ${v.penalty ? `<span class="late-hit">${pct(v.penalty)}</span>` : ''}
+    </span>`).join('');
+
+  const each = dayList.map(([ass, d]) =>
+    `<span class="mini"><span class="mini-k">${escapeHtml(ass)}</span>` +
+    `<span class="mini-v">${d}d</span></span>`).join('');
+
+  return `<div class="waive-row">
+    <span class="field-k">late</span>
+    <div class="stud-rows">
+      ${cat ? `<div class="mini-row">${cat}</div>` : ''}
+      ${each ? `<div class="mini-row dim">${each}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function plural(n, word) {
+  return Number(n) === 1 ? word : `${word}s`;
 }
 
 /* The name the download will carry, worked out here so the link can say it
@@ -537,13 +595,38 @@ function downloadStudentCsv() {
   download(res.csv, res.filename, 'text/csv');
 }
 
-function studGrades(graded) {
+/* How much the last edit moved this student.  Waiving one homework out of
+ * fifteen shifts a grade by about a point, which reads as nothing happening
+ * unless the page says what happened. */
+function delta(stud, graded) {
+  const seen = state.meanSeen[stud.email];
+  state.meanSeen[stud.email] = graded.mean;
+
+  if (seen === undefined || graded.mean === null
+      || Math.abs(graded.mean - seen) < 1e-9) {
+    return '';
+  }
+
+  const move = (graded.mean - seen) * 100;
+  return `<span class="delta ${move > 0 ? 'up' : 'down'}">` +
+    `${move > 0 ? '▲' : '▼'} ${Math.abs(move).toFixed(1)}</span>`;
+}
+
+function studGrades(graded, form, stud) {
+  const waived = new Set(
+    ((form.waive_list || []).find((w) => w.email === stud.email) || {})
+      .ass_list || []);
+
   const cell = ([k, v]) =>
     `<span class="mini"><span class="mini-k">${escapeHtml(k)}</span>` +
-    `<span class="mini-v">${pct(v)}</span></span>`;
+    `<span class="mini-v">${waived.has(k) ? 'waived' : pct(v)}</span></span>`;
 
   const cat = Object.entries(graded.cat_dict).map(cell).join('');
-  const ass = Object.entries(graded.ass_dict).map(cell).join('');
+  const ass = Object.entries(graded.ass_dict).map(([k, v]) =>
+    waived.has(k)
+      ? `<span class="mini waived"><span class="mini-k">${escapeHtml(k)}` +
+        `</span><span class="mini-v">waived</span></span>`
+      : cell([k, v])).join('');
 
   return `<div class="stud-rows">
     ${cat ? `<div class="mini-row">${cat}</div>` : ''}
@@ -804,13 +887,28 @@ function trace(hist, name, color) {
 
 /* --------------------------------------------------------- files & export */
 
-const blobUrl = {};
+/* These are links, but the file behind one is made when it is clicked rather
+ * than held on the element.  A long-lived blob url has to be revoked when the
+ * page redraws -- which happens on every edit -- and a link clicked against a
+ * revoked url downloads as a uuid with no extension, which is worse than not
+ * offering it.  The content is always current for the same reason. */
+function fileLink(key, name, note) {
+  return `<a href="#" data-file="${key}" download="${escapeHtml(name)}">` +
+    `${escapeHtml(name)}</a>` +
+    (note ? `<span class="file-note">${escapeHtml(note)}</span>` : '');
+}
 
-function fileLink(key, name, text, type) {
-  if (blobUrl[key]) URL.revokeObjectURL(blobUrl[key]);
-  blobUrl[key] = URL.createObjectURL(new Blob([text], { type }));
-  return `<a href="${blobUrl[key]}" download="${escapeHtml(name)}">` +
-    `${escapeHtml(name)}</a>`;
+function fileOf(key) {
+  if (key === 'csv') {
+    return [state.csv, state.name, 'text/csv'];
+  }
+  if (key === 'yaml') {
+    return [state.yaml, state.policyName, 'text/yaml'];
+  }
+  if (key === 'canvas') {
+    return [state.canvasText, state.canvasName, 'text/csv'];
+  }
+  return null;
 }
 
 function drawFiles() {
@@ -818,15 +916,12 @@ function drawFiles() {
 
   const part = [
     '<span class="file-k">files</span>',
-    fileLink('csv', state.name, state.csv, 'text/csv') +
-      `<span class="file-note">${escapeHtml(state.facts || '')}</span>`,
-    fileLink('yaml', state.configName, state.yaml, 'text/yaml'),
+    fileLink('csv', state.name, state.facts),
+    fileLink('yaml', state.policyName, 'your whole grading policy'),
   ];
 
   if (state.canvasText && !state.sourceIsCanvas) {
-    part.push(fileLink('canvas', state.canvasName, state.canvasText,
-                       'text/csv') + '<span class="file-note">for canvas ' +
-              'export</span>');
+    part.push(fileLink('canvas', state.canvasName, 'canvas template'));
   }
 
   $('files').innerHTML = part.join('<span class="file-sep">·</span>');
@@ -886,7 +981,7 @@ function drawExport() {
   if (!state.grades) {
     $('export-row').innerHTML = '';
     $('export-hint').textContent =
-      'Exports appear once the config grades cleanly.';
+      'Exports appear once the policy grades cleanly.';
     $('banner-form').hidden = true;
     return;
   }
@@ -901,7 +996,7 @@ function drawExport() {
   $('export-hint').textContent = canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by ' +
       'SIS user id, scaled to 100 so canvas does not round them.'
-    : 'Set a canvas template above to enable the canvas export.';
+    : 'Set a canvas template below to enable the canvas export.';
 
   $('dl-grades').addEventListener('click', () =>
     download(state.grades.csv, 'grade_full.csv', 'text/csv'));
@@ -1176,6 +1271,14 @@ $('email-clear').addEventListener('click', () => {
 
 $('stud-card').addEventListener('click', (e) => {
   if (e.target.id === 'stud-csv') downloadStudentCsv();
+});
+
+$('files').addEventListener('click', (e) => {
+  const key = e.target.getAttribute('data-file');
+  if (key === null) return;
+  e.preventDefault();
+  const part = fileOf(key);
+  if (part) download(part[0], part[1], part[2]);
 });
 
 /* the export box takes one kind of file and means one thing by it, so a csv

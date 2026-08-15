@@ -42,13 +42,13 @@ STUDENT_TEST = 'student, test'
 
 # canvas appends its own assignment id to every assignment column.  it changes
 # whenever an assignment is recreated, so it can't be part of a name that a
-# config file refers to
+# policy file refers to
 RE_ASS_ID = re.compile(r'\s*\(\d+\)$')
 
 # canvas' rollup columns are '<group> Current Score', '<group> Final Points'
 # and so on, with the course-wide totals carrying no group at all.  stripping
 # one of these suffixes leaves the assignment group's name -- which is the
-# category the instructor already set up in canvas, so it seeds a new config
+# category the instructor already set up in canvas, so it seeds a new policy
 RE_ROLLUP = re.compile(
     r'\s*(unposted\s+)?(current|final)\s+(score|points|grade)$', re.IGNORECASE)
 
@@ -143,9 +143,9 @@ def _get_cat_hint_list(df, s_point):
     """ the assignment groups canvas computes a rollup column for
 
     These are the categories the instructor already defined in canvas, so a
-    config seeded for a canvas course can offer them by name instead of
+    policy seeded for a canvas course can offer them by name instead of
     guessing from assignment names.  Nothing downstream reads them -- they
-    only ever reach a comment in a freshly written config.yaml.
+    only ever reach a comment in a freshly written policy.yaml.
     """
     cat_list = []
     for col in df.columns[N_COL_CANVAS_META:]:
@@ -164,7 +164,7 @@ def _get_cat_hint_list(df, s_point):
 def _get_name_dict(col_ass_list):
     """ maps each canvas assignment column to the name we grade it under
 
-    the trailing canvas assignment id is dropped, so that config files keep
+    the trailing canvas assignment id is dropped, so that policy files keep
     working when an assignment is recreated -- unless dropping it would make
     two assignments indistinguishable, in which case it's the only thing
     telling them apart and it stays.
@@ -181,7 +181,7 @@ def _get_index(df_body):
     """ chooses what to key students by, and returns it
 
     gradebook is keyed by email, and so is every email matching feature in
-    the config.  canvas has no email column: 'SIS Login ID' holds one in some
+    the policy.  canvas has no email column: 'SIS Login ID' holds one in some
     courses and an sis id in others, so use it when it looks like an email
     and fall back to the sis id when it doesn't.
     """
@@ -195,7 +195,7 @@ def _get_index(df_body):
             name='student')
         logger.info(
             f'keying students by {COL_SIS_USER}: this canvas export has no '
-            'email, so waive / email_list config entries must use that id')
+            'email, so waive / email_list policy entries must use that id')
 
     blank_tup = tuple(sorted(
         df_body.loc[index == '', COL_STUDENT].fillna('<no name>')))

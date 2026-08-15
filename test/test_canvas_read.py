@@ -12,8 +12,8 @@ import pandas as pd
 import pytest
 
 from finalgrade.canvas.read import is_canvas_export
-from finalgrade.config import Config
-from finalgrade.errors import CanvasError, ConfigError, GradebookError
+from finalgrade.policy import Policy
+from finalgrade.errors import CanvasError, PolicyError, GradebookError
 from finalgrade.gradebook import Gradebook
 
 # --------------------------------------------------------------------------
@@ -91,7 +91,7 @@ class TestStructure:
         assert list(gradebook.ass_list) == ['exam1', 'hw1', 'hw2']
 
     def test_assignment_id_is_stripped(self, f_canvas):
-        """ canvas ids change when an assignment is recreated, so a config
+        """ canvas ids change when an assignment is recreated, so a policy
         file can't be made to depend on them """
         assert list(Gradebook.from_canvas(f_canvas).ass_list) == [
             'exam1', 'hw1', 'hw2']
@@ -177,7 +177,7 @@ class TestStudentKey:
         assert list(gradebook.df_perc.index) == ['alice@u.edu', 'bob@u.edu']
 
     def test_email_key_still_matches_by_prefix(self, tmp_path):
-        """ the config's domain-insensitive matching must keep working """
+        """ the policy's domain-insensitive matching must keep working """
         row_list = [{**ROW_ALICE, 'SIS Login ID': 'alice@northeastern.edu'}]
         f = write_canvas(tmp_path / 'canvas.csv', row_list)
 
@@ -204,10 +204,10 @@ class TestRefusals:
         """ a canvas csv has no submission times, so a late penalty would
         quietly compute zero for everybody -- which reads as 'nobody was
         late' rather than 'we can't tell' """
-        config = Config(cat_weight_dict={'hw': 1, 'exam': 1},
+        policy = Policy(cat_weight_dict={'hw': 1, 'exam': 1},
                         cat_late_dict={'hw': {'penalty_per_day': .15}})
-        with pytest.raises(ConfigError, match='no submission times'):
-            config(f_canvas)
+        with pytest.raises(PolicyError, match='no submission times'):
+            policy(f_canvas)
 
     def test_all_assignments_worth_zero_raises(self, tmp_path):
         """ a canvas course whose only columns are ones this tool uploaded
@@ -247,7 +247,7 @@ class TestEndToEnd:
     def test_grades_through_config(self, f_canvas):
         """ alice: hw (10 + 18) / 30 = .9333, exam .9  -> mean .91667
             bob:   hw 5/10 = .5 (hw2 waived), exam 0   -> mean .25 """
-        _, df_full = Config(cat_weight_dict={'hw': 1, 'exam': 1})(f_canvas)
+        _, df_full = Policy(cat_weight_dict={'hw': 1, 'exam': 1})(f_canvas)
         assert df_full.loc['001234567s', 'mean'] == pytest.approx(.9166667)
         assert df_full.loc['007654321s', 'mean'] == pytest.approx(.25)
 
@@ -255,7 +255,7 @@ class TestEndToEnd:
         """ grades read from canvas must upload back to canvas: the sid
         metadata is what canvas_merge joins on """
         from finalgrade.canvas.canvas import canvas_merge
-        _, df_full = Config(cat_weight_dict={'hw': 1, 'exam': 1})(f_canvas)
+        _, df_full = Policy(cat_weight_dict={'hw': 1, 'exam': 1})(f_canvas)
 
         df_out = canvas_merge(f_canvas=f_canvas,
                               df_grade=df_full.reset_index(), scale100=False)

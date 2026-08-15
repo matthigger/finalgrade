@@ -26,7 +26,7 @@ SUFFIX_TUP = ('', ' - Max Points', ' - Submission Time', ' - Lateness (H:M:S)')
 SUB_TIME = '2026-04-21 23:14:07 -0400'
 
 # name -> max points.  exam2a and exam2b are two versions of one exam: most
-# of the class sits a, a few sit the makeup, and a config substitutes one for
+# of the class sits a, a few sit the makeup, and a policy substitutes one for
 # the other (and excludes b, or it would count twice)
 ASSIGN_DICT = {
     **{f'HW{i}': 10 for i in range(1, 9)},

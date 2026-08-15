@@ -11,9 +11,9 @@ import pytest
 
 from conftest import ASSIGN_STD, STUDENT_STD, write_scope
 from finalgrade.assign_list import AssignmentList
-from finalgrade.config import YAML_KEY_DICT, Config
-from finalgrade.errors import (ConfigError, GradebookError,
-                                    GradescopeMeanError)
+from finalgrade.policy import YAML_KEY_DICT, Policy
+from finalgrade.errors import (PolicyError, GradebookError,
+                                    FinalgradeError)
 from finalgrade.gradebook import (GRACE_DEFAULT, Gradebook,
                                        minutes_to_days)
 
@@ -118,30 +118,30 @@ class TestEmailResolution:
 
 class TestConfigDataclass:
     def test_yaml_key_dict_covers_every_field(self):
-        """ a new Config field must be wired into from_file
+        """ a new Policy field must be wired into from_file
 
         forgetting this is exactly how waive_late came to be silently
         ignored when loaded from yaml (commit ff737cc)
         """
-        field_set = {f.name for f in dataclasses.fields(Config)}
+        field_set = {f.name for f in dataclasses.fields(Policy)}
         assert field_set == set(YAML_KEY_DICT)
 
     def test_defaults_are_empty_containers(self):
-        config = Config()
-        assert config.cat_weight_dict == {}
-        assert config.remove_list == []
-        assert config.waive_dict == {}
-        assert config.exclude_complete_thresh == 0
+        policy = Policy()
+        assert policy.cat_weight_dict == {}
+        assert policy.remove_list == []
+        assert policy.waive_dict == {}
+        assert policy.exclude_complete_thresh == 0
 
     def test_none_coalesces_to_empty(self):
-        config = Config(cat_weight_dict=None, remove_list=None,
+        policy = Policy(cat_weight_dict=None, remove_list=None,
                         exclude_complete_thresh=None)
-        assert config.cat_weight_dict == {}
-        assert config.remove_list == []
-        assert config.exclude_complete_thresh == 0
+        assert policy.cat_weight_dict == {}
+        assert policy.remove_list == []
+        assert policy.exclude_complete_thresh == 0
 
     def test_from_file_round_trips_every_section(self, tmp_path):
-        f = tmp_path / 'config.yaml'
+        f = tmp_path / 'policy.yaml'
         f.write_text("""\
 category:
   weight:
@@ -168,24 +168,24 @@ grade_thresh:
 email_list:
   - a@u.edu
 """)
-        config = Config.from_file(f)
-        assert config.cat_weight_dict == {'hw': 2}
-        assert config.cat_drop_dict == {'hw': 1}
-        assert config.cat_late_dict == {'hw': {'penalty_per_day': .1}}
-        assert config.remove_list == ['practice']
-        assert config.sub_dict == {'hw1': ['hw1v2']}
-        assert config.exclude_complete_thresh == .5
-        assert config.waive_dict == {'a@u.edu': ['hw1']}
-        assert config.late_waive_dict == {'b@u.edu': ['hw2']}
-        assert config.grade_thresh == {.9: 'A', 0: 'E'}
-        assert config.email_list == ['a@u.edu']
+        policy = Policy.from_file(f)
+        assert policy.cat_weight_dict == {'hw': 2}
+        assert policy.cat_drop_dict == {'hw': 1}
+        assert policy.cat_late_dict == {'hw': {'penalty_per_day': .1}}
+        assert policy.remove_list == ['practice']
+        assert policy.sub_dict == {'hw1': ['hw1v2']}
+        assert policy.exclude_complete_thresh == .5
+        assert policy.waive_dict == {'a@u.edu': ['hw1']}
+        assert policy.late_waive_dict == {'b@u.edu': ['hw2']}
+        assert policy.grade_thresh == {.9: 'A', 0: 'E'}
+        assert policy.email_list == ['a@u.edu']
 
 
 class TestErrors:
     def test_hierarchy_is_value_error(self):
         """ existing callers catching ValueError keep working """
-        for cls in (ConfigError, GradebookError):
-            assert issubclass(cls, GradescopeMeanError)
+        for cls in (PolicyError, GradebookError):
+            assert issubclass(cls, FinalgradeError)
             assert issubclass(cls, ValueError)
 
     def test_duplicate_email_is_gradebook_error(self, tmp_path):
@@ -195,11 +195,11 @@ class TestErrors:
             Gradebook(str(f))
 
     def test_substitute_missing_assignment_is_config_error(self, gradebook):
-        with pytest.raises(ConfigError, match='(?i)substitute'):
+        with pytest.raises(PolicyError, match='(?i)substitute'):
             gradebook.substitute({'hw1': ['nonexistent']})
 
     def test_late_penalty_no_match_is_config_error(self, gradebook):
-        with pytest.raises(ConfigError, match='(?i)match'):
+        with pytest.raises(PolicyError, match='(?i)match'):
             gradebook.get_late_penalty(cat='lab', penalty_per_day=.1)
 
 

@@ -6,7 +6,7 @@ import pytest
 
 import finalgrade
 from finalgrade.__main__ import main, parser
-from finalgrade.config import Config
+from finalgrade.policy import Policy
 
 test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
@@ -14,8 +14,8 @@ test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 @pytest.fixture
 def grade_full_csv(tmp_path):
     """Create a grade_full.csv from test data"""
-    config = Config()
-    _, df_grade_full = config(f_scope=test_folder / 'scope.csv')
+    policy = Policy()
+    _, df_grade_full = policy(f_scope=test_folder / 'scope.csv')
     f = tmp_path / 'grade_full.csv'
     df_grade_full.to_csv(f)
     return str(f)
@@ -134,7 +134,7 @@ class TestBannerWeb:
         df_web = pd.read_excel(io.BytesIO(base64.b64decode(res['xlsx_b64'])),
                                dtype={'Student ID': str})
 
-        _, df_grade = Config()(str(f_scope_std))
+        _, df_grade = Policy()(str(f_scope_std))
         f = tmp_path / 'grade_full.csv'
         df_grade.to_csv(f)
         df_cli = to_banner(pd.read_csv(f, dtype={'sid': str}),

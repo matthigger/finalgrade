@@ -3,7 +3,7 @@ import pathlib
 import pytest
 
 import finalgrade
-from finalgrade.config import Config
+from finalgrade.policy import Policy
 from finalgrade.plot import plot_hist
 
 test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
@@ -13,8 +13,8 @@ test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 def grade_data():
     """Return (gradebook, df_grade_full, cat_weight_dict) for test data"""
     cat_weight_dict = {'hw': 3, 'quiz': 1}
-    config = Config(cat_weight_dict=cat_weight_dict)
-    gradebook, df_grade_full = config(f_scope=test_folder / 'scope.csv')
+    policy = Policy(cat_weight_dict=cat_weight_dict)
+    gradebook, df_grade_full = policy(f_scope=test_folder / 'scope.csv')
     return gradebook, df_grade_full, cat_weight_dict
 
 
@@ -28,7 +28,7 @@ class TestPlot:
         assert len(fig.data) > 0
 
     def test_plot_hist_no_categories(self):
-        config = Config()
-        gradebook, df_grade_full = config(f_scope=test_folder / 'scope.csv')
+        policy = Policy()
+        gradebook, df_grade_full = policy(f_scope=test_folder / 'scope.csv')
         fig = plot_hist(df_grade_full=df_grade_full, cat_weight_dict=None)
         assert fig is not None
