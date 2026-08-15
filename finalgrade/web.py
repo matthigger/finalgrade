@@ -20,10 +20,11 @@ from .check import build_report, render
 from .config import F_CONFIG_DEFAULT, Config
 from .errors import GradescopeMeanError
 from .gradebook import Gradebook
+from .inspect import build_view, histogram
 from .seed import seed_text
 
 __all__ = ['load_csv', 'check_config', 'grade', 'seed_config', 'default_yaml',
-           'form_state', 'edit_config']
+           'form_state', 'edit_config', 'bin_values']
 
 
 class _Csv:
@@ -137,7 +138,13 @@ def check_config(csv_text, yaml_text, name='scope.csv'):
 
 
 def grade(csv_text, yaml_text, name='scope.csv'):
-    """ final grades, as the csv text the page offers for download
+    """ final grades: the csv to download, and the numbers behind it
+
+    One call does both, because the second is only ever wanted alongside the
+    first and the expensive half (reading the csv, running the pipeline) is
+    shared.  The raw series come from averaging the same prepared gradebook
+    a second time with the drops and late penalties taken out, so the two
+    differ by exactly the policy and nothing else.
 
     Args:
         csv_text (str): contents of a gradescope or canvas export
@@ -145,7 +152,8 @@ def grade(csv_text, yaml_text, name='scope.csv'):
         name (str): the csv's filename
 
     Returns:
-        result (dict): ok, the output csv text, and a grade distribution
+        result (dict): ok, the output csv, a distribution, and every series
+            the inspector can draw
     """
     config, error = _read_config(yaml_text)
     if config is None:
@@ -153,17 +161,19 @@ def grade(csv_text, yaml_text, name='scope.csv'):
 
     with _Csv(csv_text, name) as f_csv:
         try:
-            df_grade, warn_list = _warn_list(lambda: config(f_csv)[1])
+            (gradebook, df_grade, df_raw), warn_list = _warn_list(
+                lambda: _grade_twice(config, f_csv))
         except GradescopeMeanError as e:
             return dict(ok=False, error=str(e), warn_list=[])
 
     s_mean = df_grade['mean'].dropna()
     letter_count = df_grade['letter'].value_counts()
 
-    return dict(
+    out = dict(
         ok=True,
         error=None,
-        warn_list=warn_list,
+        # averaging twice would otherwise say everything twice
+        warn_list=list(dict.fromkeys(warn_list)),
         csv=df_grade.to_csv(),
         n_student=len(df_grade),
         mean_list=[float(x) for x in s_mean],
@@ -171,7 +181,58 @@ def grade(csv_text, yaml_text, name='scope.csv'):
         mean_median=float(s_mean.median()) if len(s_mean) else None,
         # ordered by grade, best first, rather than by how many earned it
         letter_list=[dict(letter=str(letter), n=int(letter_count[letter]))
-                     for letter in _letter_order(config, letter_count)])
+                     for letter in _letter_order(config, letter_count)],
+        thresh_list=_thresh_list(config.grade_thresh),
+        student_list=_graded_student_list(gradebook, df_grade, config))
+
+    out.update(build_view(gradebook, config, df_grade, df_raw))
+    return out
+
+
+def _grade_twice(config, f_csv):
+    """ the prepared gradebook, averaged with the policy and without it """
+    gradebook = Gradebook.from_file(f_csv)
+    config.prepare(gradebook)
+
+    def average(cat_drop_dict, cat_late_dict):
+        return gradebook.average_full(
+            cat_weight_dict=config.cat_weight_dict,
+            cat_drop_dict=cat_drop_dict,
+            cat_late_dict=cat_late_dict,
+            grade_thresh=config.grade_thresh,
+            late_waive_dict=config.late_waive_dict)
+
+    df_grade = average(config.cat_drop_dict, config.cat_late_dict)
+    df_raw = average(dict(), dict())
+    return gradebook, df_grade, df_raw
+
+
+def _graded_student_list(gradebook, df_grade, config):
+    """ one row per student: who they are and what they got """
+    import pandas as pd
+
+    meta = gradebook.df_meta
+    cat_list = list(config.cat_weight_dict)
+
+    def val(row, col):
+        if col not in df_grade.columns:
+            return None
+        x = row[col]
+        return None if pd.isna(x) else float(x)
+
+    out_list = []
+    for email, row in df_grade.iterrows():
+        out_list.append(dict(
+            email=str(email),
+            first=str(meta.at[email, 'firstname'])
+            if 'firstname' in meta.columns else '',
+            last=str(meta.at[email, 'lastname'])
+            if 'lastname' in meta.columns else '',
+            mean=val(row, 'mean'),
+            letter=str(row['letter']) if 'letter' in df_grade.columns else '',
+            cat_dict={cat: val(row, f'mean_{cat}') for cat in cat_list},
+            ass_dict={ass: val(row, ass) for ass in gradebook.ass_list}))
+    return out_list
 
 
 def seed_config(csv_text, name='scope.csv'):
@@ -228,7 +289,57 @@ def form_state(yaml_text):
         waive_late_list=_waive_list(data.get('waive_late')),
         exclude_list=_str_list(ass_dict.get('exclude')),
         complete_thresh=ass_dict.get('exclude_complete_thresh'),
-        email_list=_str_list(data.get('email_list')))
+        email_list=_str_list(data.get('email_list')),
+        sub_list=_sub_list(ass_dict.get('substitute')),
+        thresh_list=_thresh_list(data.get('grade_thresh')))
+
+
+def bin_values(value_json, name_json, n_bin=20):
+    """ a histogram with the students in each bar, for the page to draw
+
+    Binned here rather than by the plotting library so that every bar can
+    say who is in it -- which is the question that makes a distribution
+    worth looking at when you are deciding a cutoff.
+
+    Args:
+        value_json (str): json list of numbers, null where a student has none
+        name_json (str): json list of labels, same order
+        n_bin (int): number of bins
+
+    Returns:
+        hist (dict): edge_list, count_list, who_list
+    """
+    return histogram(json.loads(value_json), json.loads(name_json),
+                     n_bin=int(n_bin))
+
+
+def _sub_list(section):
+    """ a substitute section as one entry per target assignment """
+    if not isinstance(section, dict):
+        return []
+    return [dict(target=str(target), ass_list=_str_list(val))
+            for target, val in section.items()]
+
+
+def _thresh_list(section):
+    """ letter thresholds, highest first; the defaults when none are set """
+    from .perc_to_letter import GRADE_THRESH
+
+    is_default = not isinstance(section, dict) or not section
+    if is_default:
+        section = GRADE_THRESH
+
+    pair_list = []
+    for perc, letter in section.items():
+        try:
+            pair_list.append((float(perc), str(letter)))
+        except (TypeError, ValueError):
+            # a threshold that isn't a number: Config will refuse it, and
+            # saying so is check's job, not this one's
+            continue
+
+    return [dict(perc=perc, letter=letter, is_default=is_default)
+            for perc, letter in sorted(pair_list, reverse=True)]
 
 
 def edit_config(yaml_text, action, args_json='{}'):

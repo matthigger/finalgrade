@@ -287,13 +287,27 @@ It is worth being precise about what that does and doesn't do:
 - **First load fetches ~15 MB** (Python plus pandas), then caches it.
 - **The config is the same `config.yaml`.** Download it and use it with the CLI, or drop a CLI-written one into the page.
 
-The left pane edits the config; the right pane shows what it does to your assignments, updating as you type. That mapping is the whole point — it is `check`, live.
+The left pane edits the config; the right pane shows what it does to your assignments, updating as you type. That mapping is the whole point — it is `check`, live. Grades recompute on every change too, so a policy edit and its effect are never more than a moment apart.
 
-**Categories** are widgets: weight, drop-lowest and late penalty per category, with the assignments each one catches listed underneath as you change it.
+Every option documented above has a control:
 
-**Waivers** are a roster picker. You search for a student by name and tick the assignments to waive, so the email is selected from your csv rather than typed — which is why a waiver made here can't be the silent typo described above.
+- **Categories** — weight, drop-lowest, and late penalty (rate, excused days, grace period), with the assignments each category catches listed underneath as you change it.
+- **Assignments** — exclusions picked from a list, substitutions (with a button offering the exclusion that a substitution almost always needs), and the completion threshold.
+- **Students** — search by name to see that student's final grade, letter, category means and every assignment score, then waive assignments, waive only late penalties, or grant extra late days.
+- **Letter grades** — the cutoff table, editable, resettable to the defaults.
+- **Roster** — paste a list to grade only those students.
 
-Widgets and the file are one document, not two. An edit goes through a round-trip YAML writer, so changing a weight leaves your comments, your key order, and any section with no widget (`substitute`, `grade_thresh`, `email_list`) exactly as they were. Those are edited in the `config.yaml` panel, and anything typed there shows up in the widgets.
+**Waivers can't be typos.** The student is chosen from your csv, so the email is selected rather than typed — which is exactly the silent mistake described above, made impossible.
+
+### Inspecting grades
+
+The chart at the bottom takes a dropdown — the final grade, any category, or any single assignment — and **hovering a bar names the students in it**. That is the question a distribution usually can't answer: not "what is the shape of the class" but "who is sitting just under the A− line?" Letter cutoffs are drawn on the overall view.
+
+Every view toggles between **before** and **after** your policy, or both overlaid. "Before" means before drop-lowest and late penalties, so the gap between the two bars is precisely what your policy did. (Waivers and exclusions are in both — they decide what was assigned, which is a different kind of statement from an adjustment to a score.) A single assignment has no drops or penalties of its own, so there the toggle switches itself off and says why.
+
+### One document, not two
+
+Widgets and the file are the same thing. An edit goes through a round-trip YAML writer, so changing a weight leaves your comments, your key order, your blank lines, and anything the widgets don't understand exactly as they were. Type in the `config.yaml` panel and the widgets follow; use a widget and the file updates. Upload a config you wrote by hand, or download the one you just built and use it with the CLI.
 
 ### Building the site
 

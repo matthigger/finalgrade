@@ -236,6 +236,144 @@ class TestAssignments:
         assert cfg(out).exclude_complete_thresh == 0
 
 
+class TestBlankLines:
+    """ a widget must not slowly flatten the file it edits """
+
+    SPACED = """\
+category:
+  weight:
+    hw: 50
+
+  late_penalty:
+    hw:
+      penalty_per_day: 0.1
+
+assignments:
+  exclude:
+
+waive:
+"""
+
+    def test_a_new_nested_key_lands_inside_its_block(self):
+        out = edit.apply(self.SPACED, 'set_late', dict(
+            cat='hw', late_dict={'excuse_day': 3}))
+
+        line_list = out.splitlines()
+        at = line_list.index('      excuse_day: 3')
+        assert line_list[at - 1].strip() == 'penalty_per_day: 0.1'
+
+    def test_the_separating_blank_line_survives(self):
+        out = edit.apply(self.SPACED, 'set_late', dict(
+            cat='hw', late_dict={'excuse_day': 3}))
+
+        at = out.splitlines().index('assignments:')
+        assert out.splitlines()[at - 1] == ''
+
+    def test_repeated_edits_do_not_accumulate_damage(self):
+        out = self.SPACED
+        for n in range(4):
+            out = edit.apply(out, 'set_late',
+                             dict(cat='hw', late_dict={'excuse_day': n}))
+            out = edit.apply(out, 'set_weight', dict(cat='hw', weight=50 + n))
+
+        assert out.count('\n\n') == self.SPACED.count('\n\n')
+        assert cfg(out).cat_late_dict['hw']['excuse_day'] == 3
+
+
+class TestExcuseOffset:
+    LATE = """\
+category:
+  weight:
+    hw: 100
+  late_penalty:
+    hw:
+      penalty_per_day: .1
+      excuse_day: 2
+"""
+
+    def test_set(self):
+        out = edit.apply(self.LATE, 'set_excuse_offset',
+                         dict(cat='hw', email='a@u.edu', days=3))
+
+        assert cfg(out).cat_late_dict['hw']['excuse_day_offset'] == \
+            {'a@u.edu': 3}
+
+    def test_negative_is_allowed(self):
+        """ an offset takes days away as readily as it gives them """
+        out = edit.apply(self.LATE, 'set_excuse_offset',
+                         dict(cat='hw', email='a@u.edu', days=-2))
+
+        assert cfg(out).cat_late_dict['hw']['excuse_day_offset'] == \
+            {'a@u.edu': -2}
+
+    def test_zero_removes_the_student(self):
+        out = edit.apply(self.LATE, 'set_excuse_offset',
+                         dict(cat='hw', email='a@u.edu', days=3))
+        out = edit.apply(out, 'set_excuse_offset',
+                         dict(cat='hw', email='a@u.edu', days=0))
+
+        assert 'excuse_day_offset' not in cfg(out).cat_late_dict['hw']
+
+    def test_without_a_late_penalty_it_is_refused(self):
+        """ it would be a setting under a category nothing penalises """
+        with pytest.raises(ConfigError, match='no late penalty'):
+            edit.apply('category:\n  weight:\n    hw: 100\n',
+                       'set_excuse_offset',
+                       dict(cat='hw', email='a@u.edu', days=3))
+
+
+class TestSubstitute:
+    def test_set(self):
+        out = edit.apply('', 'set_substitute',
+                         dict(target='quiz1', ass_list=['quiz1v2']))
+
+        assert cfg(out).sub_dict == {'quiz1': ['quiz1v2']}
+
+    def test_empty_removes_it(self):
+        out = edit.apply(YAML_FULL, 'set_substitute',
+                         dict(target='quiz1', ass_list=[]))
+
+        assert cfg(out).sub_dict == {}
+
+
+class TestGradeThresh:
+    def test_written_highest_first(self):
+        out = edit.apply('', 'set_grade_thresh', dict(thresh_list=[
+            dict(perc=0, letter='F'),
+            dict(perc=.9, letter='A'),
+            dict(perc=.8, letter='B')]))
+
+        assert list(cfg(out).grade_thresh.items()) == \
+            [(.9, 'A'), (.8, 'B'), (0, 'F')]
+
+    def test_empty_restores_the_default(self):
+        out = edit.apply(YAML_FULL, 'set_grade_thresh', dict(thresh_list=[]))
+
+        assert cfg(out).grade_thresh is None
+
+    def test_it_reaches_grading(self, f_scope_std):
+        out = edit.apply('', 'set_grade_thresh', dict(thresh_list=[
+            dict(perc=.5, letter='pass'), dict(perc=0, letter='no')]))
+
+        gradebook, df_grade = cfg(out)(str(f_scope_std))
+
+        assert set(df_grade['letter']) <= {'pass', 'no'}
+
+
+class TestEmailList:
+    def test_set(self):
+        out = edit.apply('', 'set_email_list',
+                         dict(email_list=['a@u.edu', 'b@u.edu']))
+
+        assert cfg(out).email_list == ['a@u.edu', 'b@u.edu']
+
+    def test_empty_grades_everyone(self):
+        out = edit.apply('email_list:\n  - a@u.edu\n', 'set_email_list',
+                         dict(email_list=[]))
+
+        assert cfg(out).email_list == []
+
+
 class TestBadInput:
     def test_unknown_edit(self):
         with pytest.raises(ConfigError, match='not an edit'):

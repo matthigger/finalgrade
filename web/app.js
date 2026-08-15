@@ -1,9 +1,14 @@
-/* The page is a thin shell around finalgrade.web: it picks a file,
- * shows what python says about it, and offers the result as a download.
+/* The page is a thin shell around finalgrade.web: it picks a file, shows what
+ * python says about it, and offers the result as a download.
  *
- * Every decision about grading lives in python, so the browser and the
- * command line cannot disagree.  Nothing here uploads anything -- there is
- * no fetch in this file except the two that load python itself.
+ * Every decision about grading lives in python, so the browser and the command
+ * line cannot disagree.  Nothing here uploads anything -- the only fetches in
+ * this file load python itself and the wheel next to this page.
+ *
+ * The config.yaml textarea is the single source of truth.  Widgets hold no
+ * state of their own: each one edits the file (through python's round-trip
+ * yaml, so comments survive) and then the whole page is redrawn from the file.
+ * That is why no control can disagree with the document.
  */
 
 const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.28.3/full/';
@@ -17,13 +22,17 @@ const $ = (id) => document.getElementById(id);
 const state = {
   py: null,
   api: null,
+  seed: null,
   csv: null,
   name: null,
-  gradeCsv: null,
-  seq: 0,
   assList: [],
   studentList: [],
   catHintList: [],
+  form: null,
+  grades: null,
+  view: 'total',
+  mode: 'final',
+  seq: 0,
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -70,18 +79,20 @@ async function findWheel() {
 
 /* ------------------------------------------------------- reading a file */
 
+function readFile(file, then) {
+  const reader = new FileReader();
+  reader.onerror = () => showPickError('Could not read that file.');
+  reader.onload = () => then(String(reader.result));
+  reader.readAsText(file);
+}
+
 function readCsv(file) {
   $('pick-error').hidden = true;
-
   if (file.size > 40e6) {
     return showPickError('That file is over 40 MB, which is far larger than ' +
       'any gradebook — is it the right one?');
   }
-
-  const reader = new FileReader();
-  reader.onerror = () => showPickError('Could not read that file.');
-  reader.onload = () => useCsv(file.name, String(reader.result));
-  reader.readAsText(file);
+  readFile(file, (text) => useCsv(file.name, text));
 }
 
 function showPickError(text) {
@@ -92,16 +103,14 @@ function showPickError(text) {
 
 function useCsv(name, text) {
   const info = toJs(state.api.load_csv(text, name));
-
-  if (!info.ok) {
-    return showPickError(info.error);
-  }
+  if (!info.ok) return showPickError(info.error);
 
   state.csv = text;
   state.name = name;
   state.assList = info.ass_list;
   state.studentList = info.student_list;
   state.catHintList = info.cat_hint_list;
+  state.grades = null;
 
   $('file-name').textContent = name;
   $('file-facts').textContent =
@@ -109,27 +118,26 @@ function useCsv(name, text) {
     `${info.ass_list.length} assignments`;
 
   drawRoster();
+  fillAssignmentSelects();
   $('yaml').value = state.api.seed_config(text, name);
 
   $('pick').hidden = true;
   $('work').hidden = false;
-
-  resetGrades();
   refresh();
 }
 
-/* One place where a change becomes everything the page shows: the widgets,
- * the report, and the fact that any computed grades are now stale. */
+/* One place where a change becomes everything the page shows.  Widgets are
+ * redrawn from the file, then the file is checked, then -- only if it is
+ * usable -- grades and the charts follow. */
 function refresh() {
   drawForm();
-  check();
+  if (check()) runGrades();
+  else clearGrades();
 }
-
-/* ------------------------------------------------- the live mapping view */
 
 let timer = null;
 
-function checkSoon() {
+function refreshSoon() {
   clearTimeout(timer);
   busy();
   timer = setTimeout(refresh, 250);
@@ -141,16 +149,31 @@ function busy() {
   el.textContent = 'checking…';
 }
 
+/* --------------------------------------------------- editing the config */
+
+function applyEdit(action, args) {
+  const res = toJs(state.api.edit_config($('yaml').value, action,
+                                         JSON.stringify(args || {})));
+  if (!res.ok) {
+    // the file no longer parses; the report says so, and the user's own text
+    // is left exactly as they typed it
+    return refresh();
+  }
+  $('yaml').value = res.yaml;
+  refresh();
+}
+
+/* ------------------------------------------------- the live mapping view */
+
 function check() {
   const seq = ++state.seq;
   const rep = toJs(state.api.check_config(state.csv, $('yaml').value,
                                           state.name));
-  // a slower earlier keystroke must not overwrite a newer answer
-  if (seq !== state.seq) return;
+  if (seq !== state.seq) return rep.ok;
 
   drawVerdict(rep);
   drawReport(rep);
-  resetGrades();
+  return rep.ok;
 }
 
 function drawVerdict(rep) {
@@ -170,14 +193,11 @@ function drawVerdict(rep) {
  * trusted markup. */
 function drawReport(rep) {
   const out = [];
-
   out.push(msgList(rep.error_list, 'error'));
   out.push(msgList(rep.warn_list, 'warn'));
-
   out.push(assignmentTable(rep));
   if (rep.excluded_list.length) out.push(excludedTable(rep));
   out.push(categoryTable(rep));
-
   $('report').innerHTML = out.join('');
 }
 
@@ -234,8 +254,7 @@ function excludedTable(rep) {
 function categoryTable(rep) {
   if (rep.weight_by_point) {
     return '<p class="empty">No category is weighted, so every assignment ' +
-      'counts in proportion to its own points. Add a <code>category: ' +
-      'weight:</code> block to weight by category instead.</p>';
+      'counts in proportion to its own points.</p>';
   }
 
   const row = rep.cat_list.map((c) => {
@@ -266,39 +285,32 @@ function fmtLate(late) {
   return escapeHtml(part.join(', '));
 }
 
-/* ---------------------------------------------- the policy widgets
-
- * The widgets and the textarea are one document, not two: an edit goes
- * through python's round-trip yaml, so a form control can change one line
- * and leave every comment (and every section that has no widget) alone.
- */
-
-function applyEdit(action, args) {
-  const res = toJs(state.api.edit_config($('yaml').value, action,
-                                         JSON.stringify(args || {})));
-  if (!res.ok) {
-    // an edit that can't apply means the file no longer parses; the report
-    // will say so, and the user's own text is left exactly as they typed it
-    return check();
-  }
-  $('yaml').value = res.yaml;
-  refresh();
-}
+/* ----------------------------------------------------- the policy widgets */
 
 function drawForm() {
   const form = toJs(state.api.form_state($('yaml').value));
+  state.form = form;
+
   if (!form.ok) {
     $('cats').innerHTML =
-      '<p class="empty">The file below cannot be read as yaml, so these ' +
-      'controls are paused. Fix it there and they come back.</p>';
-    $('quick').innerHTML = '';
-    $('waive-list').innerHTML = '';
+      '<p class="empty">The file cannot be read as yaml, so these controls ' +
+      'are paused. Fix it in the config.yaml panel and they come back.</p>';
+    ['quick', 'excl-list', 'sub-list', 'waive-list', 'thresh-list',
+      'stud-card'].forEach((id) => ($(id).innerHTML = ''));
     return;
   }
 
   drawCategories(form);
   drawQuick(form);
-  drawWaivers(form);
+  drawExclude(form);
+  drawSubstitute(form);
+  drawThresh(form);
+  drawStudent(form);
+  drawWaiveList(form);
+  drawRosterFilter(form);
+
+  $('thresh-complete').value = form.complete_thresh
+    ? Math.round(form.complete_thresh * 100) : '';
 }
 
 function catches(cat) {
@@ -314,13 +326,14 @@ function drawCategories(form) {
     return;
   }
 
-  $('cats-hint').textContent = 'Weights are normalized, so they need not ' +
-    'sum to 100.';
+  $('cats-hint').textContent =
+    'Weights are normalized, so they need not sum to 100.';
 
   $('cats').innerHTML = form.cat_list.map((c) => {
     const hit = catches(c.name);
     const late = c.late || {};
     const on = !!c.late;
+    const grace = late.grace_period_minutes;
 
     return `<div class="cat-card" data-cat="${escapeHtml(c.name)}">
       <div class="cat-head">
@@ -343,7 +356,10 @@ function drawCategories(form) {
         <label class="f"><input type="number" data-act="late-per" min="0"
           step="1" value="${pctOf(late.penalty_per_day)}">% per day</label>
         <label class="f"><input type="number" data-act="late-excuse" min="0"
-          step="1" value="${late.excuse_day || 0}"> excused days</label>` : ''}
+          step="1" value="${late.excuse_day || 0}"> excused days</label>
+        <label class="f"><input type="number" data-act="late-grace" min="0"
+          step="15" value="${grace === undefined ? 60 : grace}"> min
+          grace</label>` : ''}
       </div>
       <div class="cat-hit">${hit.length
         ? 'catches ' + escapeHtml(hit.join(', '))
@@ -374,7 +390,94 @@ function drawQuick(form) {
     `<button type="button" data-cat="" class="other">+ other…</button>`;
 }
 
-/* ------------------------------------------------------ waivers by roster */
+/* ------------------------------------------------------------ assignments */
+
+function fillAssignmentSelects() {
+  const opts = state.assList.map((a) =>
+    `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`
+  ).join('');
+
+  $('excl-add').innerHTML =
+    '<option value="">exclude an assignment…</option>' + opts;
+  $('sub-target').innerHTML = '<option value="">replace…</option>' + opts;
+  $('sub-alt').innerHTML = '<option value="">…</option>' + opts;
+}
+
+function drawExclude(form) {
+  if (!form.exclude_list.length) {
+    $('excl-list').innerHTML = '<span class="empty">nothing excluded</span>';
+    return;
+  }
+
+  $('excl-list').innerHTML = form.exclude_list.map((s) => {
+    const hit = catches(s);
+    const title = hit.length ? `removes ${hit.join(', ')}`
+      : 'matches no assignment';
+    return `<span class="chip" title="${escapeHtml(title)}">` +
+      `${escapeHtml(s)}<button type="button" data-excl="${escapeHtml(s)}"
+        title="stop excluding">&times;</button></span>`;
+  }).join('');
+}
+
+function drawSubstitute(form) {
+  if (!form.sub_list.length) {
+    $('sub-list').innerHTML = '<span class="empty">no substitutions</span>';
+    return;
+  }
+
+  $('sub-list').innerHTML = form.sub_list.map((s) => {
+    const missing = s.ass_list.filter((a) => !catches(a).length);
+    const warn = missing.length
+      ? `<span class="tag error">no such assignment: ${
+        escapeHtml(missing.join(', '))}</span>` : '';
+    // alternates double count unless excluded too, which is the mistake this
+    // section invites, so offer the fix where the mistake is made
+    const open = s.ass_list.filter(
+      (a) => !form.exclude_list.some((e) => a.includes(e)));
+    const nag = open.length
+      ? `<button type="button" class="small nag" data-excl-add="${
+        escapeHtml(open.join(','))}">also exclude ${
+        escapeHtml(open.join(', '))}</button>` : '';
+
+    return `<div class="sub-row">
+      <span class="name">${escapeHtml(s.target)}</span>
+      <span class="arrow">← best of</span>
+      <span class="name">${escapeHtml(s.ass_list.join(', '))}</span>
+      <button type="button" class="x" data-sub="${escapeHtml(s.target)}"
+        title="remove">&times;</button>
+      ${warn}${nag}
+    </div>`;
+  }).join('');
+}
+
+/* ---------------------------------------------------------- letter grades */
+
+function drawThresh(form) {
+  const list = form.thresh_list;
+  $('letters-sub').textContent = (list.length && list[0].is_default)
+    ? 'the defaults' : `${list.length} letters`;
+
+  $('thresh-list').innerHTML = '<table class="thresh"><tbody>' +
+    list.map((t, i) => `<tr>
+      <td><input type="number" data-thresh="${i}" data-k="perc" min="0"
+        max="100" step="1" class="pct" value="${
+        Math.round(t.perc * 1000) / 10}"></td>
+      <td class="unit">% and up earns</td>
+      <td><input type="text" data-thresh="${i}" data-k="letter" class="ltr"
+        value="${escapeHtml(t.letter)}"></td>
+      <td><button type="button" class="x" data-thresh-drop="${i}"
+        title="remove">&times;</button></td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+function threshFromForm() {
+  return [...document.querySelectorAll('#thresh-list tr')].map((tr) => ({
+    perc: Number(tr.querySelector('[data-k="perc"]').value) / 100,
+    letter: tr.querySelector('[data-k="letter"]').value.trim(),
+  })).filter((t) => t.letter);
+}
+
+/* ---------------------------------------------------------------- students */
 
 function drawRoster() {
   $('roster').innerHTML = state.studentList.map((s) => {
@@ -384,27 +487,110 @@ function drawRoster() {
   }).join('');
 }
 
+function pickedStudent() {
+  const email = $('stud').value.trim();
+  return state.studentList.find((s) => s.email === email) || null;
+}
+
 function waiveOf(form, kind) {
   return kind === 'waive_late' ? form.waive_late_list : form.waive_list;
 }
 
-function drawWaivers(form) {
-  state.form = form;
-  drawWaiveChecks(form);
+function drawStudent(form) {
+  if (!form || !form.ok) return;
+  const stud = pickedStudent();
+  $('stud-clear').hidden = !$('stud').value.trim();
 
+  if (!stud) {
+    $('stud-card').innerHTML = $('stud').value.trim()
+      ? '<p class="empty">No student with that email. Pick one from the ' +
+        'list — the roster comes from your csv, so a student chosen here ' +
+        'can never be a typo.</p>'
+      : '<p class="empty">Pick a student to see their grade, waive an ' +
+        'assignment, or give them extra late days.</p>';
+    return;
+  }
+
+  const graded = ((state.grades || {}).student_list || [])
+    .find((s) => s.email === stud.email);
+
+  $('stud-card').innerHTML = `
+    <div class="stud-card">
+      <div class="stud-head">
+        <span class="stud-name">${escapeHtml(
+          [stud.first, stud.last].filter(Boolean).join(' ') || stud.email)
+        }</span>
+        <span class="stud-email">${escapeHtml(stud.email)}</span>
+        ${graded
+          ? `<span class="stud-grade">${pct(graded.mean)}<span
+              class="stud-letter">${escapeHtml(graded.letter)}</span></span>`
+          : '<span class="empty">no grade yet</span>'}
+      </div>
+      ${graded ? studGrades(graded) : ''}
+      ${waiveChecks(form, stud)}
+      ${excuseRow(form, stud)}
+    </div>`;
+}
+
+function studGrades(graded) {
+  const cell = ([k, v]) =>
+    `<span class="mini"><span class="mini-k">${escapeHtml(k)}</span>` +
+    `<span class="mini-v">${pct(v)}</span></span>`;
+
+  const cat = Object.entries(graded.cat_dict).map(cell).join('');
+  const ass = Object.entries(graded.ass_dict).map(cell).join('');
+
+  return `<div class="stud-rows">
+    ${cat ? `<div class="mini-row">${cat}</div>` : ''}
+    <div class="mini-row dim">${ass}</div>
+  </div>`;
+}
+
+function waiveChecks(form, stud) {
+  const row = (kind, label) => {
+    const cur = waiveOf(form, kind).find((w) => w.email === stud.email);
+    const have = new Set(cur ? cur.ass_list : []);
+    return `<div class="waive-row">
+      <span class="field-k">${label}</span>
+      <div class="checks">${state.assList.map((a) => `<label class="f">
+        <input type="checkbox" data-waive="${escapeHtml(a.name)}"
+          data-kind="${kind}" ${have.has(a.name) ? 'checked' : ''}>
+        ${escapeHtml(a.name)}</label>`).join('')}</div>
+    </div>`;
+  };
+
+  return row('waive', 'waive assignment') +
+         row('waive_late', 'waive late penalty');
+}
+
+function excuseRow(form, stud) {
+  const late = form.cat_list.filter((c) => c.late);
+  if (!late.length) return '';
+
+  return `<div class="waive-row">
+    <span class="field-k">extra late days</span>
+    <div class="checks">${late.map((c) => {
+      const off = ((c.late || {}).excuse_day_offset || {})[stud.email] || 0;
+      return `<label class="f">${escapeHtml(c.name)}
+        <input type="number" data-excuse="${escapeHtml(c.name)}" step="1"
+          value="${off}"></label>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function drawWaiveList(form) {
   const rows = [
     ...form.waive_list.map((w) => ({ ...w, kind: 'waive' })),
     ...form.waive_late_list.map((w) => ({ ...w, kind: 'waive_late' })),
   ];
 
-  if (!rows.length) {
-    $('waive-list').innerHTML = '<p class="empty">No waivers yet.</p>';
-    return;
-  }
+  if (!rows.length) return ($('waive-list').innerHTML = '');
 
-  $('waive-list').innerHTML = `<table class="waive-table"><tbody>` +
-    rows.map((w) => `<tr>
-      <td class="name">${escapeHtml(w.email)}</td>
+  $('waive-list').innerHTML =
+    '<table class="waive-table"><caption>waivers in this config</caption>' +
+    '<tbody>' + rows.map((w) => `<tr>
+      <td><button type="button" class="link" data-goto="${
+        escapeHtml(w.email)}">${escapeHtml(w.email)}</button></td>
       <td>${escapeHtml(w.ass_list.join(', '))}</td>
       <td>${w.kind === 'waive_late'
         ? '<span class="tag late">late only</span>' : ''}</td>
@@ -413,66 +599,46 @@ function drawWaivers(form) {
     </tr>`).join('') + '</tbody></table>';
 }
 
-function drawWaiveChecks(form) {
-  const email = $('stud').value.trim();
-  const kind = $('waive-kind').value;
-
-  if (!email) {
-    $('waive-pick-ass').innerHTML = '';
-    return;
+function drawRosterFilter(form) {
+  const n = form.email_list.length;
+  $('roster-count').textContent = n ? `${n} students`
+    : 'everyone in the csv';
+  if (document.activeElement !== $('email-list')) {
+    $('email-list').value = form.email_list.join('\n');
   }
-
-  const known = state.studentList.some((s) => s.email === email);
-  if (!known) {
-    $('waive-pick-ass').innerHTML =
-      '<p class="empty">Pick a student from the list — the roster comes ' +
-      'from your csv, so a name here is never a typo.</p>';
-    return;
-  }
-
-  const cur = waiveOf(form, kind).find((w) => w.email === email);
-  const have = new Set(cur ? cur.ass_list : []);
-
-  $('waive-pick-ass').innerHTML = '<div class="checks">' +
-    state.assList.map((a) => `<label class="f">
-      <input type="checkbox" data-waive="${escapeHtml(a.name)}"
-        ${have.has(a.name) ? 'checked' : ''}> ${escapeHtml(a.name)}
-    </label>`).join('') + '</div>';
 }
 
-function setWaive(ass, on) {
-  const email = $('stud').value.trim();
-  const kind = $('waive-kind').value;
-  const cur = waiveOf(state.form, kind).find((w) => w.email === email);
+/* ------------------------------------------------------------------ grades */
 
-  const set = new Set(cur ? cur.ass_list : []);
-  if (on) set.add(ass); else set.delete(ass);
-
-  applyEdit('set_waive', {
-    email, ass_list: [...set], field: kind,
-  });
-}
-
-/* ------------------------------------------------------------- grading */
-
-function resetGrades() {
-  state.gradeCsv = null;
+function clearGrades() {
+  state.grades = null;
   $('dl-grades').hidden = true;
-  $('grades').innerHTML = '';
+  $('inspect-panel').hidden = true;
+  $('grades').innerHTML =
+    '<p class="empty">Grades appear here once the config is usable.</p>';
 }
 
 function runGrades() {
   const res = toJs(state.api.grade(state.csv, $('yaml').value, state.name));
 
   if (!res.ok) {
-    $('grades').innerHTML = `<div class="msg error">` +
+    state.grades = null;
+    $('dl-grades').hidden = true;
+    $('inspect-panel').hidden = true;
+    $('grades').innerHTML = '<div class="msg error">' +
       `<span class="what">error</span>${escapeHtml(res.error)}</div>`;
     return;
   }
 
-  state.gradeCsv = res.csv;
+  state.grades = res;
   $('dl-grades').hidden = false;
+  drawGradeStats(res);
+  drawInspector();
+  // the student card gains a grade once there is one
+  if (pickedStudent()) drawStudent(state.form);
+}
 
+function drawGradeStats(res) {
   const max = Math.max(...res.letter_list.map((l) => l.n), 1);
   const bars = res.letter_list.map((l) => `
     <div class="bar-wrap" title="${l.n} students">
@@ -494,7 +660,155 @@ function runGrades() {
     <div class="dist">${bars}</div>`;
 }
 
-/* ---------------------------------------------------------------- utils */
+/* --------------------------------------------------------- the inspector */
+
+const MODE_HINT = {
+  final: 'The grade as it stands, with drops and late penalties applied.',
+  raw: 'The same grade before drop-lowest and late penalties — what the ' +
+       'scores alone would give.',
+  both: 'Before and after the policy, overlaid. The gap between them is ' +
+        'what your drops and late penalties did.',
+};
+
+function drawInspector() {
+  const res = state.grades;
+  if (!res) return;
+
+  $('inspect-panel').hidden = false;
+
+  if (!res.view_list.some((v) => v.key === state.view)) state.view = 'total';
+
+  $('view').innerHTML = optGroup(res.view_list, 'total', 'overall') +
+    optGroup(res.view_list, 'category', 'categories') +
+    optGroup(res.view_list, 'assignment', 'assignments');
+  $('view').value = state.view;
+
+  const pair = res.value_dict[state.view] || { final: [], raw: null };
+  const hasRaw = !!pair.raw;
+  const mode = hasRaw ? state.mode : 'final';
+
+  // an assignment has no policy of its own, so the toggle would be a lie
+  [...$('mode').children].forEach((b) => {
+    const m = b.getAttribute('data-mode');
+    b.disabled = !hasRaw && m !== 'final';
+    b.classList.toggle('on', m === mode);
+  });
+
+  $('mode-hint').textContent = hasRaw ? MODE_HINT[mode]
+    : 'A single assignment has no drops or late penalties of its own — ' +
+      'those apply across a category, so there is nothing to compare here.';
+
+  drawChart(pair, mode);
+}
+
+function optGroup(viewList, kind, label) {
+  const list = viewList.filter((v) => v.kind === kind);
+  if (!list.length) return '';
+  return `<optgroup label="${label}">` + list.map((v) =>
+    `<option value="${escapeHtml(v.key)}">${escapeHtml(v.label)}</option>`
+  ).join('') + '</optgroup>';
+}
+
+function studentNames() {
+  return ((state.grades || {}).student_list || []).map((s) =>
+    [s.first, s.last].filter(Boolean).join(' ') || s.email);
+}
+
+function bin(values) {
+  return toJs(state.api.bin_values(JSON.stringify(values),
+                                   JSON.stringify(studentNames()), 20));
+}
+
+const COLOR = { final: '#1f5fa9', raw: '#c98b2e' };
+
+function drawChart(pair, mode) {
+  if (!window.Plotly) {
+    $('chart').innerHTML =
+      '<p class="empty">The chart library is still loading…</p>';
+    return void setTimeout(() => drawChart(pair, mode), 400);
+  }
+
+  const traceList = [];
+  if (mode === 'final' || mode === 'both') {
+    traceList.push(trace(bin(pair.final), 'after policy', COLOR.final));
+  }
+  if ((mode === 'raw' || mode === 'both') && pair.raw) {
+    traceList.push(trace(bin(pair.raw), 'before policy', COLOR.raw));
+  }
+
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const ink = dark ? '#e8eaed' : '#1a1d21';
+  const line = dark ? '#333940' : '#dfe3e8';
+
+  const shapes = [];
+  const annotations = [];
+  if (state.view === 'total') {
+    for (const t of (state.grades.thresh_list || [])) {
+      if (t.perc <= 0 || t.perc > 1) continue;
+      shapes.push({
+        type: 'line', x0: t.perc, x1: t.perc, yref: 'paper', y0: 0, y1: 1,
+        line: { color: line, width: 1, dash: 'dot' },
+      });
+      annotations.push({
+        x: t.perc, y: 1, yref: 'paper', text: t.letter, showarrow: false,
+        yanchor: 'bottom', font: { size: 10, color: ink }, opacity: .75,
+      });
+    }
+  }
+
+  Plotly.react($('chart'), traceList, {
+    barmode: 'overlay',
+    bargap: .06,
+    margin: { l: 46, r: 14, t: 24, b: 42 },
+    height: 340,
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(0,0,0,0)',
+    font: { color: ink, size: 12 },
+    xaxis: { title: { text: 'grade' }, tickformat: '.0%',
+             gridcolor: line, zerolinecolor: line },
+    yaxis: { title: { text: 'students' }, gridcolor: line,
+             zerolinecolor: line, rangemode: 'tozero' },
+    showlegend: mode === 'both',
+    legend: { orientation: 'h', y: 1.12, x: 0 },
+    shapes,
+    annotations,
+    hovermode: 'closest',
+  }, { displayModeBar: false, responsive: true });
+}
+
+function trace(hist, name, color) {
+  const x = [];
+  const y = [];
+  const custom = [];
+
+  for (let i = 0; i < hist.count_list.length; i++) {
+    const lo = hist.edge_list[i];
+    const hi = hist.edge_list[i + 1];
+    x.push((lo + hi) / 2);
+    y.push(hist.count_list[i]);
+
+    // the names are the reason this is binned in python at all
+    const list = hist.who_list[i];
+    custom.push([
+      `${(lo * 100).toFixed(0)}–${(hi * 100).toFixed(0)}%`,
+      list.length > 12
+        ? list.slice(0, 12).join('<br>') + `<br>…and ${list.length - 12} more`
+        : list.join('<br>'),
+    ]);
+  }
+
+  return {
+    type: 'bar', x, y, name,
+    width: (hist.edge_list[1] - hist.edge_list[0]) || .05,
+    marker: { color, line: { width: 0 } },
+    opacity: .8,
+    customdata: custom,
+    hovertemplate: '<b>%{customdata[0]}</b> · %{y} students' +
+      '<br>%{customdata[1]}<extra></extra>',
+  };
+}
+
+/* ------------------------------------------------------------------ utils */
 
 function toJs(proxy) {
   const out = proxy.toJs({ dict_converter: Object.fromEntries });
@@ -525,7 +839,7 @@ function pct(x) {
   return x === null || x === undefined ? '–' : `${(x * 100).toFixed(1)}%`;
 }
 
-/* ---------------------------------------------------------------- wiring */
+/* ----------------------------------------------------------------- wiring */
 
 $('browse').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', (e) => {
@@ -552,24 +866,22 @@ $('demo').addEventListener('click', async () => {
   useCsv('example.csv', await res.text());
 });
 
-$('yaml').addEventListener('input', checkSoon);
+$('yaml').addEventListener('input', refreshSoon);
 
 $('quick').addEventListener('click', (e) => {
   const cat = e.target.getAttribute('data-cat');
   if (cat === null) return;
-
   const name = cat || (prompt('Category name — it matches any assignment ' +
     'whose name contains it:') || '').trim().replace(/\s+/g, '').toLowerCase();
   if (name) applyEdit('add_category', { cat: name });
 });
 
 /* number inputs commit on change (blur or enter), not on every keystroke:
- * re-rendering mid-keystroke would take the caret with it */
+ * redrawing mid-keystroke would take the caret with it */
 $('cats').addEventListener('change', (e) => {
   const act = e.target.getAttribute('data-act');
-  const cat = e.target.closest('.cat-card').getAttribute('data-cat');
   if (!act) return;
-
+  const cat = e.target.closest('.cat-card').getAttribute('data-cat');
   const num = Number(e.target.value);
 
   if (act === 'weight') applyEdit('set_weight', { cat, weight: num });
@@ -582,39 +894,163 @@ $('cats').addEventListener('change', (e) => {
     applyEdit('set_late', { cat, late_dict: { penalty_per_day: num / 100 } });
   } else if (act === 'late-excuse') {
     applyEdit('set_late', { cat, late_dict: { excuse_day: num } });
+  } else if (act === 'late-grace') {
+    applyEdit('set_late', { cat, late_dict: { grace_period_minutes: num } });
   }
 });
 
 $('cats').addEventListener('click', (e) => {
   if (e.target.getAttribute('data-act') !== 'remove') return;
-  const cat = e.target.closest('.cat-card').getAttribute('data-cat');
-  applyEdit('remove_category', { cat });
+  applyEdit('remove_category',
+            { cat: e.target.closest('.cat-card').getAttribute('data-cat') });
 });
 
-$('stud').addEventListener('input', () => drawWaiveChecks(state.form));
-$('waive-kind').addEventListener('change', () => drawWaiveChecks(state.form));
+$('excl-add').addEventListener('change', (e) => {
+  const name = e.target.value;
+  e.target.value = '';
+  if (name) {
+    applyEdit('set_exclude', { ass_list: [...state.form.exclude_list, name] });
+  }
+});
 
-$('waive-pick-ass').addEventListener('change', (e) => {
+$('excl-list').addEventListener('click', (e) => {
+  const name = e.target.getAttribute('data-excl');
+  if (name === null) return;
+  applyEdit('set_exclude',
+            { ass_list: state.form.exclude_list.filter((s) => s !== name) });
+});
+
+$('sub-go').addEventListener('click', () => {
+  const target = $('sub-target').value;
+  const alt = $('sub-alt').value;
+  if (!target || !alt || target === alt) return;
+
+  const cur = state.form.sub_list.find((s) => s.target === target);
+  const list = new Set(cur ? cur.ass_list : []);
+  list.add(alt);
+  applyEdit('set_substitute', { target, ass_list: [...list] });
+});
+
+$('sub-list').addEventListener('click', (e) => {
+  const target = e.target.getAttribute('data-sub');
+  if (target !== null) {
+    return applyEdit('set_substitute', { target, ass_list: [] });
+  }
+  const add = e.target.getAttribute('data-excl-add');
+  if (add !== null) {
+    applyEdit('set_exclude',
+              { ass_list: [...state.form.exclude_list, ...add.split(',')] });
+  }
+});
+
+$('thresh-complete').addEventListener('change', (e) =>
+  applyEdit('set_complete_thresh', { thresh: Number(e.target.value) / 100 }));
+
+$('thresh-list').addEventListener('change', () =>
+  applyEdit('set_grade_thresh', { thresh_list: threshFromForm() }));
+
+$('thresh-list').addEventListener('click', (e) => {
+  const i = e.target.getAttribute('data-thresh-drop');
+  if (i === null) return;
+  const list = threshFromForm();
+  list.splice(Number(i), 1);
+  applyEdit('set_grade_thresh', { thresh_list: list });
+});
+
+$('thresh-add').addEventListener('click', () => {
+  const list = threshFromForm();
+  const low = list.length ? Math.min(...list.map((t) => t.perc)) : 1;
+  list.push({ perc: Math.max(0, low - 0.05), letter: 'new' });
+  applyEdit('set_grade_thresh', { thresh_list: list });
+});
+
+$('thresh-reset').addEventListener('click', () =>
+  applyEdit('set_grade_thresh', { thresh_list: [] }));
+
+$('stud').addEventListener('input', () => drawStudent(state.form));
+$('stud-clear').addEventListener('click', () => {
+  $('stud').value = '';
+  drawStudent(state.form);
+});
+
+$('stud-card').addEventListener('change', (e) => {
+  const stud = pickedStudent();
+  if (!stud) return;
+
   const ass = e.target.getAttribute('data-waive');
-  if (ass) setWaive(ass, e.target.checked);
+  if (ass !== null) {
+    const kind = e.target.getAttribute('data-kind');
+    const cur = waiveOf(state.form, kind).find((w) => w.email === stud.email);
+    const set = new Set(cur ? cur.ass_list : []);
+    if (e.target.checked) set.add(ass); else set.delete(ass);
+    return applyEdit('set_waive',
+                     { email: stud.email, ass_list: [...set], field: kind });
+  }
+
+  const cat = e.target.getAttribute('data-excuse');
+  if (cat !== null) {
+    applyEdit('set_excuse_offset',
+              { cat, email: stud.email, days: Number(e.target.value) });
+  }
 });
 
 $('waive-list').addEventListener('click', (e) => {
+  const goto = e.target.getAttribute('data-goto');
+  if (goto !== null) {
+    $('stud').value = goto;
+    drawStudent(state.form);
+    $('stud').scrollIntoView({ block: 'center' });
+    return;
+  }
   const email = e.target.getAttribute('data-drop');
-  if (!email) return;
-  applyEdit('set_waive', {
-    email, ass_list: [], field: e.target.getAttribute('data-kind'),
-  });
+  if (email !== null) {
+    applyEdit('set_waive', {
+      email, ass_list: [], field: e.target.getAttribute('data-kind'),
+    });
+  }
+});
+
+$('email-save').addEventListener('click', () =>
+  applyEdit('set_email_list', {
+    email_list: $('email-list').value.split(/[\n,]/)
+      .map((s) => s.trim()).filter(Boolean),
+  }));
+
+$('email-clear').addEventListener('click', () => {
+  $('email-list').value = '';
+  applyEdit('set_email_list', { email_list: [] });
+});
+
+$('view').addEventListener('change', (e) => {
+  state.view = e.target.value;
+  drawInspector();
+});
+
+$('mode').addEventListener('click', (e) => {
+  const mode = e.target.getAttribute('data-mode');
+  if (!mode || e.target.disabled) return;
+  state.mode = mode;
+  drawInspector();
 });
 
 $('dl-config').addEventListener('click', () =>
   download($('yaml').value, 'config.yaml', 'text/yaml'));
 
-$('dl-grades').addEventListener('click', () => {
-  if (state.gradeCsv) download(state.gradeCsv, 'grade_full.csv', 'text/csv');
+$('up-config').addEventListener('click', () => $('file-config').click());
+$('file-config').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    readFile(file, (text) => {
+      $('yaml').value = text;
+      refresh();
+    });
+  }
+  e.target.value = '';
 });
 
-$('run').addEventListener('click', runGrades);
+$('dl-grades').addEventListener('click', () => {
+  if (state.grades) download(state.grades.csv, 'grade_full.csv', 'text/csv');
+});
 
 $('change').addEventListener('click', () => {
   $('work').hidden = true;

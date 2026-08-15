@@ -56,6 +56,34 @@ def dump(data):
     return stream.getvalue()
 
 
+def _put(section, key, value):
+    """ sets section[key], keeping any blank line that followed the block
+
+    ruamel attaches the blank line separating a block from the next section
+    to that block's *last key*.  Appending a key after it would put the new
+    setting below the blank line and take the separator with it, so the file
+    slowly loses its shape every time a widget touches it.  Move the blank
+    along to whatever is last now.
+    """
+    if key in section:
+        section[key] = value
+        return
+
+    token = None
+    last_key = next(reversed(section), None) if len(section) else None
+    if last_key is not None:
+        entry = section.ca.items.get(last_key)
+        # index 2 is the comment following the value; a blank line is a
+        # token of nothing but newlines
+        if entry and entry[2] is not None and not entry[2].value.strip():
+            token, entry[2] = entry[2], None
+
+    section[key] = value
+
+    if token is not None:
+        section.ca.items.setdefault(key, [None, None, None, None])[2] = token
+
+
 def _section(data, *key_tup):
     """ the mapping at key_tup, creating it (over a null) when needed """
     node = data
@@ -63,7 +91,7 @@ def _section(data, *key_tup):
         val = node.get(key)
         if not isinstance(val, dict):
             val = CommentedMap()
-            node[key] = val
+            _put(node, key, val)
         node = val
     return node
 
@@ -95,7 +123,7 @@ def add_category(data, cat, rebalance=True):
     if cat in weight_dict:
         return
 
-    weight_dict[cat] = 0
+    _put(weight_dict, cat, 0)
     if rebalance:
         share = _num(round(100 / len(weight_dict)))
         for key in weight_dict:
@@ -119,7 +147,7 @@ def remove_category(data, cat):
 
 def set_weight(data, cat, weight):
     """ sets one category's weight """
-    _section(data, 'category', 'weight')[cat] = _num(weight)
+    _put(_section(data, 'category', 'weight'), cat, _num(weight))
 
 
 def set_drop_low(data, cat, n):
@@ -128,7 +156,7 @@ def set_drop_low(data, cat, n):
         section = _section(data, 'category', 'drop_low')
         section.pop(cat, None)
     else:
-        _section(data, 'category', 'drop_low')[cat] = int(n)
+        _put(_section(data, 'category', 'drop_low'), cat, int(n))
     _clear_if_empty(data, 'category', 'drop_low')
 
 
@@ -144,7 +172,32 @@ def set_late(data, cat, late_dict=None):
         if val is None:
             section.pop(key, None)
         else:
-            section[key] = _num(val)
+            _put(section, key, _num(val))
+
+
+def set_excuse_offset(data, cat, email, days):
+    """ adjusts one student's excused late days (0 removes the entry)
+
+    Per student rather than per category, which is why it is edited from the
+    student panel: it exists for accommodations, one person at a time.
+    """
+    late_dict = data.get('category', {}).get('late_penalty') \
+        if isinstance(data.get('category'), dict) else None
+    if not isinstance(late_dict, dict) or cat not in late_dict:
+        raise ConfigError(
+            f'no late penalty on category "{cat}" to excuse days against')
+
+    if days:
+        _put(_section(data, 'category', 'late_penalty', cat,
+                      'excuse_day_offset'), email, _num(days))
+        return
+
+    section = late_dict.get(cat)
+    if isinstance(section, dict) \
+            and isinstance(section.get('excuse_day_offset'), dict):
+        section['excuse_day_offset'].pop(email, None)
+        if not section['excuse_day_offset']:
+            section.pop('excuse_day_offset', None)
 
 
 # ----------------------------------------------------------------- waivers
@@ -162,7 +215,7 @@ def set_waive(data, email, ass_list, field='waive'):
 
     section = _section(data, field)
     if ass_list:
-        section[email] = ', '.join(ass_list)
+        _put(section, email, ', '.join(ass_list))
     else:
         section.pop(email, None)
     _clear_if_empty(data, field)
@@ -174,7 +227,7 @@ def set_waive(data, email, ass_list, field='waive'):
 def set_exclude(data, ass_list):
     """ replaces the list of excluded assignments """
     if ass_list:
-        _section(data, 'assignments')['exclude'] = list(ass_list)
+        _put(_section(data, 'assignments'), 'exclude', list(ass_list))
     else:
         section = data.get('assignments')
         if isinstance(section, dict):
@@ -184,7 +237,52 @@ def set_exclude(data, ass_list):
 def set_complete_thresh(data, thresh):
     """ sets the completion threshold (None or 0 removes it) """
     section = _section(data, 'assignments')
-    section['exclude_complete_thresh'] = _num(thresh) if thresh else None
+    _put(section, 'exclude_complete_thresh',
+         _num(thresh) if thresh else None)
+
+
+def set_substitute(data, target, ass_list):
+    """ sets which assignments may stand in for target (empty removes it)
+
+    The alternates almost always want excluding too, or they count twice --
+    but that is the caller's call to make and to show, not a silent edit.
+    """
+    section = _section(data, 'assignments', 'substitute')
+    if ass_list:
+        _put(section, target, list(ass_list))
+    else:
+        section.pop(target, None)
+    _clear_if_empty(data, 'assignments', 'substitute')
+
+
+# ------------------------------------------------------- letters and roster
+
+
+def set_grade_thresh(data, thresh_list):
+    """ replaces the letter thresholds
+
+    Args:
+        thresh_list (list): dicts of perc (0-1) and letter, any order.  an
+            empty list restores the package default by removing the section
+    """
+    if not thresh_list:
+        data['grade_thresh'] = None
+        return
+
+    # highest first, which is the order a reader expects and the order the
+    # packaged config ships in
+    pair_list = sorted(((row['perc'], str(row['letter']))
+                        for row in thresh_list), reverse=True)
+
+    section = CommentedMap()
+    for perc, letter in pair_list:
+        section[_num(perc)] = letter
+    data['grade_thresh'] = section
+
+
+def set_email_list(data, email_list):
+    """ replaces the roster filter (empty removes it) """
+    data['email_list'] = list(email_list) if email_list else None
 
 
 ACTION_DICT = {
@@ -193,9 +291,13 @@ ACTION_DICT = {
     'set_weight': set_weight,
     'set_drop_low': set_drop_low,
     'set_late': set_late,
+    'set_excuse_offset': set_excuse_offset,
     'set_waive': set_waive,
     'set_exclude': set_exclude,
     'set_complete_thresh': set_complete_thresh,
+    'set_substitute': set_substitute,
+    'set_grade_thresh': set_grade_thresh,
+    'set_email_list': set_email_list,
 }
 
 

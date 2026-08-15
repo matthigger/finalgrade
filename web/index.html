@@ -7,6 +7,13 @@
 <meta name="description" content="Compute final grades from a Gradescope or Canvas CSV export, in your browser. Nothing is uploaded.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
+<!-- the cartesian bundle: histograms and scatter, a fifth the size of full
+     plotly.  loaded up front so the page still works offline afterwards.
+     pinned exactly and checked against its hash: this page handles student
+     grades, so a swapped cdn file should fail to run rather than run -->
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-cartesian-dist-min@3.7.0/plotly-cartesian.min.js"
+  integrity="sha384-bZyw96TJNxAYROKQ6Js+sdba9eOCs2wvFMevzzEC0+g30MXHiX/nh7wfW8Kahmcf"
+  crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
 </head>
 <body>
 
@@ -65,38 +72,97 @@
       </div>
 
       <div class="panel">
-        <h2>waivers <span class="sub">for one student</span></h2>
-        <div class="waive-pick">
-          <input id="stud" list="roster" placeholder="find a student…"
-            autocomplete="off" aria-label="find a student">
-          <datalist id="roster"></datalist>
-          <select id="waive-kind" aria-label="kind of waiver">
-            <option value="waive">waive the assignment</option>
-            <option value="waive_late">waive only the late penalty</option>
+        <h2>assignments <span class="sub">what to leave out, and stand in</span></h2>
+
+        <div class="field">
+          <span class="field-k">excluded</span>
+          <div id="excl-list" class="chips"></div>
+          <select id="excl-add" aria-label="exclude an assignment">
+            <option value="">exclude an assignment…</option>
           </select>
         </div>
-        <div id="waive-pick-ass"></div>
-        <div id="waive-list"></div>
+
+        <div class="field">
+          <span class="field-k">substitutions</span>
+          <div id="sub-list"></div>
+          <div class="sub-add">
+            <select id="sub-target" aria-label="assignment to replace">
+              <option value="">replace…</option>
+            </select>
+            <span class="arrow">with the best of</span>
+            <select id="sub-alt" aria-label="assignment to allow instead">
+              <option value="">…</option>
+            </select>
+            <button type="button" id="sub-go" class="small">add</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="f" for="thresh-complete">drop assignments fewer
+            than</label>
+          <input type="number" id="thresh-complete" min="0" max="100" step="5"
+            class="pct"> <span class="unit">% of students submitted</span>
+        </div>
       </div>
+
+      <div class="panel">
+        <h2>students <span class="sub">grades, waivers, accommodations</span></h2>
+        <div class="waive-pick">
+          <input id="stud" list="roster" placeholder="find a student by name…"
+            autocomplete="off" aria-label="find a student">
+          <datalist id="roster"></datalist>
+          <button type="button" id="stud-clear" class="small secondary"
+            hidden>clear</button>
+        </div>
+        <div id="stud-card"></div>
+        <div id="waive-list"></div>
+
+        <details id="roster-filter">
+          <summary>limit grading to a roster <span class="sub"
+            id="roster-count"></span></summary>
+          <p class="hint">One email per line. Anyone not listed is dropped
+            from the output — useful for removing students who withdrew.
+            Leave empty to grade everyone in the csv.</p>
+          <textarea id="email-list" rows="5" spellcheck="false"
+            aria-label="roster"></textarea>
+          <div class="row">
+            <button type="button" id="email-save" class="small">apply
+              roster</button>
+            <button type="button" id="email-clear"
+              class="small secondary">grade everyone</button>
+          </div>
+        </details>
+      </div>
+
+      <details class="panel" id="letters">
+        <summary>letter grades <span class="sub" id="letters-sub"></span></summary>
+        <div id="thresh-list"></div>
+        <div class="row">
+          <button type="button" id="thresh-add" class="small">add a
+            letter</button>
+          <button type="button" id="thresh-reset"
+            class="small secondary">back to defaults</button>
+        </div>
+        <p class="hint">The lowest percentage that earns each letter. One
+          must reach 0, or a low grade would have no letter at all.</p>
+      </details>
 
       <details class="panel" id="raw">
         <summary>config.yaml <span class="sub">the file itself</span></summary>
         <textarea id="yaml" spellcheck="false" autocapitalize="off"
           autocorrect="off" aria-label="config.yaml"></textarea>
-        <p class="hint">Everything above edits this file, and anything you
-          type here shows up above. Options with no widget yet
-          (<code>substitute</code>, <code>grade_thresh</code>,
-          <code>email_list</code>) are edited here.</p>
-      </details>
-
-      <div class="panel">
         <div class="row">
-          <button type="button" id="dl-config">download config.yaml</button>
+          <button type="button" id="dl-config">download</button>
+          <button type="button" id="up-config" class="secondary">upload a
+            config…</button>
           <button type="button" id="reset" class="secondary">start over</button>
         </div>
-        <p class="hint">Keep this file. Next time, drop it back in — or use it
-          with the command line tool, which reads exactly the same format.</p>
-      </div>
+        <input type="file" id="file-config" accept=".yaml,.yml,text/yaml"
+          hidden>
+        <p class="hint">Everything above edits this file, and anything you
+          type here shows up above. Keep it — next time, upload it back, or
+          use it with the command line tool, which reads the same format.</p>
+      </details>
 
     </div>
 
@@ -109,12 +175,30 @@
   </div>
 
   <div class="panel" id="grades-panel">
-    <h2>grades</h2>
-    <div class="row">
-      <button type="button" id="run">compute grades</button>
-      <button type="button" id="dl-grades" hidden>download grade_full.csv</button>
+    <div class="grades-head">
+      <h2>grades</h2>
+      <div class="row" id="grades-actions">
+        <button type="button" id="dl-grades" hidden>download
+          grade_full.csv</button>
+      </div>
     </div>
     <div id="grades"></div>
+  </div>
+
+  <div class="panel" id="inspect-panel" hidden>
+    <div class="grades-head">
+      <h2>inspect <span class="sub">hover a bar to see who is in it</span></h2>
+      <div class="inspect-controls">
+        <select id="view" aria-label="what to plot"></select>
+        <div class="seg" id="mode" role="group" aria-label="which grade">
+          <button type="button" data-mode="final" class="on">after policy</button>
+          <button type="button" data-mode="raw">before policy</button>
+          <button type="button" data-mode="both">both</button>
+        </div>
+      </div>
+    </div>
+    <p class="hint" id="mode-hint"></p>
+    <div id="chart"></div>
   </div>
 
 </section>
