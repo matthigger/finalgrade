@@ -325,6 +325,11 @@ button.chip, span.chip[role="button"] {
 
 button.chip:hover { border-color: var(--accent); }
 
+/* The text inside a chip is where anyone actually grabs it, and a drag that
+   begins on a non-draggable child never starts at all -- so the children
+   take no pointer events and every press lands on the chip itself. */
+.chip-k, .chip-v { pointer-events: none; }
+
 .chip-k { font-family: var(--mono); color: var(--ink-faint); }
 .chip-v { font-variant-numeric: tabular-nums; }
 
