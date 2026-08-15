@@ -41,6 +41,10 @@ def canvas_merge(f_canvas, df_grade, del_col_list=None,
 
     Returns:
         df_canvas_out (pd.DataFrame): canvas consistent dataframe of grades
+
+    Raises:
+        CanvasError: a student id appears twice in either input, so grades
+            can't be matched one-to-one
     """
     del_col_list = list(del_col_list) if del_col_list else []
 
@@ -61,6 +65,20 @@ def canvas_merge(f_canvas, df_grade, del_col_list=None,
     # (they're part of its csv format), they simply match nothing.
     df_grade_id = df_grade[df_grade.index.notna()]
 
+    # an id shared by two rows identifies neither.  on the gradescope side the
+    # merge fans out into extra rows; on the canvas side both rows quietly
+    # receive the same student's grades.  neither can be matched one-to-one,
+    # so say which ids are at fault rather than uploading a guess.
+    def get_dupe_set(index):
+        return set(index[index.duplicated() & index.notna()])
+
+    sid_dupe_set = get_dupe_set(df_canvas.index) | get_dupe_set(
+        df_grade_id.index)
+    if sid_dupe_set:
+        raise CanvasError(
+            'student id appears more than once, so grades cannot be matched '
+            f'one-to-one: {", ".join(sorted(map(str, sid_dupe_set)))}')
+
     # remember which columns came from the gradebook, so that scaling and
     # deletion below can select by name rather than by position
     grade_col_list = list(df_grade.columns)
@@ -70,23 +88,16 @@ def canvas_merge(f_canvas, df_grade, del_col_list=None,
                                     right_index=True,
                                     how='left')
 
-    # one row in, one row out.  a duplicated id on either side would silently
-    # fan out into extra rows, which canvas would then import as real grades
-    if len(df_canvas_out) != len(df_canvas):
-        sid_dupe = sorted(map(str, set(
-            df_canvas.index[df_canvas.index.duplicated()].dropna()).union(
-            df_grade_id.index[df_grade_id.index.duplicated()])))
-        raise CanvasError(
-            'student id appears more than once, so grades cannot be matched '
-            f'one-to-one: {", ".join(sid_dupe)}')
-
     def log_missing(df, sid_missing, msg, n_cols=3):
         logger.info(msg)
         if not len(sid_missing):
             logger.info('  <no students>')
             return
         for sid in sorted(sid_missing):
-            logger.info(f'  {df.loc[sid, :].iloc[:n_cols].to_dict()}')
+            # the id goes first: it's the join key, so it's what has to be
+            # corrected in gradescope or canvas to resolve the mismatch
+            row_dict = {'sid': sid, **df.loc[sid, :].iloc[:n_cols].to_dict()}
+            logger.info(f'  {row_dict}')
 
     # find and report canvas students not in gradescope (and vice versa).
     # id-less rows are excluded: nan is in both sets, so leaving it in makes

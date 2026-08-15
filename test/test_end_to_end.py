@@ -487,6 +487,10 @@ class TestExporters:
         assert 'no student id' in text
         # and alice, who matched, is not reported as missing
         assert 'alice@u.edu' not in text
+        # the id is the join key, so it must be shown for both directions:
+        # it's what has to be corrected to resolve the mismatch
+        assert '099S' in text
+        assert '002S' in text
 
     def test_canvas_drops_total_lateness_column(self, tmp_path):
         """ recent gradescope exports end with a 'Total Lateness (H:M:S)'
@@ -528,6 +532,44 @@ class TestExporters:
         with pytest.raises(CanvasError, match='001S'):
             canvas_merge(f_canvas=str(f_canvas),
                          df_grade=df_grade.reset_index(), scale100=False)
+
+    def test_canvas_duplicate_sid_in_canvas_raises(self, tmp_path):
+        """ a duplicate on the canvas side doesn't add rows -- both rows just
+        quietly receive the same student's grades -- so it needs its own check
+        """
+        from gradescope_mean.canvas.canvas import canvas_merge
+        from gradescope_mean.errors import CanvasError
+        f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
+        _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
+
+        # canvas lists the same id twice (two enrollments, say)
+        f_canvas = self._write_canvas(tmp_path / 'canvas.csv', [
+            {'Student': 'Anders, Alice', 'ID': 100, 'SIS User ID': '001S',
+             'SIS Login ID': 'alice@u.edu', 'Section': 'sec01',
+             'Placeholder': 0},
+            {'Student': 'Anders, Alice', 'ID': 101, 'SIS User ID': '001S',
+             'SIS Login ID': 'alice@u.edu', 'Section': 'sec02',
+             'Placeholder': 0}])
+
+        with pytest.raises(CanvasError, match='001S'):
+            canvas_merge(f_canvas=str(f_canvas),
+                         df_grade=df_grade.reset_index(), scale100=False)
+
+    def test_canvas_repeated_id_less_rows_are_not_duplicates(self, tmp_path):
+        """ canvas' id-less rows repeat by design (points possible, the test
+        student): they must not be mistaken for a duplicated id """
+        from gradescope_mean.canvas.canvas import canvas_merge
+        f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
+        _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
+
+        f_canvas = self._write_canvas(tmp_path / 'canvas.csv', [
+            {'Student': 'Anders, Alice', 'ID': 100, 'SIS User ID': '001S',
+             'SIS Login ID': 'alice@u.edu', 'Section': 'sec01',
+             'Placeholder': 0}])
+
+        df_out = canvas_merge(f_canvas=str(f_canvas),
+                              df_grade=df_grade.reset_index(), scale100=False)
+        assert len(df_out) == 3
 
     def test_banner_cli_without_crn(self, tmp_path, f_scope_std):
         f_cfg = tmp_path / 'config.yaml'
