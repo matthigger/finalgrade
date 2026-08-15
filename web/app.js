@@ -610,10 +610,14 @@ function scoreChip(a) {
           + 'drag to another assignment to copy'
         : 'click to waive, drag to another assignment to copy';
 
-  return `<button type="button" class="chip ${cls}" data-score="${
-    escapeHtml(a.name)}" draggable="true" title="${escapeHtml(why)}">` +
+  // a span rather than a button: firefox will not start a drag on a form
+  // control however it is marked, so a draggable <button> is draggable in
+  // chrome only.  role and tabindex keep it a button to everything else
+  return `<span class="chip ${cls}" data-score="${escapeHtml(a.name)}"
+    draggable="true" role="button" tabindex="0"
+    title="${escapeHtml(why)}">` +
     `<span class="chip-k">${escapeHtml(a.name)}</span>` +
-    `<span class="chip-v">${text}</span></button>`;
+    `<span class="chip-v">${text}</span></span>`;
 }
 
 /* Every substitution standing for this student, each undoable.  A drag is
@@ -1484,6 +1488,14 @@ $('stud-card').addEventListener('drop', (e) => {
 });
 
 /* one click, one waiver: the chip is the control */
+$('stud-card').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const chip = e.target.closest('[data-score]');
+  if (!chip) return;
+  e.preventDefault();
+  chip.click();
+});
+
 $('stud-card').addEventListener('click', (e) => {
   const stud = pickedStudent();
   if (!stud) return;

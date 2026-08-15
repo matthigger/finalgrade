@@ -303,7 +303,13 @@ tr.dropped .row-warn { color: var(--ink-faint); }
 
 .cat-means { margin-bottom: .5rem; }
 
-button.chip {
+.chip[role="button"] { user-select: none; }
+.chip[role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.chip, span.chip[role="button"] {
   display: inline-flex;
   align-items: baseline;
   gap: .3rem;
