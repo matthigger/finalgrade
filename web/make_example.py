@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-""" writes web/example.csv, the gradebook the page's "try an example" loads
+""" writes the example gradebooks the page's "try an example" loads
 
 A demo gradebook is only worth anything if it exercises the awkward cases,
 so this one is built around students who each break something: nobody who
@@ -7,15 +7,26 @@ submitted nothing, somebody who stopped halfway, a retake sitting in a second
 column, a whole category never attempted.  They are named after what they do,
 so the histogram and the student panel can be read without a key.
 
+Two files, one class: ex_gradescope.csv and ex_canvas.csv hold the same
+hundred students with the same scores, written the way each platform writes
+them.  The pair is the point -- canvas' export carries no submission times,
+so a late penalty has nothing to act on there, and having both on hand makes
+that a thing you can see rather than a paragraph of documentation.
+
     python web/make_example.py
 
-Deterministic: the same file every time, so a rebuild is not a diff.
+Deterministic: the same files every time, so a rebuild is not a diff.
 """
 import pathlib
 import random
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-F_OUT = ROOT / 'web' / 'example.csv'
+F_SCOPE = ROOT / 'web' / 'ex_gradescope.csv'
+F_CANVAS = ROOT / 'web' / 'ex_canvas.csv'
+
+# canvas names an assignment group per assignment; these are the groups an
+# instructor would have set up, and canvas writes a rollup column for each
+GROUP_DICT = {'HW': 'Homework', 'Quiz': 'Quizzes', 'Exam': 'Exams'}
 
 N_STUDENT = 100
 SEED = 20260815
@@ -241,38 +252,112 @@ def email_of(first, last):
     return f'{clean(first)}.{clean(last)}@uni.edu'
 
 
-def main():
-    rng = random.Random(SEED)
+def csv_line(cell_list):
+    """ one csv row, quoting only what has to be quoted """
+    return ','.join(f'"{c}"' if ',' in c else c for c in cell_list)
 
+
+def student_list_of(rng):
+    """ the whole class, as the plain data both writers work from
+
+    Generated once so that the two files cannot drift into being different
+    classes: everything below only decides how to spell it.
+    """
+    out = []
+    for idx, (first, last, spec) in enumerate(row_list_of(rng)):
+        score = score_dict(rng, spec)
+        out.append(dict(
+            first=first, last=last,
+            sid=f'{900000000 + idx * 7717:09d}S',
+            email=email_of(first, last),
+            section=f'CS 2810 Section {1 + idx % 2:02d}',
+            score=score,
+            late=late_dict(rng, spec, score)))
+    return out
+
+
+def write_scope(stud_list):
+    """ the gradescope export: four columns per assignment """
     header = ['First Name', 'Last Name', 'SID', 'Email', 'Sections']
     for ass in ASSIGN_DICT:
         header += [ass + suffix for suffix in SUFFIX_TUP]
 
     line_list = [','.join(header)]
 
-    for idx, (first, last, spec) in enumerate(row_list_of(rng)):
-        score = score_dict(rng, spec)
-        late = late_dict(rng, spec, score)
-
-        section = f'CS 2810 Section {1 + idx % 2:02d}'
-        cell_list = [first, last, f'{900000000 + idx * 7717:09d}S',
-                     email_of(first, last), section]
+    for stud in stud_list:
+        cell_list = [stud['first'], stud['last'], stud['sid'],
+                     stud['email'], stud['section']]
 
         for ass, points in ASSIGN_DICT.items():
-            frac = score[ass]
+            frac = stud['score'][ass]
             if frac is None:
                 # nothing submitted: gradescope leaves the score and the
                 # submission time blank
                 cell_list += ['', str(points), '', '']
             else:
                 cell_list += [f'{round(frac * points, 1):g}', str(points),
-                              SUB_TIME, late[ass]]
+                              SUB_TIME, stud['late'][ass]]
 
-        line_list.append(','.join(f'"{c}"' if ',' in c else c
-                                  for c in cell_list))
+        line_list.append(csv_line(cell_list))
 
-    F_OUT.write_text('\n'.join(line_list) + '\n')
-    print(f'wrote {F_OUT}')
+    F_SCOPE.write_text('\n'.join(line_list) + '\n')
+
+
+def write_canvas(stud_list):
+    """ the same class as canvas exports it
+
+    Canvas says the same things differently: max points live in a row of
+    their own rather than a column per assignment, every assignment column
+    carries canvas' own id, the group and course rollups it computes are
+    marked read only, and lateness is absent entirely -- canvas knows it,
+    but only through its api.
+    """
+    ass_col_dict = {ass: f'{ass} ({101000 + i * 37})'
+                    for i, ass in enumerate(ASSIGN_DICT)}
+    rollup_list = [f'{group} Current Score'
+                   for group in dict.fromkeys(GROUP_DICT.values())]
+    rollup_list.append('Current Score')
+
+    header = ['Student', 'ID', 'SIS User ID', 'SIS Login ID', 'Section']
+    header += list(ass_col_dict.values()) + rollup_list
+
+    # canvas' own row: max points per assignment, and '(read only)' against
+    # the columns it computes for itself
+    point_list = ['    Points Possible', '', '', '', '']
+    point_list += [str(points) for points in ASSIGN_DICT.values()]
+    point_list += ['(read only)'] * len(rollup_list)
+
+    line_list = [','.join(header), csv_line(point_list)]
+
+    for i, stud in enumerate(stud_list):
+        cell_list = [f'{stud["last"]}, {stud["first"]}',
+                     str(4000000 + i * 13), stud['sid'], stud['email'],
+                     stud['section']]
+
+        for ass, points in ASSIGN_DICT.items():
+            frac = stud['score'][ass]
+            # an ungraded canvas cell is blank, which is how "no submission"
+            # survives the trip -- a 0 there would be a zero somebody earned
+            cell_list.append('' if frac is None
+                             else f'{round(frac * points, 1):g}')
+
+        # the rollups are canvas' arithmetic, not ours; nothing reads them
+        cell_list += [''] * len(rollup_list)
+
+        line_list.append(csv_line(cell_list))
+
+    F_CANVAS.write_text('\n'.join(line_list) + '\n')
+
+
+def main():
+    rng = random.Random(SEED)
+    stud_list = student_list_of(rng)
+
+    write_scope(stud_list)
+    write_canvas(stud_list)
+
+    for f_out in (F_SCOPE, F_CANVAS):
+        print(f'wrote {f_out}')
     print(f'  {N_STUDENT} students, {len(ASSIGN_DICT)} assignments, '
           f'{len(CAST_TUP)} of them named for what they do')
 

@@ -147,7 +147,7 @@ class TestSubmittedVersusZero:
         import pathlib
 
         import finalgrade
-        f = pathlib.Path(finalgrade.__file__).parents[1] / 'web/example.csv'
+        f = pathlib.Path(finalgrade.__file__).parents[1] / 'web/ex_gradescope.csv'
         res = web.grade(f.read_text(), '')
 
         flat = [a for s in res['student_list'] for a in s['ass_list']]

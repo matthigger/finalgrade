@@ -1,8 +1,11 @@
-""" the gradebook the page's "try an example" button loads
+""" the gradebooks the page's "try an example" buttons load
 
 An example is a promise about what the tool handles, so these check that the
 awkward cases are all still in it.  If web/make_example.py is regenerated and
 one of them goes missing, the page quietly stops demonstrating it.
+
+There are two files and one class: the same hundred students as gradescope
+and as canvas export them.
 """
 import pathlib
 import warnings
@@ -12,7 +15,9 @@ import pytest
 import finalgrade
 from finalgrade import web
 
-F_EXAMPLE = pathlib.Path(finalgrade.__file__).parents[1] / 'web' / 'example.csv'
+WEB = pathlib.Path(finalgrade.__file__).parents[1] / 'web'
+F_EXAMPLE = WEB / 'ex_gradescope.csv'
+F_CANVAS = WEB / 'ex_canvas.csv'
 
 # what a course would plausibly do with this gradebook, exercising the lot
 YAML_EXAMPLE = """\
@@ -46,7 +51,7 @@ def csv_text():
 def graded(csv_text):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        return web.grade(csv_text, YAML_EXAMPLE, 'example.csv')
+        return web.grade(csv_text, YAML_EXAMPLE, 'ex_gradescope.csv')
 
 
 def by_name(graded, part):
@@ -114,11 +119,11 @@ class TestTheCast:
     def test_a_late_student_loses_credit_to_the_penalty(self, csv_text):
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            late = web.grade(csv_text, YAML_EXAMPLE, 'example.csv')
+            late = web.grade(csv_text, YAML_EXAMPLE, 'ex_gradescope.csv')
             no_late = web.grade(
                 csv_text, YAML_EXAMPLE.split('  late_penalty:')[0]
                 + 'assignments:\n  substitute:\n    exam2a:\n      - exam2b\n'
-                  '  exclude:\n    - exam2b\n', 'example.csv')
+                  '  exclude:\n    - exam2b\n', 'ex_gradescope.csv')
 
         idx = [s['email'] for s in late['student_list']].index(
             by_name(late, 'larry')['email'])
@@ -131,6 +136,37 @@ class TestTheCast:
 
         assert stud['mean'] == 1
         assert stud['letter'] == 'A'
+
+    def test_the_canvas_twin_is_the_same_class(self, csv_text):
+        """ two files, one class: the demo would otherwise compare two
+        different courses and call the difference a platform difference """
+        yaml_no_late = YAML_EXAMPLE.split('  late_penalty:')[0] + (
+            'assignments:\n  substitute:\n    exam2a:\n      - exam2b\n'
+            '  exclude:\n    - exam2b\n')
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            scope = web.grade(csv_text, yaml_no_late, 'ex_gradescope.csv')
+            canvas = web.grade(F_CANVAS.read_text(), yaml_no_late,
+                               'ex_canvas.csv')
+
+        assert scope['ok'] and canvas['ok']
+        assert scope['n_student'] == canvas['n_student']
+        assert scope['mean_avg'] == pytest.approx(canvas['mean_avg'])
+
+        mean_of = lambda res: {s['email']: s['mean']  # noqa: E731
+                               for s in res['student_list']}
+        assert mean_of(scope) == pytest.approx(mean_of(canvas))
+
+    def test_canvas_has_no_lateness_to_penalise(self):
+        """ and says so, rather than grading as though nobody was late """
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            res = web.grade(F_CANVAS.read_text(), YAML_EXAMPLE,
+                            'ex_canvas.csv')
+
+        assert not res['ok']
+        assert 'submission times' in res['error']
 
     def test_a_real_zero_is_not_an_absence(self, graded):
         """ zheng sat exam1 and scored nothing, which is not the same as

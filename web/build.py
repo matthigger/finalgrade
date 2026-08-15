@@ -24,6 +24,9 @@ WEB = ROOT / 'web'
 # copied verbatim into the site
 ASSET_TUP = ('index.html', 'style.css', 'app.js', 'favicon.svg')
 
+# the same class as each platform exports it
+EXAMPLE_TUP = ('ex_gradescope.csv', 'ex_canvas.csv')
+
 # pyodide ships pandas, numpy and ruamel.yaml, but not these, and the banner
 # export writes an xlsx.  fetched at build time rather than from pypi at run
 # time, so the page owes nothing to the network once it has loaded
@@ -111,9 +114,11 @@ def main():
 
     stamp_dict = bust_cache(out)
 
-    # the example the 'try an example' button loads: a hundred students whose
-    # awkward cases are each named after what they do (web/make_example.py)
-    shutil.copy(WEB / 'example.csv', out / 'example.csv')
+    # the examples the 'try an example' buttons load: one class of a hundred
+    # students whose awkward cases are each named after what they do, written
+    # the way each platform writes it (web/make_example.py)
+    for name in EXAMPLE_TUP:
+        shutil.copy(WEB / name, out / name)
 
     wheel = build_wheel(out / 'wheel')
     vendor_list = fetch_vendor(out / 'wheel')

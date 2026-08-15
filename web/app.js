@@ -60,6 +60,7 @@ async function boot() {
     // reload and do it again
     if (await checkFresh()) return;
     tidyUrl();
+    showBuild();
 
     msg.textContent = 'downloading python…';
     const { loadPyodide } = await import(PYODIDE + 'pyodide.mjs');
@@ -139,6 +140,16 @@ async function checkFresh() {
   url.searchParams.set('v', want);
   location.replace(url.toString());
   return true;
+}
+
+/* Which build is actually running, in the corner where a version belongs.
+ * "have you got the fix yet" is otherwise unanswerable from the page, and
+ * the answer has been no more than once. */
+function showBuild() {
+  const el = document.querySelector('script[src^="app.js"]');
+  const stamp = el
+    && new URL(el.getAttribute('src'), location.href).searchParams.get('v');
+  $('build').textContent = `build ${stamp || 'dev'}`;
 }
 
 /* the stamp above is a cache-buster, not something to leave in the address
@@ -404,10 +415,10 @@ const SORT_TUP = [
   { key: 'weight_total', label: 'of grade', num: true },
   { key: 'mean_nonzero', label: 'mean*', num: true },
   { key: 'complete_frac', label: 'submitted', num: true },
-  { key: 'max', label: 'maximum', num: false },
+  { key: 'max', label: 'substitute', num: false },
 ];
 
-/* Fixed, in the order SORT_TUP declares.  The maximum column grows a chip
+/* Fixed, in the order SORT_TUP declares.  The substitute column grows a chip
  * the moment one assignment is dropped onto another, and a table sized by
  * its contents would re-lay every other column out from under the cursor. */
 const COL_WIDTH_TUP = ['8%', '17%', '6%', '12%', '11%', '9%', '8%', '9%',
@@ -697,11 +708,11 @@ function drawStudent(form) {
              </span>`
           : '<span class="empty">no grade yet</span>'}
       </div>
-      ${noteBox(form, stud)}
       ${graded ? catRow(graded) : ''}
       ${graded ? scoreGrid(graded, stud) : ''}
       ${graded ? lateGrid(graded) : ''}
       ${excuseRow(form, stud)}
+      ${noteBox(form, stud)}
       ${graded ? auditLog(graded) : ''}
     </div>`;
 }
@@ -712,10 +723,10 @@ function drawStudent(form) {
  * person asking in May is answered by the file rather than by memory. */
 function noteBox(form, stud) {
   const note = (form.note_dict || {})[stud.email] || '';
-  const hint = 'note to self — why this grade was adjusted '
-    + '(not used in any computation)';
+  const hint = 'note to self — why this grade was adjusted? '
+    + 'store a note in the YAML for future reference';
 
-  return `<div class="stud-note"><textarea id="stud-note" rows="1"
+  return `<div class="stud-note"><textarea id="stud-note" rows="3"
     placeholder="${escapeHtml(hint)}">${
   escapeHtml(note)}</textarea></div>`;
 }
@@ -1556,10 +1567,16 @@ drop.addEventListener('drop', (e) => {
   for (const file of e.dataTransfer.files) takeFile(file);
 });
 
-$('demo').addEventListener('click', async () => {
-  const res = await fetch('example.csv');
-  useCsv('example.csv', await res.text());
-});
+/* the same hundred students, exported by each platform.  the pair is worth
+ * having on the page: what canvas leaves out (submission times, and so every
+ * late penalty) is easier to see than to explain */
+async function useExample(name) {
+  const res = await fetch(name);
+  useCsv(name, await res.text());
+}
+
+$('demo').addEventListener('click', () => useExample('ex_gradescope.csv'));
+$('demo-canvas').addEventListener('click', () => useExample('ex_canvas.csv'));
 
 $('quick').addEventListener('click', (e) => {
   const cat = e.target.getAttribute('data-cat');

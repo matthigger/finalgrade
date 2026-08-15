@@ -9,14 +9,15 @@
   --bg: #f6f7f9;
   --panel: #ffffff;
   --line: #dfe3e8;
+  /* three colours, one meaning each: blue says something, amber warns,
+     red is wrong.  a fourth would have to mean something too, and nothing
+     on this page is the good news that green would be claiming */
   --accent: #1f5fa9;
   --accent-soft: #eaf1fa;
-  --bad: #a4242b;
-  --bad-soft: #fbecec;
   --warn: #8a5b00;
   --warn-soft: #fdf3e0;
-  --good: #1d6b45;
-  --good-soft: #e8f4ee;
+  --bad: #a4242b;
+  --bad-soft: #fbecec;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -34,8 +35,6 @@
     --bad-soft: #382224;
     --warn: #e0b062;
     --warn-soft: #33291a;
-    --good: #7ecfa4;
-    --good-soft: #1a2f25;
   }
 }
 
@@ -65,21 +64,20 @@ h1 {
   max-width: 60ch;
 }
 
-.privacy, .policy-note {
+/* what to know before starting, as three points rather than three boxes:
+   colour here would compete with the messages below, where red, amber and
+   blue mean error, warning and information and nothing else */
+.intro {
   margin: 1rem 0 0;
-  padding: .7rem .9rem;
-  border-left: 3px solid var(--good);
-  border-radius: 0 5px 5px 0;
-  font-size: .9rem;
+  padding-left: 1.1rem;
   max-width: 72ch;
+  font-size: .9rem;
+  color: var(--ink-soft);
 }
 
-.privacy { background: var(--good-soft); }
-
-.policy-note {
-  background: var(--accent-soft);
-  border-left-color: var(--accent);
-}
+.intro li { margin-bottom: .4rem; }
+.intro li::marker { color: var(--ink-faint); }
+.intro strong { color: var(--ink); }
 
 h2 {
   margin: 0 0 .7rem;
@@ -172,10 +170,12 @@ h2 .sub {
   margin-left: .3rem;
 }
 
+/* the first thing to do on the page, and it is a target: bigger is easier
+   to hit with a file, and easier to find when you don't know what to do */
 .drop {
   border: 2px dashed var(--line);
   border-radius: 8px;
-  padding: 1.2rem 1rem;
+  padding: 2.6rem 1.4rem;
   text-align: center;
   transition: background .12s, border-color .12s;
   background: var(--panel);
@@ -186,8 +186,8 @@ h2 .sub {
   background: var(--accent-soft);
 }
 
-.drop-main { margin: 0; font-size: 1.05rem; font-weight: 600; }
-.drop-sub { margin: .3rem 0 0; color: var(--ink-soft); font-size: .85rem; }
+.drop-main { margin: 0; font-size: 1.5rem; font-weight: 600; }
+.drop-sub { margin: .5rem 0 0; color: var(--ink-soft); font-size: .92rem; }
 
 /* where the two files come from.  left aligned even though the box is
    centred: these are paths to follow, and a centred path is hard to scan */
@@ -244,7 +244,7 @@ button.plus {
 /* the two places a drag can start behave the same way */
 #weight-table [data-ass] { cursor: grab; touch-action: none; }
 
-#drag-ghost.is-over { background: var(--good); }
+#drag-ghost.is-over { background: var(--accent); }
 
 table.weights {
   margin-top: 1rem;
@@ -275,11 +275,11 @@ table.weights th, table.weights td { padding-right: .8rem; }
 
 .drop-inline.is-set {
   border-style: solid;
-  border-color: var(--good);
-  background: var(--good-soft);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-.drop-inline.is-set .drop-main { color: var(--good); }
+.drop-inline.is-set .drop-main { color: var(--accent); }
 
 .tick { font-weight: 700; margin-right: .2rem; }
 
@@ -316,8 +316,13 @@ tr.dropped .row-warn { color: var(--ink-faint); }
   font-variant-numeric: tabular-nums;
 }
 
-.delta.up { background: var(--good-soft); color: var(--good); }
-.delta.down { background: var(--bad-soft); color: var(--bad); }
+/* which way a grade moved is information, not a verdict: an edit that
+   lowers a grade is not an error, so the sign says the direction and the
+   colour stays out of it */
+.delta.up, .delta.down {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 .mini.waived .mini-v {
   color: var(--accent);
@@ -813,8 +818,13 @@ table.thresh .unit { white-space: nowrap; }
 .stud-note { margin: .5rem 0 .2rem; }
 
 .stud-note textarea {
-  width: 100%;
-  min-height: 1.9rem;
+  /* half the panel: a note is a sentence, and a box the width of the page
+     invites a paragraph nobody writes.  the tall min-height every other
+     textarea here wants is for the yaml, not for three lines of prose */
+  width: 50%;
+  min-width: 20rem;
+  min-height: 0;
+  height: auto;
   padding: .3rem .5rem;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -934,7 +944,7 @@ details[open] > summary { margin-bottom: .7rem; }
   margin-bottom: .9rem;
 }
 
-.verdict.ok   { background: var(--good-soft); color: var(--good); }
+.verdict.ok   { background: var(--accent-soft); color: var(--accent); }
 .verdict.bad  { background: var(--bad-soft);  color: var(--bad); }
 .verdict.busy { background: var(--accent-soft); color: var(--accent); }
 

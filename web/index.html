@@ -24,16 +24,21 @@
       <p class="tagline">Final grades from a Gradescope or Canvas export —
         category weights, dropped lowests, late penalties,
         per&#8209;student waivers.</p>
-      <p class="policy-note">
-        <strong>Your whole grading policy in one yaml file.</strong>
-        Every weight, dropped lowest, late penalty and waiver is stored in
-        <code>policy.yaml</code>. Download this file when complete, then
-        re-upload to pick up where you left off.
-      </p>
-      <p class="privacy">
-        <strong>Your grades never leave this computer:</strong>
-        it all runs inside this page.
-      </p>
+      <ul class="intro">
+        <li>
+          <strong>Your whole grading policy in one yaml file.</strong>
+          Every weight, dropped lowest, late penalty and waiver is stored in
+          <code>policy.yaml</code>. Download this file when complete, then
+          re-upload to pick up where you left off.
+        </li>
+        <li>
+          <strong>Your grades never leave this computer.</strong>
+          It all runs inside this page.
+        </li>
+      </ul>
+      <p class="tagline">The same code runs at the command line:
+        <code>pip install finalgrade</code> ·
+        <a href="https://github.com/matthigger/finalgrade">github</a></p>
     </div>
 
     <div id="drop" class="drop">
@@ -47,8 +52,9 @@
         Grades &rsaquo; Export
       </p>
       <p class="drop-sub"><button type="button" id="browse"
-        class="link">choose a file</button> ·
-        <button type="button" id="demo" class="link">try an example</button>
+        class="link">choose a file</button> · try an example from
+        <button type="button" id="demo" class="link">gradescope</button> or
+        <button type="button" id="demo-canvas" class="link">canvas</button>
       </p>
       <input type="file" id="file" accept=".csv,.yaml,.yml" hidden>
     </div>
@@ -191,12 +197,7 @@
 </main>
 
 <footer>
-  <p>
-    <a href="https://github.com/matthigger/finalgrade">source and
-      documentation on github</a> ·
-    the same code runs as a command line tool:
-    <code>pip install finalgrade</code>
-  </p>
+  <p><span id="build">build …</span></p>
 </footer>
 
 <script src="app.js"></script>
