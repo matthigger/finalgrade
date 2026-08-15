@@ -24,6 +24,14 @@ That's it. The rest of this README covers what you can put in that config file a
 
 All grading policy lives in `config.yaml`. A default copy is created on your first run — open it up and fill in the sections that apply to your course. Tabs aren't allowed in YAML, so use spaces (2 or 4 per indent level, consistently).
 
+Anywhere a list of names is expected (`exclude`, `email_list`, `waive`), a single name may be written on its own, with or without the leading `-`, and several may be comma separated:
+
+```yaml
+assignments:
+  exclude: practice_quiz            # same as a one item list
+email_list: alice@uni.edu, bob@uni.edu
+```
+
 ### Category weights
 
 ```yaml
@@ -166,12 +174,20 @@ Everywhere an email appears in the config — `waive`, `waive_late`, `excuse_day
 Grades are hard to eyeball, so a config that can't mean what you intended is
 reported as an error rather than quietly producing plausible-looking numbers:
 
+- a key this tool doesn't recognize, such as `catagory` or `category/weights`.
+  The nearest real key is suggested. An ignored key is a grading policy
+  silently not applied, so a misspelling is never assumed harmless
+- a section given something other than the shape it needs (`category: 50`)
 - a `drop_low` or `late_penalty` category with no entry in `category/weight`
   (it would never be applied)
 - a category that matches no assignment (usually a typo)
 - category weights that are negative, or that are all zero
 - `grade_thresh` outside 0–1 (writing `93: A` instead of `.93: A` used to give
   every student the lowest grade), or with no entry reaching 0
+- `penalty_per_day` outside 0–1 — it is a fraction, so `15` rather than `.15`
+  is a hundredfold penalty
+- a `late_penalty` block with no `penalty_per_day`, or with a negative
+  `excuse_day` / `grace_period_minutes`
 - a `substitute` naming an assignment that doesn't exist
 - the same student email appearing on two rows of the Gradescope export
 

@@ -1,3 +1,4 @@
+import difflib
 import pathlib
 import shutil
 from dataclasses import dataclass, field
@@ -30,6 +31,75 @@ YAML_KEY_DICT = {
 }
 
 
+def _build_key_tree(key_tup_iter):
+    """ nests the key tuples above into the shape of the yaml file
+
+    A leaf (empty dict) marks a section whose contents are the user's own
+    names -- categories, assignments, emails -- and so can't be checked
+    against anything.
+    """
+    tree = dict()
+    for key_tup in key_tup_iter:
+        node = tree
+        for key in key_tup:
+            node = node.setdefault(key, dict())
+    return tree
+
+
+YAML_KEY_TREE = _build_key_tree(YAML_KEY_DICT.values())
+
+
+def _unknown_key_msg(key, valid_iter, path=''):
+    """ builds a 'did you mean' message for an unrecognized yaml key """
+    valid_list = sorted(f'{path}{valid}' for valid in valid_iter)
+    s_key = f'{path}{key}'
+
+    msg = f'unknown config key: {s_key}'
+    match_list = difflib.get_close_matches(s_key, valid_list, n=1)
+    if match_list:
+        msg += f' (did you mean {match_list[0]}?)'
+
+    return f'{msg}.  valid keys here: {", ".join(valid_list)}'
+
+
+def _check_keys(d, tree=None, path=''):
+    """ raises on any yaml key which this config doesn't understand
+
+    A misspelled key was previously dropped without a word, so "catagory"
+    (or "category/weights") left every assignment weighted by its points
+    while looking like a config which had been read.
+
+    Keys are only checked where the schema knows what belongs there; below
+    a leaf of YAML_KEY_TREE they are the user's own names and anything goes.
+
+    Args:
+        d (dict): yaml as loaded
+        tree (dict): expected keys, nested (defaults to the whole schema)
+        path (str): 'category/' etc, for error messages
+    """
+    if tree is None:
+        tree = YAML_KEY_TREE
+
+    for key, value in d.items():
+        if key not in tree:
+            raise ConfigError(_unknown_key_msg(key, tree, path))
+
+        if not tree[key]:
+            # a leaf: whatever is below belongs to the user
+            continue
+
+        if value is None:
+            # an empty section
+            continue
+
+        if not isinstance(value, dict):
+            raise ConfigError(
+                f'{path}{key} must be a mapping of '
+                f'{"/".join(sorted(tree[key]))}, got {value!r}')
+
+        _check_keys(value, tree[key], path=f'{path}{key}/')
+
+
 @dataclass
 class Config:
     """ grading policy: what counts, how much, and for whom
@@ -53,6 +123,12 @@ class Config:
                       'waive_dict', 'cat_late_dict', 'late_waive_dict')
     EMPTY_LIST_TUP = ('remove_list', 'email_list')
 
+    # the settings a late_penalty block may contain: these are passed to
+    # Gradebook.get_late_penalty() as kwargs, so an unrecognized one would
+    # otherwise surface as a TypeError from a call the user never made
+    LATE_KEY_TUP = ('penalty_per_day', 'excuse_day', 'excuse_day_offset',
+                    'grace_period_minutes')
+
     def __post_init__(self):
         for name in self.EMPTY_DICT_TUP:
             if getattr(self, name) is None:
@@ -63,7 +139,62 @@ class Config:
         if self.exclude_complete_thresh is None:
             self.exclude_complete_thresh = 0
 
+        # _normalize() walks these with .items(); say what's wrong rather
+        # than raising AttributeError from somewhere inside
+        for name in self.EMPTY_DICT_TUP:
+            if not isinstance(getattr(self, name), dict):
+                raise ConfigError(
+                    f'{self._yaml_path(name)} must be a mapping, got '
+                    f'{getattr(self, name)!r}')
+
         self._normalize()
+
+    @staticmethod
+    def _yaml_path(attr):
+        """ 'category/weight' for the attribute holding it """
+        return '/'.join(YAML_KEY_DICT[attr])
+
+    @staticmethod
+    def _as_list(value, field_name):
+        """ reads a yaml list, or one name, or a comma separated string
+
+        A bare string is a list of one, not a list of characters.  Without
+        this, "exclude: quiz1" (a forgotten '-') iterated to
+        ['q', 'u', 'i', 'z', '1'] and removed every assignment whose name
+        contained any of those, which grades right through without a word.
+
+        Args:
+            value: yaml list, string, or None
+            field_name (str): yaml path, for error messages
+
+        Returns:
+            name_list (list): stripped strings, empties discarded
+        """
+        if value is None:
+            return []
+
+        if isinstance(value, (list, tuple)):
+            item_list = value
+        elif isinstance(value, str):
+            item_list = value.split(',')
+        elif isinstance(value, dict):
+            raise ConfigError(
+                f'{field_name} must be a list of names, got a mapping: '
+                f'{value!r}')
+        else:
+            # a number: yaml reads an assignment named "1" as an int
+            item_list = [value]
+
+        name_list = list()
+        for name in item_list:
+            if isinstance(name, (dict, list, tuple)):
+                raise ConfigError(
+                    f'{field_name} must be a list of names, got {name!r}')
+            name = str(name).strip()
+            if name:
+                name_list.append(name)
+
+        return name_list
 
     @staticmethod
     def _parse_waive_value(a_list, email, field_name):
@@ -75,12 +206,11 @@ class Config:
           - None / empty string: warns and returns empty list
         """
         from warnings import warn
-        if a_list is None or (isinstance(a_list, str) and not a_list.strip()):
+        name_list = Config._as_list(a_list, f'{field_name}/{email}')
+        if not name_list:
             warn(f'{field_name}: empty assignment list for {email} (ignored)')
             return []
-        if isinstance(a_list, list):
-            return [normalize(a) for a in a_list if a]
-        return [normalize(a) for a in str(a_list).split(',') if a.strip()]
+        return [normalize(a) for a in name_list]
 
     def _normalize(self):
         """Normalizes category/assignment names and validates config values."""
@@ -93,7 +223,9 @@ class Config:
         self.cat_drop_dict = {normalize(c): d
                               for c, d in self.cat_drop_dict.items()}
 
-        self.remove_list = [normalize(a) for a in self.remove_list]
+        self.remove_list = [normalize(a) for a in
+                            self._as_list(self.remove_list,
+                                          self._yaml_path('remove_list'))]
 
         self.sub_dict = {normalize(s0): list(map(normalize, s1_list))
                          for s0, s1_list in self.sub_dict.items()}
@@ -125,7 +257,9 @@ class Config:
                                 if v}
 
         # lowercase email list entries
-        self.email_list = [e.lower() for e in self.email_list]
+        self.email_list = [e.lower() for e in
+                           self._as_list(self.email_list,
+                                         self._yaml_path('email_list'))]
 
         self._validate()
 
@@ -150,7 +284,62 @@ class Config:
                 f'{", ".join(sorted(unknown_set))}.  '
                 f'weighted categories are: {known}')
 
+    def _validate_late(self):
+        """ validates each late_penalty block against get_late_penalty()
+
+        penalty_per_day is a fraction like the other rates in this file, so
+        "15" (meaning 15%) is a hundred-fold penalty: enough to zero a whole
+        class off one day of lateness.
+        """
+        for cat, late_dict in self.cat_late_dict.items():
+            path = f'{self._yaml_path("cat_late_dict")}/{cat}'
+
+            if not isinstance(late_dict, dict):
+                raise ConfigError(
+                    f'{path} must be a mapping of '
+                    f'{"/".join(self.LATE_KEY_TUP)}, got {late_dict!r}')
+
+            for key in late_dict:
+                if key not in self.LATE_KEY_TUP:
+                    raise ConfigError(
+                        _unknown_key_msg(key, self.LATE_KEY_TUP, f'{path}/'))
+
+            if 'penalty_per_day' not in late_dict:
+                raise ConfigError(f'{path} needs a penalty_per_day')
+
+            penalty = late_dict['penalty_per_day']
+            if not self._is_number(penalty) or not 0 <= penalty <= 1:
+                raise ConfigError(
+                    f'penalty_per_day must be a fraction between 0 and 1, '
+                    f'got {penalty!r} for "{cat}" (write .15 rather than 15)')
+
+            for key in ('excuse_day', 'grace_period_minutes'):
+                value = late_dict.get(key)
+                if value is not None and (not self._is_number(value)
+                                          or value < 0):
+                    raise ConfigError(
+                        f'{key} must be a non-negative number, got {value!r} '
+                        f'for "{cat}"')
+
+            offset_dict = late_dict.get('excuse_day_offset')
+            if offset_dict is None:
+                continue
+            if not isinstance(offset_dict, dict):
+                raise ConfigError(
+                    f'excuse_day_offset must map an email to a number of '
+                    f'days, got {offset_dict!r} for "{cat}"')
+            for email, offset in offset_dict.items():
+                if not self._is_number(offset):
+                    raise ConfigError(
+                        f'excuse_day_offset must be a number of days, got '
+                        f'{offset!r} for {email} in "{cat}"')
+
     def _validate_grade_thresh(self):
+        if not isinstance(self.grade_thresh, dict):
+            raise ConfigError(
+                f'grade_thresh must map a fraction to a letter, got '
+                f'{self.grade_thresh!r}')
+
         for thresh, letter in self.grade_thresh.items():
             if not self._is_number(thresh):
                 raise ConfigError(
@@ -191,6 +380,8 @@ class Config:
         # silently ignored
         self._check_category_keys(self.cat_drop_dict, 'drop_low')
         self._check_category_keys(self.cat_late_dict, 'late_penalty')
+
+        self._validate_late()
 
         # validate exclude_complete_thresh
         if self.exclude_complete_thresh:
@@ -274,6 +465,13 @@ class Config:
             raise ConfigError(
                 f'config file must be a YAML mapping, got {type(d).__name__} '
                 f'in {f_config}')
+
+        # before reading anything: a key we don't recognize is a typo, and a
+        # typo we ignore is a grading policy silently not applied
+        try:
+            _check_keys(d)
+        except ConfigError as e:
+            raise ConfigError(f'{e}\n  in {f_config}') from None
 
         def _get(*key_tup, default=None):
             """Safely navigate nested dicts, returning default for missing."""

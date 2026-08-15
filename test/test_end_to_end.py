@@ -281,6 +281,167 @@ class TestConfigValidationEndToEnd:
         with pytest.raises(ValueError, match='(?i)(match|category)'):
             Config(cat_weight_dict={'hw': 1, 'lab': 1})(f_scope_std)
 
+    def test_penalty_per_day_on_0_100_scale_raises(self):
+        """ '15' instead of '.15' is a 100x penalty: enough to zero a class """
+        with pytest.raises(ValueError, match='(?i)penalty_per_day'):
+            Config(cat_weight_dict={'hw': 1},
+                   cat_late_dict={'hw': {'penalty_per_day': 15}})
+
+    def test_negative_penalty_per_day_raises(self):
+        """ a negative penalty would award credit for being late """
+        with pytest.raises(ValueError, match='(?i)penalty_per_day'):
+            Config(cat_weight_dict={'hw': 1},
+                   cat_late_dict={'hw': {'penalty_per_day': -.15}})
+
+    def test_late_penalty_without_penalty_per_day_raises(self):
+        with pytest.raises(ValueError, match='(?i)penalty_per_day'):
+            Config(cat_weight_dict={'hw': 1},
+                   cat_late_dict={'hw': {'excuse_day': 3}})
+
+    def test_negative_excuse_day_raises(self):
+        with pytest.raises(ValueError, match='(?i)excuse_day'):
+            Config(cat_weight_dict={'hw': 1},
+                   cat_late_dict={'hw': {'penalty_per_day': .15,
+                                         'excuse_day': -3}})
+
+    def test_excuse_day_offset_must_be_numbers(self):
+        with pytest.raises(ValueError, match='(?i)excuse_day_offset'):
+            Config(cat_weight_dict={'hw': 1},
+                   cat_late_dict={'hw': {
+                       'penalty_per_day': .15,
+                       'excuse_day_offset': {'a@u.edu': 'three'}}})
+
+    def test_late_penalty_block_must_be_a_mapping(self):
+        """ 'late_penalty: {hw: .15}' is settings-shaped, but isn't """
+        with pytest.raises(ValueError, match='(?i)late_penalty'):
+            Config(cat_weight_dict={'hw': 1}, cat_late_dict={'hw': .15})
+
+
+class TestConfigKeyChecking:
+    """ a key we don't recognize is a typo, and a typo we ignore is a
+    grading policy silently not applied """
+
+    def test_unknown_top_level_key_raises(self, write_config):
+        f = write_config('catagory:\n  weight:\n    hw: 1\n')
+        with pytest.raises(ValueError, match='catagory'):
+            Config.from_file(f)
+
+    def test_unknown_key_suggests_the_real_one(self, write_config):
+        f = write_config('catagory:\n  weight:\n    hw: 1\n')
+        with pytest.raises(ValueError, match='did you mean category'):
+            Config.from_file(f)
+
+    def test_unknown_nested_key_raises(self, write_config):
+        """ 'weights' under category was silently ignored """
+        f = write_config('category:\n  weights:\n    hw: 1\n')
+        with pytest.raises(ValueError, match='category/weights'):
+            Config.from_file(f)
+
+    def test_unknown_assignments_key_raises(self, write_config):
+        f = write_config('assignments:\n  exclude_complete_threshold: .6\n')
+        with pytest.raises(ValueError,
+                           match='exclude_complete_thresh'):
+            Config.from_file(f)
+
+    def test_section_given_a_scalar_raises(self, write_config):
+        """ 'category: 50' can't be read, and must not be skipped """
+        f = write_config('category: 50\n')
+        with pytest.raises(ValueError, match='(?i)category.*mapping'):
+            Config.from_file(f)
+
+    def test_unknown_late_penalty_setting_raises(self, write_config):
+        """ this block is passed to get_late_penalty() as kwargs: an unknown
+        key used to surface as a TypeError, escaping the CLI's handler """
+        f = write_config("""\
+category:
+  weight:
+    hw: 1
+  late_penalty:
+    hw:
+      penalty_per_day: .15
+      excuse_days: 3
+""")
+        with pytest.raises(ValueError, match='excuse_day'):
+            Config.from_file(f)
+
+    def test_user_names_below_a_leaf_are_not_checked(self, write_config,
+                                                     f_scope_std):
+        """ categories, assignments and emails are the user's own words """
+        f = write_config("""\
+category:
+  weight:
+    hw: 1
+    quiz: 1
+  drop_low:
+    hw: 1
+  late_penalty:
+    hw:
+      penalty_per_day: .15
+      excuse_day: 1
+      excuse_day_offset:
+        alice@u.edu: 2
+assignments:
+  exclude_complete_thresh: .1
+  substitute:
+    hw1:
+      - hw2
+waive:
+  alice@u.edu: hw3
+waive_late:
+  bob@u.edu: hw1
+grade_thresh:
+  .9: A
+  0: E
+email_list:
+  - alice@u.edu
+  - bob@u.edu
+  - carol@u.edu
+""")
+        # every section populated at once: loads and runs
+        _, df = Config.from_file(f)(f_scope_std)
+        assert len(df) == 3
+
+    def test_default_shipped_config_passes_key_check(self):
+        """ the config every new user starts from must not trip its own check
+        """
+        from gradescope_mean.config import F_CONFIG_DEFAULT
+        Config.from_file(F_CONFIG_DEFAULT)
+
+
+class TestScalarInsteadOfList:
+    """ a bare string is a list of one, not a list of characters """
+
+    def test_exclude_as_scalar(self, write_config, f_scope_std):
+        """ 'exclude: quiz1' (a forgotten '-') removed hw1 as well, because
+        'quiz1' iterated to ['q', 'u', 'i', 'z', '1'] """
+        f = write_config('assignments:\n  exclude: quiz1\n')
+        _, df = Config.from_file(f)(f_scope_std)
+        # hw1, hw2, hw3 remain, 10 pts each: 24/30, 30/30, 12/30
+        np.testing.assert_allclose([.8, 1., .4], df['mean'])
+
+    def test_exclude_as_comma_separated_string(self, write_config,
+                                               f_scope_std):
+        f = write_config('assignments:\n  exclude: quiz1, hw3\n')
+        _, df = Config.from_file(f)(f_scope_std)
+        # hw1, hw2 remain: 18/20, 20/20, 6/20
+        np.testing.assert_allclose([.9, 1., .3], df['mean'])
+
+    def test_exclude_as_list_is_unchanged(self, write_config, f_scope_std):
+        f = write_config('assignments:\n  exclude:\n    - quiz1\n')
+        _, df = Config.from_file(f)(f_scope_std)
+        np.testing.assert_allclose([.8, 1., .4], df['mean'])
+
+    def test_email_list_as_scalar(self, write_config, f_scope_std):
+        f = write_config('email_list: alice@u.edu\n')
+        _, df = Config.from_file(f)(f_scope_std)
+        assert df.index.tolist() == ['alice@u.edu']
+
+    def test_exclude_of_a_mapping_raises(self, write_config):
+        """ a list of mappings is a shape we can't read: say so """
+        f = write_config('assignments:\n  exclude:\n    - quiz1: yes\n')
+        with pytest.raises(ValueError, match='(?i)exclude'):
+            Config.from_file(f)
+
 
 class TestDeterminism:
     def test_output_row_order_is_stable(self, tmp_path):
