@@ -18,14 +18,34 @@
 <body>
 
 <header>
-  <h1>finalgrade</h1>
-  <p class="tagline">Final grades from a Gradescope or Canvas export — category
-    weights, dropped lowests, late penalties, per&#8209;student waivers.</p>
-  <p class="privacy" id="privacy">
-    <strong>Your grades never leave this computer.</strong>
-    The whole tool runs inside this page, so the csv you pick is never
-    uploaded anywhere. You can turn off your network after this page loads.
-  </p>
+  <div class="head-grid">
+    <div>
+      <h1>finalgrade</h1>
+      <p class="tagline">Final grades from a Gradescope or Canvas export —
+        category weights, dropped lowests, late penalties,
+        per&#8209;student waivers.</p>
+      <p class="privacy">
+        <strong>Your grades never leave this computer.</strong>
+        The whole tool runs inside this page, so the files you pick are never
+        uploaded anywhere. You can turn off your network after this page
+        loads.
+      </p>
+    </div>
+
+    <div id="drop" class="drop">
+      <p class="drop-main">Drop a file here</p>
+      <p class="drop-sub">a gradebook <code>.csv</code> or a saved
+        <code>config.yaml</code></p>
+      <p class="drop-sub"><button type="button" id="browse"
+        class="link">choose a file</button> ·
+        <button type="button" id="demo" class="link">try an example</button>
+      </p>
+      <input type="file" id="file" accept=".csv,.yaml,.yml" hidden>
+    </div>
+  </div>
+
+  <p id="files" class="files"></p>
+  <p id="pick-error" class="error" hidden></p>
 </header>
 
 <main>
@@ -37,157 +57,101 @@
     caches it. Later visits are quick.</p>
 </section>
 
-<section id="pick" class="panel" hidden>
-  <div id="drop" class="drop">
-    <p class="drop-main">Drop your csv here</p>
-    <p class="drop-sub">or <button type="button" id="browse"
-        class="link">choose a file</button></p>
-    <p class="hint">
-      Gradescope: <em>Assignments &rsaquo; Download Grades &rsaquo; CSV</em>.
-      Canvas: <em>Grades &rsaquo; Export</em>.
-      <button type="button" id="demo" class="link">try an example</button>
-    </p>
-  </div>
-  <input type="file" id="file" accept=".csv,text/csv" hidden>
-  <p id="pick-error" class="error" hidden></p>
-</section>
-
 <section id="work" hidden>
 
-  <div class="filebar">
-    <span id="file-name" class="file-name"></span>
-    <span id="file-facts" class="file-facts"></span>
-    <button type="button" id="change" class="link">use a different csv</button>
+  <div id="verdict" class="verdict"></div>
+  <div id="messages"></div>
+
+  <div class="panel">
+    <h2>categories <span class="sub">what counts, and how much</span></h2>
+    <div id="cats"></div>
+    <div id="quick" class="quick"></div>
+    <p class="hint" id="cats-hint"></p>
+    <div id="weight-table"></div>
   </div>
 
   <div class="cols">
 
-    <div class="col-config">
+    <div class="panel">
+      <h2>assignments <span class="sub">what to leave out, and stand in</span></h2>
 
-      <div class="panel">
-        <h2>categories <span class="sub">what counts, and how much</span></h2>
-        <div id="cats"></div>
-        <div id="quick" class="quick"></div>
-        <p class="hint" id="cats-hint"></p>
+      <div class="field">
+        <span class="field-k">excluded</span>
+        <div id="excl-list" class="chips"></div>
+        <select id="excl-add" aria-label="exclude an assignment">
+          <option value="">exclude an assignment…</option>
+        </select>
       </div>
 
-      <div class="panel">
-        <h2>assignments <span class="sub">what to leave out, and stand in</span></h2>
-
-        <div class="field">
-          <span class="field-k">excluded</span>
-          <div id="excl-list" class="chips"></div>
-          <select id="excl-add" aria-label="exclude an assignment">
-            <option value="">exclude an assignment…</option>
+      <div class="field">
+        <span class="field-k">substitutions</span>
+        <div id="sub-list"></div>
+        <div class="sub-add">
+          <select id="sub-target" aria-label="assignment to replace">
+            <option value="">replace…</option>
           </select>
-        </div>
-
-        <div class="field">
-          <span class="field-k">substitutions</span>
-          <div id="sub-list"></div>
-          <div class="sub-add">
-            <select id="sub-target" aria-label="assignment to replace">
-              <option value="">replace…</option>
-            </select>
-            <span class="arrow">with the best of</span>
-            <select id="sub-alt" aria-label="assignment to allow instead">
-              <option value="">…</option>
-            </select>
-            <button type="button" id="sub-go" class="small">add</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <label class="f" for="thresh-complete">drop assignments fewer
-            than</label>
-          <input type="number" id="thresh-complete" min="0" max="100" step="5"
-            class="pct"> <span class="unit">% of students submitted</span>
+          <span class="arrow">with the best of</span>
+          <select id="sub-alt" aria-label="assignment to allow instead">
+            <option value="">…</option>
+          </select>
+          <button type="button" id="sub-go" class="small">add</button>
         </div>
       </div>
 
-      <div class="panel">
-        <h2>students <span class="sub">grades, waivers, accommodations</span></h2>
-        <div class="waive-pick">
-          <input id="stud" list="roster" placeholder="find a student by name…"
-            autocomplete="off" aria-label="find a student">
-          <datalist id="roster"></datalist>
-          <button type="button" id="stud-clear" class="small secondary"
-            hidden>clear</button>
-        </div>
-        <div id="stud-card"></div>
-        <div id="waive-list"></div>
-
-        <details id="roster-filter">
-          <summary>limit grading to a roster <span class="sub"
-            id="roster-count"></span></summary>
-          <p class="hint">One email per line. Anyone not listed is dropped
-            from the output — useful for removing students who withdrew.
-            Leave empty to grade everyone in the csv.</p>
-          <textarea id="email-list" rows="5" spellcheck="false"
-            aria-label="roster"></textarea>
-          <div class="row">
-            <button type="button" id="email-save" class="small">apply
-              roster</button>
-            <button type="button" id="email-clear"
-              class="small secondary">grade everyone</button>
-          </div>
-        </details>
+      <div class="field">
+        <label class="f" for="thresh-complete">drop assignments fewer
+          than</label>
+        <input type="number" id="thresh-complete" min="0" max="100" step="5"
+          class="pct"> <span class="unit">% of students submitted</span>
       </div>
-
-      <details class="panel" id="letters">
-        <summary>letter grades <span class="sub" id="letters-sub"></span></summary>
-        <div id="thresh-list"></div>
-        <div class="row">
-          <button type="button" id="thresh-add" class="small">add a
-            letter</button>
-          <button type="button" id="thresh-reset"
-            class="small secondary">back to defaults</button>
-        </div>
-        <p class="hint">The lowest percentage that earns each letter. One
-          must reach 0, or a low grade would have no letter at all.</p>
-      </details>
-
-      <details class="panel" id="raw">
-        <summary>config.yaml <span class="sub">the file itself</span></summary>
-        <textarea id="yaml" spellcheck="false" autocapitalize="off"
-          autocorrect="off" aria-label="config.yaml"></textarea>
-        <div class="row">
-          <button type="button" id="dl-config">download</button>
-          <button type="button" id="up-config" class="secondary">upload a
-            config…</button>
-          <button type="button" id="reset" class="secondary">start over</button>
-        </div>
-        <input type="file" id="file-config" accept=".yaml,.yml,text/yaml"
-          hidden>
-        <p class="hint">Everything above edits this file, and anything you
-          type here shows up above. Keep it — next time, upload it back, or
-          use it with the command line tool, which reads the same format.</p>
-      </details>
-
     </div>
 
-    <div class="panel col-report">
-      <h2>what it does <span class="sub" id="live">updates as you type</span></h2>
-      <div id="verdict" class="verdict"></div>
-      <div id="report"></div>
+    <div class="panel">
+      <h2>students <span class="sub">grades, waivers, accommodations</span></h2>
+      <div class="waive-pick">
+        <input id="stud" list="roster" placeholder="find a student by name…"
+          autocomplete="off" aria-label="find a student">
+        <datalist id="roster"></datalist>
+        <button type="button" id="stud-clear" class="small secondary"
+          hidden>clear</button>
+      </div>
+      <div id="stud-card"></div>
+      <div id="waive-list"></div>
+
+      <details id="roster-filter">
+        <summary>limit grading to a roster <span class="sub"
+          id="roster-count"></span></summary>
+        <p class="hint">One email per line. Anyone not listed is dropped from
+          the output — useful for removing students who withdrew. Leave empty
+          to grade everyone in the csv.</p>
+        <textarea id="email-list" rows="5" spellcheck="false"
+          aria-label="roster"></textarea>
+        <div class="row">
+          <button type="button" id="email-save" class="small">apply
+            roster</button>
+          <button type="button" id="email-clear"
+            class="small secondary">grade everyone</button>
+        </div>
+      </details>
     </div>
 
   </div>
 
-  <div class="panel" id="grades-panel">
-    <div class="grades-head">
-      <h2>grades</h2>
-      <div class="row" id="grades-actions">
-        <button type="button" id="dl-grades" hidden>download
-          grade_full.csv</button>
-      </div>
+  <details class="panel" id="letters">
+    <summary>letter grades <span class="sub" id="letters-sub"></span></summary>
+    <div id="thresh-list"></div>
+    <div class="row">
+      <button type="button" id="thresh-add" class="small">add a letter</button>
+      <button type="button" id="thresh-reset"
+        class="small secondary">back to defaults</button>
     </div>
-    <div id="grades"></div>
-  </div>
+    <p class="hint">The lowest percentage that earns each letter. One must
+      reach 0, or a low grade would have no letter at all.</p>
+  </details>
 
   <div class="panel" id="inspect-panel" hidden>
     <div class="grades-head">
-      <h2>inspect <span class="sub">hover a bar to see who is in it</span></h2>
+      <h2>inspect</h2>
       <div class="inspect-controls">
         <select id="view" aria-label="what to plot"></select>
         <div class="seg" id="mode" role="group" aria-label="which grade">
@@ -197,8 +161,15 @@
         </div>
       </div>
     </div>
+    <div id="stats"></div>
     <p class="hint" id="mode-hint"></p>
     <div id="chart"></div>
+  </div>
+
+  <div class="panel" id="export-panel">
+    <h2>export</h2>
+    <div class="row" id="export-row"></div>
+    <p class="hint" id="export-hint"></p>
   </div>
 
 </section>

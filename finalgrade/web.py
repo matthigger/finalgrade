@@ -10,21 +10,24 @@ string the browser offers as a download.  No grade is ever sent anywhere,
 which is the entire reason this runs in the page instead of on a server.
 """
 import dataclasses
+import io
 import json
 import pathlib
 import tempfile
 import warnings
+
+import pandas as pd
 
 from . import edit
 from .check import build_report, render
 from .config import F_CONFIG_DEFAULT, Config
 from .errors import GradescopeMeanError
 from .gradebook import Gradebook
-from .inspect import build_view, histogram
+from .inspect import build_table, build_view, histogram
 from .seed import seed_text
 
 __all__ = ['load_csv', 'check_config', 'grade', 'seed_config', 'default_yaml',
-           'form_state', 'edit_config', 'bin_values']
+           'form_state', 'edit_config', 'bin_values', 'canvas_export']
 
 
 class _Csv:
@@ -183,10 +186,53 @@ def grade(csv_text, yaml_text, name='scope.csv'):
         letter_list=[dict(letter=str(letter), n=int(letter_count[letter]))
                      for letter in _letter_order(config, letter_count)],
         thresh_list=_thresh_list(config.grade_thresh),
-        student_list=_graded_student_list(gradebook, df_grade, config))
+        student_list=_graded_student_list(gradebook, df_grade, config),
+        row_list=build_table(gradebook, config))
 
     out.update(build_view(gradebook, config, df_grade, df_raw))
     return out
+
+
+def canvas_export(csv_text, yaml_text, canvas_text, name='scope.csv',
+                  scale100=True):
+    """ the grades, merged into a canvas gradebook ready to re-import
+
+    Canvas matches on its own SIS User ID, so this needs the gradebook canvas
+    exported -- the ids are the only thing the two files share.
+
+    Args:
+        csv_text (str): the grade source
+        yaml_text (str): contents of a config.yaml
+        canvas_text (str): a canvas gradebook export to merge into
+        name (str): the source csv's filename
+        scale100 (bool): grades out of 100 rather than 1, which avoids
+            canvas rounding them to two decimal places
+
+    Returns:
+        result (dict): ok, and the csv text to upload
+    """
+    from .canvas import canvas_merge
+
+    result = grade(csv_text, yaml_text, name)
+    if not result['ok']:
+        return result
+
+    df_grade = pd.read_csv(io.StringIO(result['csv']), dtype={'sid': str})
+
+    with _Csv(canvas_text, 'canvas.csv') as f_canvas:
+        try:
+            (df_out, _), warn_list = _warn_list(
+                lambda: (canvas_merge(f_canvas=f_canvas, df_grade=df_grade,
+                                      rm_gradescope_meta=True,
+                                      scale100=scale100), None))
+        except GradescopeMeanError as e:
+            return dict(ok=False, error=str(e), warn_list=[])
+        except Exception as e:
+            return dict(ok=False, error=f'could not merge into canvas: {e}',
+                        warn_list=[])
+
+    return dict(ok=True, error=None, warn_list=warn_list,
+                csv=df_out.to_csv(index=False), n_row=len(df_out))
 
 
 def _grade_twice(config, f_csv):

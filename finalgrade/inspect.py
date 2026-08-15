@@ -18,8 +18,9 @@ was ever graded on.
 import numpy as np
 import pandas as pd
 
-# how many bins a histogram gets, unless the data is too small to fill them
-N_BIN = 20
+# how many bins a histogram gets.  30 across 0-100% puts an edge every 3⅓
+# points, which is fine enough to see a cluster sitting on a letter cutoff
+N_BIN = 30
 
 
 def build_view(gradebook, config, df_final, df_raw):
@@ -51,6 +52,75 @@ def build_view(gradebook, config, df_final, df_raw):
         value_dict[key] = _pair(gradebook.df_perc[ass], None)
 
     return dict(view_list=view_list, value_dict=value_dict)
+
+
+def build_table(gradebook, config):
+    """ one row per assignment: what it is worth, and what the class did
+
+    The weights are the ones the config implies, not the ones any particular
+    student got: inside a category assignments are weighted by their points,
+    and drop_low then removes whichever is worst *for that student*, so a
+    single number here would be a lie for everybody it wasn't computed on.
+
+    Args:
+        gradebook (Gradebook): after config.prepare
+        config (Config): the policy
+
+    Returns:
+        row_list (list): dicts, in category then assignment order
+    """
+    ass_list = list(gradebook.ass_list)
+    n_student = len(gradebook.df_perc)
+
+    weight_dict = config.cat_weight_dict
+    total = sum(weight_dict.values()) or 1
+
+    # no categories: every assignment is weighted by its own points, which is
+    # one unnamed group covering everything
+    group_list = [(cat, weight_dict[cat] / total,
+                   [a for a in ass_list if cat in a])
+                  for cat in weight_dict] or [('', 1., ass_list)]
+
+    row_list = []
+    seen_set = set()
+    for cat, cat_frac, cat_ass_list in group_list:
+        point_sum = sum(float(gradebook.points[a]) for a in cat_ass_list)
+        for ass in cat_ass_list:
+            seen_set.add(ass)
+            points = float(gradebook.points[ass])
+            in_cat = points / point_sum if point_sum else None
+            row_list.append(_row(gradebook, ass, cat, points, in_cat,
+                                 None if in_cat is None else in_cat * cat_frac,
+                                 n_student))
+
+    # an assignment no category caught still has to appear, or the table
+    # would quietly agree that it doesn't exist
+    for ass in ass_list:
+        if ass not in seen_set:
+            row_list.append(_row(gradebook, ass, None,
+                                 float(gradebook.points[ass]), None, 0.,
+                                 n_student))
+
+    return row_list
+
+
+def _row(gradebook, ass, cat, points, in_cat, weight, n_student):
+    """ one assignment's row of the table """
+    s_perc = gradebook.df_perc[ass]
+
+    # a zero is far more often "never submitted" than "submitted and earned
+    # nothing", and averaging the two together describes neither
+    s_scored = s_perc[s_perc.notna() & (s_perc != 0)]
+
+    return dict(
+        category=cat,
+        assignment=ass,
+        points=points,
+        weight_in_cat=in_cat,
+        weight_total=weight,
+        mean_nonzero=float(s_scored.mean()) if len(s_scored) else None,
+        n_complete=int(len(s_scored)),
+        n_student=n_student)
 
 
 def _pair(s_final, s_raw):

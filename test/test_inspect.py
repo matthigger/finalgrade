@@ -121,6 +121,121 @@ class TestStudentList:
         json.dumps(web.grade(csv_text, YAML_DROP))
 
 
+class TestWeightTable:
+    def test_a_row_per_assignment(self, csv_text):
+        res = web.grade(csv_text, 'category:\n  weight:\n    hw: 50\n'
+                                  '    quiz: 50\n')
+
+        assert [r['assignment'] for r in res['row_list']] == \
+            ['hw1', 'hw2', 'hw3', 'quiz1']
+
+    def test_weight_within_a_category_is_by_points(self, csv_text):
+        """ inside a category, average() weights by each assignment's points
+        """
+        res = web.grade(csv_text, 'category:\n  weight:\n    hw: 50\n'
+                                  '    quiz: 50\n')
+
+        row_dict = {r['assignment']: r for r in res['row_list']}
+        # the three hw are 10 points each, so each is a third of the category
+        assert row_dict['hw1']['weight_in_cat'] == pytest.approx(1 / 3)
+        assert row_dict['quiz1']['weight_in_cat'] == 1
+
+    def test_total_weight_sums_to_one(self, csv_text):
+        res = web.grade(csv_text, 'category:\n  weight:\n    hw: 70\n'
+                                  '    quiz: 30\n')
+
+        total = sum(r['weight_total'] for r in res['row_list'])
+        assert total == pytest.approx(1)
+
+    def test_total_weight_follows_the_category(self, csv_text):
+        res = web.grade(csv_text, 'category:\n  weight:\n    hw: 70\n'
+                                  '    quiz: 30\n')
+
+        row_dict = {r['assignment']: r for r in res['row_list']}
+        assert row_dict['quiz1']['weight_total'] == pytest.approx(.3)
+        assert row_dict['hw1']['weight_total'] == pytest.approx(.7 / 3)
+
+    def test_with_no_categories_everything_is_weighted_by_points(self,
+                                                                 csv_text):
+        res = web.grade(csv_text, '')
+
+        total = sum(r['weight_total'] for r in res['row_list'])
+        assert total == pytest.approx(1)
+        # four assignments of 10 points each
+        assert res['row_list'][0]['weight_total'] == pytest.approx(.25)
+
+    def test_mean_ignores_zeros(self, csv_text):
+        """ a zero is far more often 'never submitted' than 'earned nothing'
+        """
+        res = web.grade(csv_text, YAML_DROP)
+
+        row_dict = {r['assignment']: r for r in res['row_list']}
+        # hw1: alice 10, bob 10, carol 0 -> the mean of what was scored is 1
+        assert row_dict['hw1']['mean_nonzero'] == pytest.approx(1)
+        assert row_dict['hw1']['n_complete'] == 2
+        assert row_dict['hw1']['n_student'] == 3
+
+    def test_an_assignment_in_no_category_still_appears(self, csv_text):
+        res = web.grade(csv_text, 'category:\n  weight:\n    hw: 100\n')
+
+        row_dict = {r['assignment']: r for r in res['row_list']}
+        assert row_dict['quiz1']['category'] is None
+        assert row_dict['quiz1']['weight_total'] == 0
+
+    def test_is_plain_data(self, csv_text):
+        import json
+        json.dumps(web.grade(csv_text, YAML_DROP)['row_list'])
+
+
+class TestCanvasExport:
+    def canvas_text(self, tmp_path):
+        import sys
+        sys.path.insert(0, 'test')
+        from test_canvas_read import write_canvas
+        import pathlib
+        return pathlib.Path(write_canvas(tmp_path / 'canvas.csv')).read_text()
+
+    def test_merges_grades_into_the_canvas_gradebook(self, tmp_path):
+        text = self.canvas_text(tmp_path)
+
+        res = web.canvas_export(
+            csv_text=text, yaml_text='category:\n  weight:\n    hw: 60\n'
+                                     '    exam: 40\n',
+            canvas_text=text, name='canvas.csv')
+
+        assert res['ok'], res.get('error')
+        assert 'mean' in res['csv'].splitlines()[0]
+        assert 'SIS User ID' not in res['csv'] or 'Student' in res['csv']
+
+    def test_scaled_to_100_so_canvas_does_not_round(self, tmp_path):
+        text = self.canvas_text(tmp_path)
+
+        res = web.canvas_export(
+            csv_text=text, yaml_text='category:\n  weight:\n    hw: 100\n',
+            canvas_text=text, name='canvas.csv', scale100=True)
+
+        # alice has 28 of 30 hw points: .9333 -> 93.33, not 0.93
+        assert '93.3' in res['csv']
+
+    def test_a_broken_config_is_a_message(self, tmp_path):
+        text = self.canvas_text(tmp_path)
+
+        res = web.canvas_export(
+            csv_text=text, yaml_text='category:\n  weight:\n    nope: 100\n',
+            canvas_text=text, name='canvas.csv')
+
+        assert not res['ok']
+        assert 'nope' in res['error']
+
+    def test_a_file_that_is_not_a_canvas_export(self, csv_text, tmp_path):
+        res = web.canvas_export(
+            csv_text=csv_text, yaml_text='', canvas_text='a,b\n1,2\n',
+            name='scope.csv')
+
+        assert not res['ok']
+        assert res['error']
+
+
 class TestHistogram:
     def test_counts_and_names_line_up(self):
         hist = histogram([0.1, 0.15, 0.95], ['a', 'b', 'c'], n_bin=2)

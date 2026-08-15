@@ -124,14 +124,55 @@ h2 .sub {
   .spinner { animation-duration: 3s; }
 }
 
-/* ---- file picking ---- */
+/* ---- header and file picking ---- */
+
+.head-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 780px) {
+  .head-grid { grid-template-columns: 1fr; }
+}
+
+.files {
+  margin: .9rem 0 0;
+  font-size: .85rem;
+  display: flex;
+  align-items: baseline;
+  gap: .45rem;
+  flex-wrap: wrap;
+}
+
+.file-k {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--ink-faint);
+}
+
+.files a {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.file-sep { color: var(--ink-faint); }
+
+.file-note {
+  font-size: .74rem;
+  color: var(--ink-faint);
+  margin-left: .3rem;
+}
 
 .drop {
   border: 2px dashed var(--line);
   border-radius: 8px;
-  padding: 2.4rem 1rem;
+  padding: 1.2rem 1rem;
   text-align: center;
   transition: background .12s, border-color .12s;
+  background: var(--panel);
 }
 
 .drop.over {
@@ -139,8 +180,33 @@ h2 .sub {
   background: var(--accent-soft);
 }
 
-.drop-main { margin: 0; font-size: 1.15rem; font-weight: 600; }
-.drop-sub { margin: .3rem 0 0; color: var(--ink-soft); }
+.drop-main { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.drop-sub { margin: .3rem 0 0; color: var(--ink-soft); font-size: .85rem; }
+
+/* ---- the weight table ---- */
+
+table.weights { margin-top: 1rem; margin-bottom: .4rem; }
+table.weights td.cat { font-weight: 600; }
+table.weights tr.grp td { border-top: 1px solid var(--line); }
+table.weights td.strong { font-weight: 600; }
+table.weights th, table.weights td { padding-right: .8rem; }
+
+/* ---- letter chips in the stat row ---- */
+
+.stat.wide { flex: 1 1 14rem; }
+
+.ltr-row { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .2rem; }
+
+.ltr-chip {
+  font-size: .8rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: .05rem .5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ltr-chip b { font-family: var(--mono); }
 
 .filebar {
   display: flex;

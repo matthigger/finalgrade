@@ -497,6 +497,11 @@ class Config:
             raise ConfigError(
                 f'failed to parse config file {f_config}: {e}') from e
 
+        if d is None:
+            # an empty file is a config with nothing set, which is the
+            # default policy -- not a broken file
+            d = dict()
+
         if not isinstance(d, dict):
             raise ConfigError(
                 f'config file must be a YAML mapping, got {type(d).__name__} '
