@@ -541,8 +541,7 @@ function drawStudent(form) {
           : '<span class="empty">no grade yet</span>'}
       </div>
       ${graded ? catRow(graded) : ''}
-      ${graded ? scoreGrid(graded) : ''}
-      ${subRow(form, stud)}
+      ${graded ? scoreGrid(graded, stud) : ''}
       ${graded ? lateGrid(graded) : ''}
       ${excuseRow(form, stud)}
       ${graded ? auditLog(graded) : ''}
@@ -561,7 +560,7 @@ function catRow(graded) {
 /* Every score, grouped by the categories the policy already defines, because
  * fifteen chips in one row is a list and four rows of four is a gradebook.
  * Clicking one waives it: the thing an instructor came here to do. */
-function scoreGrid(graded) {
+function scoreGrid(graded, stud) {
   const group = new Map();
   for (const a of graded.ass_list) {
     const key = a.category || 'other';
@@ -576,8 +575,33 @@ function scoreGrid(graded) {
     </div>`).join('');
 
   return `<div class="waive-row block">
-    <span class="field-k">scores <span class="sub">click to waive</span></span>
-    <div class="grid">${block}</div>
+    <span class="field-k">scores <span class="sub">click to waive, drag
+      one onto another to take the best of both</span></span>
+    <div class="grid">${block}${maxGroup(stud)}</div>
+  </div>`;
+}
+
+/* The maxes standing for this student, as one more row of the same grid --
+ * they are a kind of score, arrived at differently.  Each says its whole
+ * arithmetic, because a drag is easy to make by accident and otherwise
+ * leaves no mark on the score it changed. */
+function maxGroup(stud) {
+  const cur = ((state.form || {}).max_list || [])
+    .find((s) => s.email === stud.email);
+  const entries = Object.entries((cur || {}).target_dict || {});
+  if (!entries.length) return '';
+
+  const chip = entries.map(([target, fromList]) =>
+    `<span class="chip is-max">
+      <span class="chip-v">${escapeHtml(target)} = max(${
+        escapeHtml([target, ...fromList].join(', '))})</span>
+      <button type="button" data-unmax="${escapeHtml(target)}"
+        title="undo this">&times;</button>
+    </span>`).join('');
+
+  return `<div class="grid-group">
+    <span class="grid-k">max</span>
+    <div class="chips">${chip}</div>
   </div>`;
 }
 
@@ -620,30 +644,6 @@ function scoreChip(a) {
     `<span class="chip-v">${text}</span></span>`;
 }
 
-/* Every substitution standing for this student, each undoable.  A drag is
- * easy to make by accident and leaves no trace on the score it changed --
- * the chip is where it becomes visible and reversible. */
-function subRow(form, stud) {
-  const cur = (form.stud_sub_list || []).find((s) => s.email === stud.email);
-  const entries = Object.entries((cur || {}).target_dict || {});
-  if (!entries.length) return '';
-
-  const chip = entries.map(([target, fromList]) =>
-    `<span class="chip is-sub">
-      <span class="chip-k">${escapeHtml(target)}</span>
-      <span class="chip-v">&larr; best of ${escapeHtml(fromList.join(', '))}
-      </span>
-      <button type="button" data-unsub="${escapeHtml(target)}"
-        title="undo this substitution">&times;</button>
-    </span>`).join('');
-
-  return `<div class="waive-row block">
-    <span class="field-k">substitutions <span class="sub">for this
-      student</span></span>
-    <div class="chips">${chip}</div>
-  </div>`;
-}
-
 /* Dragging one score onto another gives that student the better of the two,
  * for the makeup only they sat.  The same rule as a policy-wide substitution,
  * without inventing a policy-wide rule to describe one arrangement. */
@@ -651,11 +651,11 @@ function dropSubstitute(fromName, toName) {
   const stud = pickedStudent();
   if (!stud || fromName === toName) return;
 
-  const cur = (state.form.stud_sub_list || [])
+  const cur = (state.form.max_list || [])
     .find((s) => s.email === stud.email);
   const target = ((cur || {}).target_dict || {})[toName] || [];
 
-  applyEdit('set_student_sub', {
+  applyEdit('set_max', {
     email: stud.email,
     target: toName,
     ass_list: [...new Set([...target, fromName])],
@@ -1500,9 +1500,9 @@ $('stud-card').addEventListener('click', (e) => {
   const stud = pickedStudent();
   if (!stud) return;
 
-  const undo = e.target.getAttribute('data-unsub');
+  const undo = e.target.getAttribute('data-unmax');
   if (undo !== null) {
-    return applyEdit('set_student_sub',
+    return applyEdit('set_max',
                      { email: stud.email, target: undo, ass_list: [] });
   }
 

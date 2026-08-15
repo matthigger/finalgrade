@@ -386,18 +386,18 @@ class Gradebook:
         if self.df_submit is not None:
             self.df_submit = self.df_submit.loc[:, col_list]
 
-    def substitute_student(self, sub_dict, log=None):
-        """ substitutes assignments for one student at a time
+    def take_max(self, max_dict, log=None):
+        """ one student's assignment takes the best of itself and others
 
         The same rule as substitute(), applied to a single row: a makeup that
         only one person sat, a quiz retaken by two.  Doing it per student
         avoids inventing a policy-wide rule to describe one arrangement.
 
         Args:
-            sub_dict (dict): email -> {target: [assignments it may take]}
+            max_dict (dict): email -> {target: [assignments it may take]}
             log (dict): if given, email -> list of what happened
         """
-        for email, target_dict in sub_dict.items():
+        for email, target_dict in max_dict.items():
             email = self._resolve_email(email)
             if email not in self.df_perc.index:
                 logger.info(f'substitute skipped, student not being graded: '

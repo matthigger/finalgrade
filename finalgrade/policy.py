@@ -24,7 +24,7 @@ YAML_KEY_DICT = {
     'sub_dict': ('assignments', 'substitute'),
     'plan_dict': ('assignments', 'planned'),
     'exclude_complete_thresh': ('assignments', 'exclude_complete_thresh'),
-    'stud_sub_dict': ('substitute_student',),
+    'max_dict': ('max',),
     'waive_dict': ('waive',),
     'late_waive_dict': ('waive_late',),
     'grade_thresh': ('grade_thresh',),
@@ -133,7 +133,7 @@ SECTION_TYPE_DICT = {
     'cat_weight_dict': dict, 'cat_drop_dict': dict, 'cat_late_dict': dict,
     'sub_dict': dict, 'waive_dict': dict, 'late_waive_dict': dict,
     'grade_thresh': dict, 'remove_list': list, 'email_list': list,
-    'plan_dict': dict, 'stud_sub_dict': dict,
+    'plan_dict': dict, 'max_dict': dict,
 }
 
 SECTION_SHAPE_DICT = {
@@ -153,7 +153,7 @@ class Policy:
     remove_list: list = field(default_factory=list)
     sub_dict: dict = field(default_factory=dict)
     plan_dict: dict = field(default_factory=dict)
-    stud_sub_dict: dict = field(default_factory=dict)
+    max_dict: dict = field(default_factory=dict)
     waive_dict: dict = field(default_factory=dict)
     email_list: list = field(default_factory=list)
     cat_late_dict: dict = field(default_factory=dict)
@@ -165,7 +165,7 @@ class Policy:
     # container so that every attribute has a predictable type
     EMPTY_DICT_TUP = ('cat_weight_dict', 'cat_drop_dict', 'sub_dict',
                       'waive_dict', 'cat_late_dict', 'late_waive_dict',
-                      'plan_dict', 'stud_sub_dict')
+                      'plan_dict', 'max_dict')
     EMPTY_LIST_TUP = ('remove_list', 'email_list')
 
     def __post_init__(self):
@@ -238,13 +238,13 @@ class Policy:
         self.plan_dict = {normalize(a): p
                           for a, p in self.plan_dict.items()}
 
-        self.stud_sub_dict = {
+        self.max_dict = {
             email.lower(): {
                 normalize(target): self._parse_waive_value(
-                    src, email, 'substitute_student')
+                    src, email, 'max')
                 for target, src in (target_dict or {}).items()}
-            for email, target_dict in self.stud_sub_dict.items()}
-        self.stud_sub_dict = {k: v for k, v in self.stud_sub_dict.items() if v}
+            for email, target_dict in self.max_dict.items()}
+        self.max_dict = {k: v for k, v in self.max_dict.items() if v}
 
         self.waive_dict = {
             email.lower(): self._parse_waive_value(a_list, email, 'waive')
@@ -369,8 +369,8 @@ class Policy:
             yield email, 'waive'
         for email in self.late_waive_dict:
             yield email, 'waive_late'
-        for email in self.stud_sub_dict:
-            yield email, 'substitute_student'
+        for email in self.max_dict:
+            yield email, 'max'
         for cat, late_dict in self.cat_late_dict.items():
             if not isinstance(late_dict, dict):
                 continue
@@ -464,8 +464,8 @@ class Policy:
 
         # 2b. the same rule for one student at a time: a makeup only one
         #     person sat needs no policy-wide rule to describe it
-        if self.stud_sub_dict:
-            gradebook.substitute_student(self.stud_sub_dict, log=log)
+        if self.max_dict:
+            gradebook.take_max(self.max_dict, log=log)
 
         # 3. explicit exclusions before the completion threshold, so the
         #    threshold isn't computed over assignments already on their way out

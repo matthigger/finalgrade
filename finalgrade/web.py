@@ -559,11 +559,11 @@ def form_state(yaml_text):
         exclude_list=_str_list(ass_dict.get('exclude')),
         plan_list=[dict(name=str(k), points=v)
                    for k, v in (ass_dict.get('planned') or {}).items()],
-        stud_sub_list=[
+        max_list=[
             dict(email=str(email),
                  target_dict={str(t): _str_list(v)
                               for t, v in (d or {}).items()})
-            for email, d in (data.get('substitute_student') or {}).items()],
+            for email, d in (data.get('max') or {}).items()],
         complete_thresh=ass_dict.get('exclude_complete_thresh'),
         email_list=_str_list(data.get('email_list')),
         sub_list=_sub_list(ass_dict.get('substitute')),

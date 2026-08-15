@@ -162,13 +162,13 @@ class TestFmtLate:
 class TestStudentSubstitution:
     def test_it_takes_the_better_of_the_two(self, f_scope_std):
         """ alice has hw1 100% and hw3 60%; hw3 may take hw1's score """
-        policy = Policy(stud_sub_dict={'alice@u.edu': {'hw3': ['hw1']}})
+        policy = Policy(max_dict={'alice@u.edu': {'hw3': ['hw1']}})
         gradebook, _ = policy(str(f_scope_std))
 
         assert gradebook.df_perc.at['alice@u.edu', 'hw3'] == 1
 
     def test_it_touches_nobody_else(self, f_scope_std):
-        policy = Policy(stud_sub_dict={'alice@u.edu': {'hw3': ['hw1']}})
+        policy = Policy(max_dict={'alice@u.edu': {'hw3': ['hw1']}})
         gradebook, _ = policy(str(f_scope_std))
 
         assert gradebook.df_perc.at['bob@u.edu', 'hw3'] == 1.0
@@ -176,7 +176,7 @@ class TestStudentSubstitution:
 
     def test_it_is_recorded_in_the_log(self, f_scope_std):
         res = web.grade(f_scope_std.read_text(),
-                        'substitute_student:\n'
+                        'max:\n'
                         '  alice@u.edu:\n    hw3: hw1\n')
 
         log = log_of(res, 'alice@u.edu')
@@ -187,7 +187,7 @@ class TestStudentSubstitution:
             self, f_scope_std):
         """ naming the winner of a tie reads as a decision nobody made """
         res = web.grade(f_scope_std.read_text(),
-                        'substitute_student:\n'
+                        'max:\n'
                         '  alice@u.edu:\n    hw1: hw3\n')
 
         log = log_of(res, 'alice@u.edu')
@@ -196,15 +196,15 @@ class TestStudentSubstitution:
     def test_a_typo_in_the_student_is_refused(self, f_scope_std):
         from finalgrade.errors import PolicyError
 
-        policy = Policy(stud_sub_dict={'alicce@u.edu': {'hw3': ['hw1']}})
+        policy = Policy(max_dict={'alicce@u.edu': {'hw3': ['hw1']}})
         with pytest.raises(PolicyError, match='alicce'):
             policy(str(f_scope_std))
 
     def test_through_the_browser_edit(self, f_scope_std):
-        res = web.edit_policy('', 'set_student_sub',
+        res = web.edit_policy('', 'set_max',
                               '{"email": "alice@u.edu", "target": "hw3",'
                               ' "ass_list": ["hw1"]}')
 
         assert res['ok']
-        assert 'substitute_student' in res['yaml']
+        assert 'max' in res['yaml']
         assert 'hw3: hw1' in res['yaml']

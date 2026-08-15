@@ -234,16 +234,16 @@ def set_exclude(data, ass_list):
             section['exclude'] = None
 
 
-def set_student_sub(data, email, target, ass_list):
+def set_max(data, email, target, ass_list):
     """ lets one student's target take the best of ass_list
 
     Written per student because that is how it arises: a makeup one person
     sat, a quiz two people retook.  An empty list removes the entry.
     """
-    section = _section(data, 'substitute_student')
+    section = _section(data, 'max')
 
     if ass_list:
-        _put(_section(data, 'substitute_student', email), target,
+        _put(_section(data, 'max', email), target,
              ', '.join(ass_list))
     else:
         stud = section.get(email)
@@ -252,7 +252,7 @@ def set_student_sub(data, email, target, ass_list):
             if not stud:
                 section.pop(email, None)
 
-    _clear_if_empty(data, 'substitute_student')
+    _clear_if_empty(data, 'max')
 
 
 def set_planned(data, ass, points):
@@ -333,7 +333,7 @@ ACTION_DICT = {
     'set_complete_thresh': set_complete_thresh,
     'set_substitute': set_substitute,
     'set_planned': set_planned,
-    'set_student_sub': set_student_sub,
+    'set_max': set_max,
     'set_grade_thresh': set_grade_thresh,
     'set_email_list': set_email_list,
 }
