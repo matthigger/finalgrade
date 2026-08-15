@@ -10,8 +10,8 @@ import pathlib
 
 import pytest
 
-from gradescope_mean import web
-from gradescope_mean.config import Config
+from finalgrade import web
+from finalgrade.config import Config
 
 
 @pytest.fixture
@@ -88,7 +88,7 @@ class TestCheck:
 
     def test_agrees_with_build_report(self, csv_text, f_scope_std):
         """ the page must show what `check` shows """
-        from gradescope_mean.check import build_report
+        from finalgrade.check import build_report
 
         rep_web = web.check_config(csv_text, YAML_STD)
         rep_cli = build_report(Config(cat_weight_dict={'hw': 50, 'quiz': 50}),
@@ -122,7 +122,7 @@ class TestGrade:
     def test_letters_are_ordered_by_grade(self, csv_text):
         res = web.grade(csv_text, YAML_STD)
 
-        from gradescope_mean.perc_to_letter import GRADE_THRESH
+        from finalgrade.perc_to_letter import GRADE_THRESH
         order_list = [ltr for _, ltr in sorted(GRADE_THRESH.items(),
                                                reverse=True)]
         got_list = [l['letter'] for l in res['letter_list']]

@@ -1,11 +1,11 @@
 import pytest
 
-import gradescope_mean
-from gradescope_mean.config import *
-from gradescope_mean.errors import ConfigError, GradebookError
-from gradescope_mean.gradebook import *
+import finalgrade
+from finalgrade.config import *
+from finalgrade.errors import ConfigError, GradebookError
+from finalgrade.gradebook import *
 
-test_folder = pathlib.Path(gradescope_mean.__file__).parents[1] / 'test'
+test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
 
 @pytest.fixture

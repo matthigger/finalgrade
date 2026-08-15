@@ -4,11 +4,11 @@ import openpyxl
 import pandas as pd
 import pytest
 
-import gradescope_mean
-from gradescope_mean.__main__ import main, parser
-from gradescope_mean.config import Config
+import finalgrade
+from finalgrade.__main__ import main, parser
+from finalgrade.config import Config
 
-test_folder = pathlib.Path(gradescope_mean.__file__).parents[1] / 'test'
+test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
 
 @pytest.fixture

@@ -3,10 +3,10 @@ import shutil
 
 import pytest
 
-import gradescope_mean
-from gradescope_mean.__main__ import main, parser
+import finalgrade
+from finalgrade.__main__ import main, parser
 
-test_folder = pathlib.Path(gradescope_mean.__file__).parents[1] / 'test'
+test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
 
 def _copy_test_data(tmp_path):
@@ -15,7 +15,7 @@ def _copy_test_data(tmp_path):
     shutil.copy(test_folder / 'scope.csv', f_scope)
     f_config = tmp_path / 'config.yaml'
     shutil.copy(
-        pathlib.Path(gradescope_mean.__file__).parent / 'config.yaml',
+        pathlib.Path(finalgrade.__file__).parent / 'config.yaml',
         f_config)
     return str(f_scope), str(f_config)
 
@@ -26,7 +26,7 @@ class TestMainCLI:
             parser.parse_args(['--version'])
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert gradescope_mean.__version__ in captured.out
+        assert finalgrade.__version__ in captured.out
 
     def test_no_subcommand_exits(self):
         with pytest.raises(SystemExit) as exc_info:

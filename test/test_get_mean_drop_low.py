@@ -2,7 +2,7 @@ from math import isclose
 
 import pytest
 
-from gradescope_mean.get_mean_drop_low import *
+from finalgrade.get_mean_drop_low import *
 
 
 class TestGetMeanDropLow:

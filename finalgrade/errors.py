@@ -1,4 +1,4 @@
-"""Exceptions raised by gradescope_mean.
+"""Exceptions raised by finalgrade.
 
 All inherit ValueError so that existing callers catching ValueError keep
 working, while the CLI can catch GradescopeMeanError specifically and print

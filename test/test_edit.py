@@ -7,9 +7,9 @@ it was touched.
 """
 import pytest
 
-from gradescope_mean import edit, web
-from gradescope_mean.config import Config
-from gradescope_mean.errors import ConfigError
+from finalgrade import edit, web
+from finalgrade.config import Config
+from finalgrade.errors import ConfigError
 
 # a file with something in every corner the widgets don't touch
 YAML_FULL = """\

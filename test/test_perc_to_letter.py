@@ -1,6 +1,6 @@
 import pytest
 
-from gradescope_mean.perc_to_letter import *
+from finalgrade.perc_to_letter import *
 
 GRADE_THRESH_UNORDERED = {.00: 'E',
                           .93: 'A',

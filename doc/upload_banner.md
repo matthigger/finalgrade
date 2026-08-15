@@ -9,7 +9,7 @@ Banner will accept an `xlsx` file and allow you to associate columns from your i
 
 You can supply the proper CRN and Term Codes to generate an xlsx file from the `grade_full.csv` output as:
 
-    gradescope-mean banner grade_full.csv term-code-here -c crn-first-here -c crn-second-here
+    finalgrade banner grade_full.csv term-code-here -c crn-first-here -c crn-second-here
 
 # Uploading to Banner
 

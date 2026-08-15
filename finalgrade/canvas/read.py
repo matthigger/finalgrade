@@ -19,7 +19,7 @@ from .canvas import N_COL_CANVAS_META
 from ..assign_list import AssignmentList, normalize
 from ..errors import CanvasError
 
-logger = logging.getLogger('gradescope_mean')
+logger = logging.getLogger('finalgrade')
 
 COL_STUDENT = 'Student'
 COL_SIS_USER = 'SIS User ID'

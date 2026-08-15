@@ -6,8 +6,8 @@ a human can see the fact.
 """
 import pytest
 
-from gradescope_mean.check import build_report, render
-from gradescope_mean.config import Config
+from finalgrade.check import build_report, render
+from finalgrade.config import Config
 
 
 class TestMapping:
@@ -179,7 +179,7 @@ class TestRender:
 class TestCli:
     def test_check_exits_nonzero_on_error(self, f_scope_std, write_config,
                                           capsys):
-        from gradescope_mean.__main__ import main, parser
+        from finalgrade.__main__ import main, parser
 
         f_config = write_config('category:\n  weight:\n    exam: 100\n')
         args = parser.parse_args(
@@ -193,7 +193,7 @@ class TestCli:
 
     def test_check_is_quiet_and_clean_when_ok(self, f_scope_std, write_config,
                                               capsys):
-        from gradescope_mean.__main__ import main, parser
+        from finalgrade.__main__ import main, parser
 
         f_config = write_config('category:\n  weight:\n    hw: 50\n'
                                 '    quiz: 50\n')
@@ -205,7 +205,7 @@ class TestCli:
 
     def test_check_writes_no_grades(self, f_scope_std, write_config):
         """ check is a read: it must not leave grade_full.csv behind """
-        from gradescope_mean.__main__ import main, parser
+        from finalgrade.__main__ import main, parser
 
         f_config = write_config('category:\n  weight:\n    hw: 100\n')
         args = parser.parse_args(

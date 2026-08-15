@@ -9,8 +9,8 @@ import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from gradescope_mean.get_mean_drop_low import get_mean_drop_low
-from gradescope_mean.perc_to_letter import GRADE_THRESH, perc_to_letter
+from finalgrade.get_mean_drop_low import get_mean_drop_low
+from finalgrade.perc_to_letter import GRADE_THRESH, perc_to_letter
 
 # percentages earned, and assignment point values
 perc_st = st.floats(min_value=0, max_value=1.5, allow_nan=False,

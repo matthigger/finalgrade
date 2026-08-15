@@ -10,11 +10,11 @@ import pandas as pd
 import pytest
 
 from conftest import ASSIGN_STD, STUDENT_STD, write_scope
-from gradescope_mean.assign_list import AssignmentList
-from gradescope_mean.config import YAML_KEY_DICT, Config
-from gradescope_mean.errors import (ConfigError, GradebookError,
+from finalgrade.assign_list import AssignmentList
+from finalgrade.config import YAML_KEY_DICT, Config
+from finalgrade.errors import (ConfigError, GradebookError,
                                     GradescopeMeanError)
-from gradescope_mean.gradebook import (GRACE_DEFAULT, Gradebook,
+from finalgrade.gradebook import (GRACE_DEFAULT, Gradebook,
                                        minutes_to_days)
 
 

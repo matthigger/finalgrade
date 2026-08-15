@@ -19,8 +19,8 @@ import pandas as pd
 import pytest
 
 from conftest import ASSIGN_STD, STUDENT_STD, write_scope
-from gradescope_mean.__main__ import main, parser
-from gradescope_mean.config import Config
+from finalgrade.__main__ import main, parser
+from finalgrade.config import Config
 
 CFG_BASE = """\
 category:
@@ -289,7 +289,7 @@ class TestDeterminism:
         script = (
             'import sys, warnings; warnings.simplefilter("ignore");'
             f'sys.path.insert(0, {str(pathlib.Path.cwd())!r});'
-            'from gradescope_mean.config import Config;'
+            'from finalgrade.config import Config;'
             f'_, df = Config(email_list={[s["email"] for s in STUDENT_STD]!r})'
             f'({str(f_scope)!r});'
             'print("ORDER:" + ",".join(df.index))')
@@ -393,7 +393,7 @@ class TestExporters:
         np.testing.assert_allclose([.9, .75], df['mean'])
 
     def test_canvas_merge_does_not_mutate_arguments(self, tmp_path):
-        from gradescope_mean.canvas.canvas import canvas_merge
+        from finalgrade.canvas.canvas import canvas_merge
         f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
         _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
         df_grade = df_grade.reset_index()
@@ -432,7 +432,7 @@ class TestExporters:
         every id-less student against 'Points Possible' and the test student,
         inventing rows and putting real grades on them.
         """
-        from gradescope_mean.canvas.canvas import canvas_merge
+        from finalgrade.canvas.canvas import canvas_merge
         student_list = [dict(stud) for stud in STUDENT_STD]
         # two students with no sid, so a cross join would be plainly visible
         student_list[1]['sid'] = ''
@@ -460,7 +460,7 @@ class TestExporters:
     def test_canvas_reports_unmatched_students(self, tmp_path, caplog):
         """ the missing-student report is the only guard against a silently
         wrong upload, so it must name real mismatches """
-        from gradescope_mean.canvas.canvas import canvas_merge
+        from finalgrade.canvas.canvas import canvas_merge
         student_list = [dict(stud) for stud in STUDENT_STD]
         student_list[2]['sid'] = ''
         f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, student_list)
@@ -475,7 +475,7 @@ class TestExporters:
              'SIS Login ID': 'zoe@u.edu', 'Section': 'sec01',
              'Placeholder': 0}])
 
-        with caplog.at_level('INFO', logger='gradescope_mean'):
+        with caplog.at_level('INFO', logger='finalgrade'):
             canvas_merge(f_canvas=str(f_canvas),
                          df_grade=df_grade.reset_index(), scale100=False)
         text = caplog.text
@@ -496,7 +496,7 @@ class TestExporters:
         """ recent gradescope exports end with a 'Total Lateness (H:M:S)'
         column; it is not an assignment, so it lands in the metadata and
         would otherwise become a new canvas assignment """
-        from gradescope_mean.canvas.canvas import canvas_merge
+        from finalgrade.canvas.canvas import canvas_merge
         f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
         df = pd.read_csv(f_scope)
         df['Total Lateness (H:M:S)'] = '00:00:00'
@@ -516,8 +516,8 @@ class TestExporters:
     def test_canvas_duplicate_sid_raises(self, tmp_path):
         """ two gradescope students sharing an id fan out into extra rows,
         exactly as two id-less ones would """
-        from gradescope_mean.canvas.canvas import canvas_merge
-        from gradescope_mean.errors import CanvasError
+        from finalgrade.canvas.canvas import canvas_merge
+        from finalgrade.errors import CanvasError
         student_list = [dict(stud) for stud in STUDENT_STD]
         # distinct students (distinct emails), same sid
         student_list[1]['sid'] = student_list[0]['sid']
@@ -537,8 +537,8 @@ class TestExporters:
         """ a duplicate on the canvas side doesn't add rows -- both rows just
         quietly receive the same student's grades -- so it needs its own check
         """
-        from gradescope_mean.canvas.canvas import canvas_merge
-        from gradescope_mean.errors import CanvasError
+        from finalgrade.canvas.canvas import canvas_merge
+        from finalgrade.errors import CanvasError
         f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
         _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
 
@@ -558,7 +558,7 @@ class TestExporters:
     def test_canvas_repeated_id_less_rows_are_not_duplicates(self, tmp_path):
         """ canvas' id-less rows repeat by design (points possible, the test
         student): they must not be mistaken for a duplicated id """
-        from gradescope_mean.canvas.canvas import canvas_merge
+        from finalgrade.canvas.canvas import canvas_merge
         f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
         _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
 

@@ -1,1 +1,1 @@
-recursive-include gradescope_mean *.yaml
+recursive-include finalgrade *.yaml

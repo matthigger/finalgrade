@@ -4,7 +4,7 @@ import pandas as pd
 
 from ..errors import CanvasError
 
-logger = logging.getLogger('gradescope_mean')
+logger = logging.getLogger('finalgrade')
 
 # metadata columns the grade pipeline may emit.  which of these are present
 # depends on the gradescope export (some courses have 'sections', others

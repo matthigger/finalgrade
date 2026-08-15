@@ -1,6 +1,6 @@
 import pytest
 
-from gradescope_mean.assign_list import *
+from finalgrade.assign_list import *
 
 columns = ['skip me', 'H W 1 - max points', 'hw1', 'HW2 - max points', 'hw2']
 

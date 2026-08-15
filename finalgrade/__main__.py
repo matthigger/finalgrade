@@ -8,18 +8,18 @@ from collections import Counter
 
 import pandas as pd
 
-import gradescope_mean
-from gradescope_mean.errors import GradescopeMeanError
+import finalgrade
+from finalgrade.errors import GradescopeMeanError
 
-logger = logging.getLogger('gradescope_mean')
+logger = logging.getLogger('finalgrade')
 
 # ---------- top-level parser ----------
 parser = argparse.ArgumentParser(
-    prog='gradescope-mean',
+    prog='finalgrade',
     description='Grade synthesis from Gradescope CSV exports. '
                 'See: https://github.com/matthigger/gradescope_mean')
 parser.add_argument('--version', action='version',
-                    version=f'%(prog)s {gradescope_mean.__version__}')
+                    version=f'%(prog)s {finalgrade.__version__}')
 subparsers = parser.add_subparsers(dest='command')
 
 # ---------- "grade" subcommand (default / main workflow) ----------
@@ -80,7 +80,7 @@ canvas_parser = subparsers.add_parser(
          '/upload_canvas.md)')
 canvas_parser.add_argument(
     'grade_full', type=str,
-    help='output CSV of "gradescope-mean grade" command')
+    help='output CSV of "finalgrade grade" command')
 canvas_parser.add_argument(
     'canvas', type=str,
     help='CSV of grades downloaded from Canvas')
@@ -100,7 +100,7 @@ banner_parser = subparsers.add_parser(
          '/upload_banner.md)')
 banner_parser.add_argument(
     'grade_full', type=str,
-    help='output CSV of "gradescope-mean grade" command')
+    help='output CSV of "finalgrade grade" command')
 banner_parser.add_argument(
     'term_code', type=str,
     help='Banner term code (added as a new column)')
@@ -136,8 +136,8 @@ def _banner_id(sid):
 def _resolve_config(args, folder, force_new=False):
     """The config named by --config, or the one beside the csv."""
     if args.f_config is not None:
-        return gradescope_mean.Config.from_file(args.f_config)
-    return gradescope_mean.Config.resolve_config(
+        return finalgrade.Config.from_file(args.f_config)
+    return finalgrade.Config.resolve_config(
         folder, f_grade=args.f_scope, force_new=force_new)
 
 
@@ -148,8 +148,8 @@ def cmd_check(args):
     folder = pathlib.Path(args.f_scope).resolve().parent
     config = _resolve_config(args, folder)
 
-    report = gradescope_mean.build_report(config=config, f_grade=args.f_scope)
-    print(gradescope_mean.render(report))
+    report = finalgrade.build_report(config=config, f_grade=args.f_scope)
+    print(finalgrade.render(report))
 
     if not report.ok:
         sys.exit(2)
@@ -196,7 +196,7 @@ def cmd_grade(args):
 
     # histogram
     if args.f_hist:
-        fig = gradescope_mean.plot_hist(
+        fig = finalgrade.plot_hist(
             df_grade_full=df_grade_full,
             cat_weight_dict=config.cat_weight_dict)
         f_html = folder / args.f_hist
@@ -212,7 +212,7 @@ def cmd_canvas(args):
     from datetime import datetime
 
     df_grade_full = pd.read_csv(args.grade_full)
-    df_canvas_out = gradescope_mean.canvas_merge(
+    df_canvas_out = finalgrade.canvas_merge(
         f_canvas=args.canvas,
         df_grade=df_grade_full,
         rm_gradescope_meta=True,

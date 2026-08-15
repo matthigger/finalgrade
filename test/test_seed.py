@@ -9,9 +9,9 @@ import warnings
 
 import pytest
 
-from gradescope_mean.config import F_CONFIG_DEFAULT, Config
-from gradescope_mean.gradebook import Gradebook
-from gradescope_mean.seed import guess_cat_list, seed_text
+from finalgrade.config import F_CONFIG_DEFAULT, Config
+from finalgrade.gradebook import Gradebook
+from finalgrade.seed import guess_cat_list, seed_text
 
 from test_canvas_read import write_canvas
 

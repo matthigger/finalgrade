@@ -1,7 +1,7 @@
 [project]
-name = "gradescope-mean"
+name = "finalgrade"
 version = "0.1.0"
-description = "Utility to average gradescope csv output to final grades"
+description = "Final course grades from a Gradescope or Canvas csv export, by a grading policy you write down once"
 authors = [
     {name = "Matt Higger",email = "mhigger@ccs.neu.edu"}
 ]
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gradescope-mean = "gradescope_mean.__main__:main"
+finalgrade = "finalgrade.__main__:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

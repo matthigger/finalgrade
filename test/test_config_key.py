@@ -6,8 +6,8 @@ penalty not applied at all, on a gradebook that otherwise looks finished.
 """
 import pytest
 
-from gradescope_mean.config import KEY_TREE, YAML_KEY_DICT, Config
-from gradescope_mean.errors import ConfigError
+from finalgrade.config import KEY_TREE, YAML_KEY_DICT, Config
+from finalgrade.errors import ConfigError
 
 
 def config_from(write_config, text):
@@ -79,11 +79,11 @@ class TestUserNamesAreNotKeys:
         assert config.grade_thresh == {.5: 'pass', 0: 'no'}
 
     def test_packaged_default_passes(self):
-        from gradescope_mean.config import F_CONFIG_DEFAULT
+        from finalgrade.config import F_CONFIG_DEFAULT
         Config.from_file(F_CONFIG_DEFAULT)
 
     def test_seeded_config_passes(self, f_scope_std, tmp_path):
-        from gradescope_mean import web
+        from finalgrade import web
         f_seed = tmp_path / 'seeded.yaml'
         f_seed.write_text(web.seed_config(f_scope_std.read_text()))
         Config.from_file(f_seed)

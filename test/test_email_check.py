@@ -9,9 +9,9 @@ import warnings
 
 import pytest
 
-from gradescope_mean.config import Config
-from gradescope_mean.errors import ConfigError
-from gradescope_mean.gradebook import Gradebook
+from finalgrade.config import Config
+from finalgrade.errors import ConfigError
+from finalgrade.gradebook import Gradebook
 
 
 class TestTypoIsAnError:
@@ -131,7 +131,7 @@ class TestNoInventedStudent:
 
 class TestCheckReportsIt:
     def test_check_shows_the_bad_email(self, f_scope_std):
-        from gradescope_mean.check import build_report
+        from finalgrade.check import build_report
 
         report = build_report(Config(waive_dict={'alicce@u.edu': 'hw1'}),
                               str(f_scope_std))

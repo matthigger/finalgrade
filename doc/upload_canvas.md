@@ -2,7 +2,7 @@
 
 Download a Canvas gradebook as some `canvas.csv` and run:
 
-    gradescope-mean canvas grade_full.csv canvas.csv
+    finalgrade canvas grade_full.csv canvas.csv
 
 The script will merge the grades and means into a new `canvas_<timestamp>.csv`
 file which can be imported to Canvas.

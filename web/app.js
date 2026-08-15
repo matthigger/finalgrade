@@ -1,4 +1,4 @@
-/* The page is a thin shell around gradescope_mean.web: it picks a file,
+/* The page is a thin shell around finalgrade.web: it picks a file,
  * shows what python says about it, and offers the result as a download.
  *
  * Every decision about grading lives in python, so the browser and the
@@ -38,15 +38,15 @@ async function boot() {
     msg.textContent = 'downloading pandas…';
     await state.py.loadPackage(PKG);
 
-    msg.textContent = 'installing gradescope-mean…';
+    msg.textContent = 'installing finalgrade…';
     const wheel = await findWheel();
     await state.py.runPythonAsync(`
 import micropip
 await micropip.install(${JSON.stringify(wheel)}, deps=False)
 `);
 
-    state.api = state.py.pyimport('gradescope_mean.web');
-    state.seed = state.py.pyimport('gradescope_mean.seed');
+    state.api = state.py.pyimport('finalgrade.web');
+    state.seed = state.py.pyimport('finalgrade.seed');
 
     $('boot').hidden = true;
     $('pick').hidden = false;

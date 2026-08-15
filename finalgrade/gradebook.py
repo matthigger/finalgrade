@@ -10,7 +10,7 @@ from .errors import ConfigError, GradebookError
 from .get_mean_drop_low import get_mean_drop_low
 from .perc_to_letter import perc_to_letter
 
-logger = logging.getLogger('gradescope_mean')
+logger = logging.getLogger('finalgrade')
 
 # minutes of grace before a submission counts as late
 GRACE_DEFAULT = 60

@@ -11,10 +11,10 @@ the leading 'Points Possible' row, the trailing test student, canvas' own
 import pandas as pd
 import pytest
 
-from gradescope_mean.canvas.read import is_canvas_export
-from gradescope_mean.config import Config
-from gradescope_mean.errors import CanvasError, ConfigError, GradebookError
-from gradescope_mean.gradebook import Gradebook
+from finalgrade.canvas.read import is_canvas_export
+from finalgrade.config import Config
+from finalgrade.errors import CanvasError, ConfigError, GradebookError
+from finalgrade.gradebook import Gradebook
 
 # --------------------------------------------------------------------------
 # the shared 2-student canvas export
@@ -254,7 +254,7 @@ class TestEndToEnd:
     def test_cli_round_trip_back_to_canvas(self, tmp_path, f_canvas):
         """ grades read from canvas must upload back to canvas: the sid
         metadata is what canvas_merge joins on """
-        from gradescope_mean.canvas.canvas import canvas_merge
+        from finalgrade.canvas.canvas import canvas_merge
         _, df_full = Config(cat_weight_dict={'hw': 1, 'exam': 1})(f_canvas)
 
         df_out = canvas_merge(f_canvas=f_canvas,

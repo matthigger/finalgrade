@@ -1,8 +1,10 @@
-# Gradescope Mean
+# finalgrade
 
-Compute final grades from a Gradescope CSV export — with category weighting, lowest-N drops, late penalties, per-student waivers, and more.
+Compute final grades from a Gradescope or Canvas CSV export — with category weighting, lowest-N drops, late penalties, per-student waivers, and more.
 
-    pip install gradescope-mean
+Your grading policy lives in one small file, is applied identically to every student, and is refused outright if it can't mean what you intended.
+
+    pip install finalgrade
 
 **No Python? Use it in your browser instead:** [matthigger.github.io/gradescope_mean](https://matthigger.github.io/gradescope_mean) runs this same package inside the page — nothing to install, and your grades are never uploaded anywhere. See [In the browser](#in-the-browser) below.
 
@@ -12,17 +14,17 @@ Compute final grades from a Gradescope CSV export — with category weighting, l
 
 2. Run:
 
-        gradescope-mean grade scope.csv
+        finalgrade grade scope.csv
 
    This produces [grade_full.csv](doc/grade_full.csv) and creates a `config.yaml` in the same directory. That config is written for *your* csv: it lists your assignments by the names a config has to use, and suggests a category split (commented out) based on them.
 
 3. Edit `config.yaml` to set up your grading policy (see below), then check what it will do:
 
-        gradescope-mean check scope.csv
+        finalgrade check scope.csv
 
 4. When the split looks right, re-run:
 
-        gradescope-mean grade scope.csv --config config.yaml
+        finalgrade grade scope.csv --config config.yaml
 
 That's it. The rest of this README covers what you can put in that config file and the additional flags available.
 
@@ -30,7 +32,7 @@ That's it. The rest of this README covers what you can put in that config file a
 
 Categories match assignments by substring, which is easy to get subtly wrong — and a mistake shows up as a plausible-looking grade rather than an error. `check` answers "what does this config actually do?" without computing any grades:
 
-    $ gradescope-mean check scope.csv
+    $ finalgrade check scope.csv
     grade source : scope.csv (gradescope)
     students     : 5
     assignments  : 4 graded, 0 excluded
@@ -58,7 +60,7 @@ It exits non-zero when grading would fail, so it works in a script. Unlike gradi
 
 `grade` also accepts a Canvas gradebook export (`Grades > Export`), told apart from a Gradescope one by its columns:
 
-    gradescope-mean grade canvas.csv --config config.yaml
+    finalgrade grade canvas.csv --config config.yaml
 
 Everything downstream is the same. Three differences are worth knowing, all of them forced by what Canvas puts in its csv:
 
@@ -246,26 +248,26 @@ These are also handled quietly but visibly, with a warning:
 
 ## Additional Options
 
-All flags go on the `grade` subcommand. Run `gradescope-mean grade --help` for the full list.
+All flags go on the `grade` subcommand. Run `finalgrade grade --help` for the full list.
 
 ```bash
 # choose where the output CSV goes
-gradescope-mean grade scope.csv --config config.yaml -o final_grades.csv
+finalgrade grade scope.csv --config config.yaml -o final_grades.csv
 
 # generate a histogram of grades per category
-gradescope-mean grade scope.csv --config config.yaml --plot
+finalgrade grade scope.csv --config config.yaml --plot
 
 # export a CSV of late days per student-assignment pair
-gradescope-mean grade scope.csv --config config.yaml --late_csv late_days.csv
+finalgrade grade scope.csv --config config.yaml --late_csv late_days.csv
 
 # create per-student CSVs (handy for emailing individual breakdowns)
-gradescope-mean grade scope.csv --config config.yaml --per_student
+finalgrade grade scope.csv --config config.yaml --per_student
 
 # suppress status messages
-gradescope-mean grade scope.csv --config config.yaml -q
+finalgrade grade scope.csv --config config.yaml -q
 
 # force a fresh default config (existing one is kept with a timestamp)
-gradescope-mean grade scope.csv --new-config
+finalgrade grade scope.csv --new-config
 ```
 
 `--plot` accepts an optional filename (e.g. `--plot my_hist.html`); without one it defaults to `hist.html`.
@@ -307,7 +309,7 @@ The `grade` command produces a `grade_full.csv`. Two additional subcommands form
 ### Canvas
 
 ```bash
-gradescope-mean canvas grade_full.csv canvas.csv --scale100
+finalgrade canvas grade_full.csv canvas.csv --scale100
 ```
 
 Download your Canvas gradebook as `canvas.csv` first. The `--scale100` flag scales grades to 0–100 to avoid Canvas's 2-decimal-place rounding ambiguity. See [doc/upload_canvas.md](doc/upload_canvas.md) for details.
@@ -315,7 +317,7 @@ Download your Canvas gradebook as `canvas.csv` first. The `--scale100` flag scal
 ### Banner (Northeastern)
 
 ```bash
-gradescope-mean banner grade_full.csv 202310 -c 12345 -c 67890
+finalgrade banner grade_full.csv 202310 -c 12345 -c 67890
 ```
 
 Pass the term code and one or more CRNs. Produces a timestamped `.xlsx` ready for Banner import. See [doc/upload_banner.md](doc/upload_banner.md) for details.

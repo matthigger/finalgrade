@@ -2,11 +2,11 @@ import pathlib
 
 import pytest
 
-import gradescope_mean
-from gradescope_mean.config import Config
-from gradescope_mean.plot import plot_hist
+import finalgrade
+from finalgrade.config import Config
+from finalgrade.plot import plot_hist
 
-test_folder = pathlib.Path(gradescope_mean.__file__).parents[1] / 'test'
+test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
 
 @pytest.fixture

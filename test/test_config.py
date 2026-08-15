@@ -4,10 +4,10 @@ import tempfile
 import numpy as np
 import pytest
 
-import gradescope_mean
-from gradescope_mean.config import *
+import finalgrade
+from finalgrade.config import *
 
-test_folder = pathlib.Path(gradescope_mean.__file__).parents[1] / 'test'
+test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
 
 class TestConfig:

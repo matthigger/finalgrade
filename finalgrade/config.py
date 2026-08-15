@@ -538,7 +538,7 @@ class Config:
             force_new (bool): if True, always create a fresh config
         """
         import logging
-        logger = logging.getLogger('gradescope_mean')
+        logger = logging.getLogger('finalgrade')
 
         f_config = pathlib.Path(folder) / F_CONFIG_DEFAULT.name
 

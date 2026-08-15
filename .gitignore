@@ -2,7 +2,7 @@
 /.venv/
 /tmp*
 *.pyc
-/gradescope_mean.egg-info/
+/finalgrade.egg-info/
 /dist/
 /.pytest_cache/
 /_site/

@@ -3,11 +3,11 @@ import pathlib
 import pandas as pd
 import pytest
 
-import gradescope_mean
-from gradescope_mean.canvas.canvas import canvas_merge
-from gradescope_mean.config import Config
+import finalgrade
+from finalgrade.canvas.canvas import canvas_merge
+from finalgrade.config import Config
 
-test_folder = pathlib.Path(gradescope_mean.__file__).parents[1] / 'test'
+test_folder = pathlib.Path(finalgrade.__file__).parents[1] / 'test'
 
 
 @pytest.fixture
