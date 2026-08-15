@@ -307,7 +307,13 @@ Every view toggles between **before** and **after** your policy, or both overlai
 
 ### Exporting
 
-`grade_full.csv` downloads directly. For Canvas, drop your Canvas gradebook export onto the same box: Canvas matches students by its own SIS user id, which only that file carries, so the export merges the grades into it — scaled to 100 so Canvas doesn't round them. That is the same merge `finalgrade canvas` performs.
+`grade_full.csv` downloads directly.
+
+For **Canvas**, drop your Canvas gradebook export onto the same box: Canvas matches students by its own SIS user id, which only that file carries, so the export merges the grades into it — scaled to 100 so Canvas doesn't round them. That is the same merge `finalgrade canvas` performs.
+
+For **Banner**, give a term code and any CRNs and it builds the `.xlsx`, exactly as `finalgrade banner` does (the test suite checks the two produce the same ids and grades). Banner only matches a row when its CRN, term code and 9-digit student id all line up, which is why it asks for the two a gradebook can't know.
+
+There is no Gradescope export: Gradescope is a place grades come *from*, and has no grade-import format to write.
 
 ### The config file is still the config file
 

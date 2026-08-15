@@ -125,14 +125,6 @@ def _safe_stem(text):
     return stem or 'unknown'
 
 
-def _banner_id(sid):
-    """Formats a gradescope SID as a 9-digit banner student id."""
-    s_id = str(sid).strip()
-    if s_id[-1:].upper() == 'S':
-        s_id = s_id[:-1]
-    return s_id.zfill(9)
-
-
 def _resolve_config(args, folder, force_new=False):
     """The config named by --config, or the one beside the csv."""
     if args.f_config is not None:
@@ -230,17 +222,11 @@ def cmd_banner(args):
 
     from datetime import datetime
 
+    from .banner import to_banner
+
     # sid must stay a string: leading zeros are significant to banner
     df = pd.read_csv(args.grade_full, dtype={'sid': str})
-    df['Term Code'] = args.term_code
-
-    if args.crn_list:
-        for idx, crn in enumerate(args.crn_list):
-            df[f'CRN{idx}'] = crn
-
-    # modify student ID to banner format
-    df['Student ID'] = df['sid'].map(_banner_id)
-    del df['sid']
+    df = to_banner(df, term_code=args.term_code, crn_list=args.crn_list)
 
     timestamp = datetime.now().strftime('%b%d_%H%M')
     f_out = args.grade_full.replace('.csv', f'_banner_{timestamp}.xlsx')

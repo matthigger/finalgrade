@@ -58,10 +58,10 @@ async function boot() {
     await state.py.loadPackage(PKG);
 
     msg.textContent = 'installing finalgrade…';
-    const wheel = await findWheel();
+    const wheelList = await findWheels();
     await state.py.runPythonAsync(`
 import micropip
-await micropip.install(${JSON.stringify(wheel)}, deps=False)
+await micropip.install(${JSON.stringify(wheelList)}, deps=False)
 `);
 
     state.api = state.py.pyimport('finalgrade.web');
@@ -77,13 +77,17 @@ await micropip.install(${JSON.stringify(wheel)}, deps=False)
   }
 }
 
-/* The wheel's filename carries a version, so it is written at build time
- * into wheel.json rather than guessed here. */
-async function findWheel() {
+/* Wheel filenames carry versions, so they are written at build time into
+ * wheel.json rather than guessed here.  'vendor' holds the pure-python
+ * packages pyodide doesn't ship (openpyxl, for the banner xlsx), served from
+ * this site rather than pypi so the page owes nothing to the network once
+ * it has loaded. */
+async function findWheels() {
   const res = await fetch('wheel.json', { cache: 'no-cache' });
   if (!res.ok) throw new Error('no wheel.json — was the site built?');
-  const { wheel } = await res.json();
-  return new URL(wheel, window.location.href).href;
+  const { wheel, vendor } = await res.json();
+  return [wheel, ...(vendor || [])].map(
+    (p) => new URL(p, window.location.href).href);
 }
 
 /* --------------------------------------------------------- picking files */
@@ -351,9 +355,7 @@ function drawWeightTable() {
       <th class="num">of category</th><th class="num">of grade</th>
       <th class="num">mean*</th><th class="num">submitted</th>
     </tr></thead><tbody>${row}</tbody></table>
-    <p class="hint">* mean among non-zero scores. Weights are what the config
-      says; where a category drops its lowest, the assignment actually
-      dropped differs per student.</p>`;
+    <p class="hint">* mean among non-zero scores</p>`;
 }
 
 function frac(x) {
@@ -804,6 +806,7 @@ function drawExport() {
     $('export-row').innerHTML = '';
     $('export-hint').textContent =
       'Exports appear once the config grades cleanly.';
+    $('banner-form').hidden = true;
     return;
   }
 
@@ -811,7 +814,8 @@ function drawExport() {
   $('export-row').innerHTML =
     '<button type="button" id="dl-grades">download grade_full.csv</button>' +
     `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
-      ${canCanvas ? '' : 'disabled'}>export for canvas</button>`;
+      ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
+    '<button type="button" id="dl-banner">export for banner…</button>';
 
   $('export-hint').textContent = canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by ' +
@@ -823,20 +827,47 @@ function drawExport() {
   $('dl-grades').addEventListener('click', () =>
     download(state.grades.csv, 'grade_full.csv', 'text/csv'));
 
-  const btn = $('dl-canvas');
   if (canCanvas) {
-    btn.addEventListener('click', () => {
+    $('dl-canvas').addEventListener('click', () => {
       const res = toJs(state.api.canvas_export(
         state.csv, state.yaml, state.canvasText, state.name, true));
       if (!res.ok) return ($('export-hint').textContent = res.error);
-      download(res.csv, canvasName(), 'text/csv');
+      download(res.csv, stamped('canvas_upload', 'csv'), 'text/csv');
     });
   }
+
+  $('dl-banner').addEventListener('click', () => {
+    const form = $('banner-form');
+    form.hidden = !form.hidden;
+    if (!form.hidden) $('term-code').focus();
+  });
 }
 
-function canvasName() {
-  const stamp = new Date().toISOString().slice(0, 10);
-  return `canvas_upload_${stamp}.csv`;
+/* Banner will only match a row when its CRN, term code and student id all
+ * line up, so it needs the two that a gradebook cannot know. */
+function runBanner() {
+  const term = $('term-code').value.trim();
+  const crnList = $('crn-list').value.split(/[\s,]+/).filter(Boolean);
+
+  const res = toJs(state.api.banner_export(
+    state.csv, state.yaml, term, JSON.stringify(crnList), state.name));
+
+  const note = $('banner-note');
+  if (!res.ok) {
+    note.className = 'error';
+    note.textContent = res.error;
+    return;
+  }
+
+  note.className = 'hint';
+  note.textContent = `${res.n_row} rows written.`;
+  downloadBytes(res.xlsx_b64, stamped('banner', 'xlsx'),
+                'application/vnd.openxmlformats-officedocument.' +
+                'spreadsheetml.sheet');
+}
+
+function stamped(stem, ext) {
+  return `${stem}_${new Date().toISOString().slice(0, 10)}.${ext}`;
 }
 
 /* ------------------------------------------------------------------ utils */
@@ -848,7 +879,20 @@ function toJs(proxy) {
 }
 
 function download(text, name, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  saveBlob(new Blob([text], { type }), name);
+}
+
+/* a workbook is bytes, which is the one thing that does not cross out of
+ * python cleanly, so it arrives base64 encoded */
+function downloadBytes(b64, name, type) {
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  saveBlob(new Blob([buf], { type }), name);
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -1049,6 +1093,11 @@ $('email-save').addEventListener('click', () =>
 $('email-clear').addEventListener('click', () => {
   $('email-list').value = '';
   applyEdit('set_email_list', { email_list: [] });
+});
+
+$('banner-go').addEventListener('click', runBanner);
+$('banner-form').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runBanner();
 });
 
 $('view').addEventListener('change', (e) => {

@@ -27,7 +27,8 @@ from .inspect import build_table, build_view, histogram
 from .seed import seed_text
 
 __all__ = ['load_csv', 'check_config', 'grade', 'seed_config', 'default_yaml',
-           'form_state', 'edit_config', 'bin_values', 'canvas_export']
+           'form_state', 'edit_config', 'bin_values', 'canvas_export',
+           'banner_export']
 
 
 class _Csv:
@@ -233,6 +234,60 @@ def canvas_export(csv_text, yaml_text, canvas_text, name='scope.csv',
 
     return dict(ok=True, error=None, warn_list=warn_list,
                 csv=df_out.to_csv(index=False), n_row=len(df_out))
+
+
+def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
+                  name='scope.csv'):
+    """ the grades as a banner-ready xlsx, base64 encoded
+
+    Banner matches on CRN, term code and a 9 digit student id together, so
+    all three have to be right; see doc/upload_banner.md.
+
+    Returned as base64 because a workbook is bytes, and bytes are the one
+    thing that does not cross into javascript cleanly.
+
+    Args:
+        csv_text (str): the grade source
+        yaml_text (str): contents of a config.yaml
+        term_code (str): banner's 6 digit term, e.g. '202310'
+        crn_json (str): json list of 5 digit CRNs
+        name (str): the source csv's filename
+
+    Returns:
+        result (dict): ok, and the workbook as base64
+    """
+    import base64
+
+    from .banner import to_banner, to_xlsx_bytes
+
+    result = grade(csv_text, yaml_text, name)
+    if not result['ok']:
+        return result
+
+    if not str(term_code).strip():
+        return dict(ok=False, warn_list=[],
+                    error='banner needs a term code (6 digits, e.g. 202310) '
+                          'to match these grades to a course')
+
+    df_grade = pd.read_csv(io.StringIO(result['csv']), dtype={'sid': str})
+
+    try:
+        df_out = to_banner(df_grade, term_code=str(term_code).strip(),
+                           crn_list=json.loads(crn_json or '[]'))
+        data = to_xlsx_bytes(df_out)
+    except KeyError as e:
+        return dict(ok=False, warn_list=[], error=str(e).strip('"'))
+    except ImportError:
+        return dict(ok=False, warn_list=[],
+                    error='the excel writer did not load, so no xlsx can be '
+                          'built here (the command line tool still can)')
+    except Exception as e:
+        return dict(ok=False, warn_list=[],
+                    error=f'could not build the banner workbook: {e}')
+
+    return dict(ok=True, error=None, warn_list=[],
+                xlsx_b64=base64.b64encode(data).decode('ascii'),
+                n_row=len(df_out))
 
 
 def _grade_twice(config, f_csv):

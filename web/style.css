@@ -655,7 +655,8 @@ th {
   letter-spacing: .04em;
 }
 
-td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* the header has to sit over its own column, so both cells take the rule */
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.name, td.cat { font-family: var(--mono); font-size: .84rem; }
 
 tr.flag-none td, tr.flag-many td { background: var(--warn-soft); }
