@@ -253,14 +253,11 @@ function catches(cat) {
 
 function drawCategories(form) {
   if (!form.cat_list.length) {
+    // the one thing not visible from the controls: what happens with none
     $('cats').innerHTML = '<p class="empty">No categories yet — every ' +
       'assignment counts in proportion to its own points.</p>';
-    $('cats-hint').textContent = 'Add one to weight homework against exams.';
     return;
   }
-
-  $('cats-hint').textContent =
-    'Weights are normalized, so they need not sum to 100.';
 
   $('cats').innerHTML = form.cat_list.map((c) => {
     const late = c.late || {};
@@ -403,10 +400,15 @@ function drawWeightTable() {
   const grouped = !state.sort;
   let last = null;
 
+  if (grouped) stableOrder(rowList);
+
   const row = rowList.map((r) => {
-    const cat = !grouped ? (r.category || '—')
-      : r.category === last ? '' : (r.category || '—');
-    if (grouped) last = r.category;
+    const shown = r.category
+      || ((state.form || {}).cat_list || [])
+        .map((c) => c.name).find((c) => r.assignment.includes(c))
+      || '—';
+    const cat = !grouped ? shown : (shown === last ? '' : shown);
+    if (grouped) last = shown;
 
     const note = (problem[r.assignment] || []).map((s) =>
       `<div class="row-warn">${escapeHtml(s)}</div>`).join('');
@@ -431,9 +433,30 @@ function drawWeightTable() {
   $('weight-table').innerHTML = `<table class="weights">
     <thead><tr>${SORT_TUP.map(headCell).join('')}</tr></thead>
     <tbody>${row}${addRow()}</tbody></table>
-    <p class="hint">* mean among non-zero scores. Click an assignment to
-      leave it out of grading; drag one onto another to give the class the
-      better of the two.</p>`;
+    <p class="hint">* mean among non-zero scores</p>`;
+}
+
+/* Leaving an assignment out must not move it.  Excluded assignments arrive
+ * from a different list than graded ones, so appending them sends a row to
+ * the bottom the moment it is switched off -- and the row you just clicked
+ * is the one you are still looking at.  Position comes from the assignment,
+ * never from what has been decided about it. */
+function stableOrder(rowList) {
+  const order = ((state.form || {}).cat_list || []).map((c) => c.name);
+
+  const key = (r) => {
+    const cat = r.category
+      || order.find((c) => r.assignment.includes(c));
+    const idx = cat === undefined || cat === null ? order.length
+      : order.indexOf(cat);
+    return [idx < 0 ? order.length : idx, r.assignment];
+  };
+
+  rowList.sort((a, b) => {
+    const x = key(a);
+    const y = key(b);
+    return x[0] - y[0] || String(x[1]).localeCompare(String(y[1]));
+  });
 }
 
 function headCell(col) {
@@ -486,15 +509,12 @@ function maxCell(r) {
 
 function addRow() {
   return `<tr class="add-row">
-    <td class="cat"></td>
-    <td colspan="6"><span class="add-k">add an assignment</span>
-      <input type="text" id="plan-name" size="10" placeholder="hw9">
-      <input type="number" id="plan-points" min="1" step="1" size="4"
-        placeholder="pts" class="pct">
-      <button type="button" id="plan-go" class="small">add</button>
-      <span class="hint add-why">work you have not set yet: weight it now,
-        and it counts for nobody until real scores arrive</span></td>
-    <td></td>
+    <td><button type="button" id="plan-go" class="plus"
+      title="add an assignment">+</button></td>
+    <td><input type="text" id="plan-name" placeholder="assignment"></td>
+    <td class="num"><input type="number" id="plan-points" min="1" step="1"
+      placeholder="pts" class="pct"></td>
+    <td colspan="5"></td>
   </tr>`;
 }
 
@@ -584,14 +604,10 @@ function drawStudent(form) {
           : '<span class="empty">no grade yet</span>'}
       </div>
       ${graded ? catRow(graded) : ''}
-      <div class="stud-split">
-        <div>
-          ${graded ? scoreGrid(graded, stud) : ''}
-          ${graded ? lateGrid(graded) : ''}
-          ${excuseRow(form, stud)}
-        </div>
-        ${graded ? auditLog(graded) : ''}
-      </div>
+      ${graded ? scoreGrid(graded, stud) : ''}
+      ${graded ? lateGrid(graded) : ''}
+      ${excuseRow(form, stud)}
+      ${graded ? auditLog(graded) : ''}
     </div>`;
 }
 
@@ -773,15 +789,16 @@ function lateChip(a) {
  * where a number cannot. */
 function auditLog(graded) {
   const list = graded.log_list || [];
-  if (!list.length) return '<div></div>';
+  if (!list.length) return '';
 
-  return `<div class="audit">
-    <span class="field-k">how this grade was computed</span>
+  return `<details class="audit">
+    <summary>computation log <span class="sub">${list.length} steps</span>
+    </summary>
     <ol class="audit-list">${list.map((e) =>
       `<li class="ev ev-${escapeHtml(e.kind)}">` +
       `<span class="ev-k">${escapeHtml(e.kind)}</span>` +
       `${escapeHtml(e.text)}</li>`).join('')}</ol>
-  </div>`;
+  </details>`;
 }
 
 /* the same wording python's audit log uses */
@@ -944,11 +961,15 @@ function drawWaiveList(form) {
     }
   }
 
-  $('waive-all').hidden = !row.length;
+  // always present, so that "is there anything set for anyone?" is answered
+  // by opening it rather than by noticing whether it exists
   $('waive-count').textContent = row.length === 1
     ? '1 adjustment' : `${row.length} adjustments`;
 
-  if (!row.length) return ($('waive-list').innerHTML = '');
+  if (!row.length) {
+    return ($('waive-list').innerHTML =
+      '<p class="empty">Nothing is set for any individual student.</p>');
+  }
 
   $('waive-list').innerHTML =
     '<table class="waive-table"><tbody>' + row.map((w) => `<tr>

@@ -74,14 +74,15 @@
 
   <div class="panel">
     <h2>categories <span class="sub">what counts, and how much</span></h2>
-    <div class="cat-split">
-      <div>
-        <div id="cats"></div>
-        <div id="quick" class="quick"></div>
-        <p class="hint" id="cats-hint"></p>
-      </div>
-      <div id="weight-table"></div>
-    </div>
+    <div id="cats"></div>
+    <div id="quick" class="quick"></div>
+    <p class="hint" id="cats-hint"></p>
+  </div>
+
+  <div class="panel">
+    <h2>assignments <span class="sub">click a name to leave it out, drag one
+      onto another to take the best of both</span></h2>
+    <div id="weight-table"></div>
   </div>
 
   <div class="panel">
@@ -113,15 +114,13 @@
         <button type="button" id="thresh-reset"
           class="small secondary">back to defaults</button>
       </div>
-      <p class="hint">The lowest percentage that earns each letter. One must
-        reach 0, or a low grade would have no letter at all.</p>
+      <p class="hint">One must reach 0, or a low grade has no letter.</p>
     </details>
 
     <details class="panel">
       <summary>roster <span class="sub" id="roster-count"></span></summary>
-      <p class="hint">One email per line. Anyone not listed is dropped from
-        the output — useful for removing students who withdrew. Leave empty
-        to grade everyone in the csv.</p>
+      <p class="hint">One per line. Anyone not listed is dropped from the
+        output.</p>
       <textarea id="email-list" rows="6" spellcheck="false"
         aria-label="roster"></textarea>
       <div class="row">
@@ -153,9 +152,8 @@
 
   <div class="panel" id="export-panel">
     <h2>export</h2>
-    <p class="hint">Each of these is a spreadsheet ready to upload to the
-      platform it is named for — the columns and the student ids are already
-      in the shape that platform matches on.</p>
+    <p class="hint">Spreadsheets ready to upload, with the ids each
+      platform matches on.</p>
 
     <div class="row" id="export-row"></div>
     <p class="hint" id="export-hint"></p>
