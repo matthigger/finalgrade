@@ -413,6 +413,122 @@ class TestExporters:
         canvas_merge(f_canvas=str(f_canvas), df_grade=df_grade,
                      scale100=False)
 
+    def _write_canvas(self, f_canvas, row_list):
+        """ canvas exports lead with a 'Points Possible' row whose identity
+        cells are blank, and usually end with the canvas test student """
+        pd.DataFrame(
+            [{'Student': '    Points Possible', 'ID': '', 'SIS User ID': '',
+              'SIS Login ID': '', 'Section': '', 'Placeholder': 0}]
+            + row_list
+            + [{'Student': 'Student, Test', 'ID': 999, 'SIS User ID': '',
+                'SIS Login ID': 'abc123', 'Section': 'sec01',
+                'Placeholder': ''}]).to_csv(f_canvas, index=False)
+        return f_canvas
+
+    def test_canvas_id_less_rows_never_match(self, tmp_path):
+        """ students without a sid must not join canvas' own id-less rows
+
+        nan == nan in a pandas index merge, so an unguarded merge cross-joins
+        every id-less student against 'Points Possible' and the test student,
+        inventing rows and putting real grades on them.
+        """
+        from gradescope_mean.canvas.canvas import canvas_merge
+        student_list = [dict(stud) for stud in STUDENT_STD]
+        # two students with no sid, so a cross join would be plainly visible
+        student_list[1]['sid'] = ''
+        student_list[2]['sid'] = ''
+        f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, student_list)
+        _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
+
+        f_canvas = self._write_canvas(tmp_path / 'canvas.csv', [
+            {'Student': 'Anders, Alice', 'ID': 100, 'SIS User ID': '001S',
+             'SIS Login ID': 'alice@u.edu', 'Section': 'sec01',
+             'Placeholder': 0}])
+
+        df_out = canvas_merge(f_canvas=str(f_canvas),
+                              df_grade=df_grade.reset_index(),
+                              scale100=False)
+
+        # one row out per row of the canvas export, no more
+        assert len(df_out) == 3
+        # only alice matched; the two id-less canvas rows stay blank
+        assert df_out['mean'].notna().sum() == 1
+        id_less = df_out['Student'].str.strip().isin(
+            ['Points Possible', 'Student, Test'])
+        assert df_out.loc[id_less, 'mean'].isna().all()
+
+    def test_canvas_reports_unmatched_students(self, tmp_path, caplog):
+        """ the missing-student report is the only guard against a silently
+        wrong upload, so it must name real mismatches """
+        from gradescope_mean.canvas.canvas import canvas_merge
+        student_list = [dict(stud) for stud in STUDENT_STD]
+        student_list[2]['sid'] = ''
+        f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, student_list)
+        _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
+
+        # canvas knows alice and a student gradescope has never heard of
+        f_canvas = self._write_canvas(tmp_path / 'canvas.csv', [
+            {'Student': 'Anders, Alice', 'ID': 100, 'SIS User ID': '001S',
+             'SIS Login ID': 'alice@u.edu', 'Section': 'sec01',
+             'Placeholder': 0},
+            {'Student': 'Zed, Zoe', 'ID': 104, 'SIS User ID': '099S',
+             'SIS Login ID': 'zoe@u.edu', 'Section': 'sec01',
+             'Placeholder': 0}])
+
+        with caplog.at_level('INFO', logger='gradescope_mean'):
+            canvas_merge(f_canvas=str(f_canvas),
+                         df_grade=df_grade.reset_index(), scale100=False)
+        text = caplog.text
+
+        # zoe is in canvas only, bob in gradescope only, carol has no sid
+        assert 'Zed, Zoe' in text
+        assert 'bob@u.edu' in text
+        assert 'carol@u.edu' in text
+        assert 'no student id' in text
+        # and alice, who matched, is not reported as missing
+        assert 'alice@u.edu' not in text
+
+    def test_canvas_drops_total_lateness_column(self, tmp_path):
+        """ recent gradescope exports end with a 'Total Lateness (H:M:S)'
+        column; it is not an assignment, so it lands in the metadata and
+        would otherwise become a new canvas assignment """
+        from gradescope_mean.canvas.canvas import canvas_merge
+        f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, STUDENT_STD)
+        df = pd.read_csv(f_scope)
+        df['Total Lateness (H:M:S)'] = '00:00:00'
+        df.to_csv(f_scope, index=False)
+
+        _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
+        assert 'totallateness(h:m:s)' in df_grade.columns
+
+        f_canvas = self._write_canvas(tmp_path / 'canvas.csv', [
+            {'Student': 'Anders, Alice', 'ID': 100, 'SIS User ID': '001S',
+             'SIS Login ID': 'alice@u.edu', 'Section': 'sec01',
+             'Placeholder': 0}])
+        df_out = canvas_merge(f_canvas=str(f_canvas),
+                              df_grade=df_grade.reset_index(), scale100=False)
+        assert 'totallateness(h:m:s)' not in df_out.columns
+
+    def test_canvas_duplicate_sid_raises(self, tmp_path):
+        """ two gradescope students sharing an id fan out into extra rows,
+        exactly as two id-less ones would """
+        from gradescope_mean.canvas.canvas import canvas_merge
+        from gradescope_mean.errors import CanvasError
+        student_list = [dict(stud) for stud in STUDENT_STD]
+        # distinct students (distinct emails), same sid
+        student_list[1]['sid'] = student_list[0]['sid']
+        f_scope = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, student_list)
+        _, df_grade = Config(cat_weight_dict={'hw': 1, 'quiz': 1})(f_scope)
+
+        f_canvas = self._write_canvas(tmp_path / 'canvas.csv', [
+            {'Student': 'Anders, Alice', 'ID': 100, 'SIS User ID': '001S',
+             'SIS Login ID': 'alice@u.edu', 'Section': 'sec01',
+             'Placeholder': 0}])
+
+        with pytest.raises(CanvasError, match='001S'):
+            canvas_merge(f_canvas=str(f_canvas),
+                         df_grade=df_grade.reset_index(), scale100=False)
+
     def test_banner_cli_without_crn(self, tmp_path, f_scope_std):
         f_cfg = tmp_path / 'config.yaml'
         f_cfg.write_text(CFG_BASE)

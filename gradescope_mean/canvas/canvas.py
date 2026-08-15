@@ -2,13 +2,19 @@ import logging
 
 import pandas as pd
 
+from ..errors import CanvasError
+
 logger = logging.getLogger('gradescope_mean')
 
 # metadata columns the grade pipeline may emit.  which of these are present
 # depends on the gradescope export (some courses have 'sections', others
 # 'section_name', others neither), so they are dropped only if found.
+# 'totallateness(h:m:s)' is a trailing column recent gradescope exports add;
+# it isn't an assignment, so it lands in the metadata and must be dropped too
+# (canvas turns any unrecognized column into a new assignment).
 GRADESCOPE_META_COL_TUP = ('firstname', 'lastname', 'sid', 'sections',
-                           'section_name', 'crn', 'email')
+                           'section_name', 'crn', 'email',
+                           'totallateness(h:m:s)')
 
 # canvas exports lead with these identity columns; the rest are its own
 # gradebook columns, which we discard
@@ -48,30 +54,60 @@ def canvas_merge(f_canvas, df_grade, del_col_list=None,
     df_canvas = df_canvas.set_index('SIS User ID')
     df_grade = df_grade.set_index('sid')
 
+    # a blank id identifies nobody, but pandas matches nan to nan on an index
+    # merge.  left un-dropped, every student without a sid would cross-join
+    # against canvas' own id-less rows ('Points Possible', the test student),
+    # putting real grades on them.  canvas' id-less rows stay in the output
+    # (they're part of its csv format), they simply match nothing.
+    df_grade_id = df_grade[df_grade.index.notna()]
+
     # remember which columns came from the gradebook, so that scaling and
     # deletion below can select by name rather than by position
     grade_col_list = list(df_grade.columns)
 
-    df_canvas_out = df_canvas.merge(df_grade,
+    df_canvas_out = df_canvas.merge(df_grade_id,
                                     left_index=True,
                                     right_index=True,
                                     how='left')
 
-    def log_missing(df, idx_missing, msg, n_cols=3):
+    # one row in, one row out.  a duplicated id on either side would silently
+    # fan out into extra rows, which canvas would then import as real grades
+    if len(df_canvas_out) != len(df_canvas):
+        sid_dupe = sorted(map(str, set(
+            df_canvas.index[df_canvas.index.duplicated()].dropna()).union(
+            df_grade_id.index[df_grade_id.index.duplicated()])))
+        raise CanvasError(
+            'student id appears more than once, so grades cannot be matched '
+            f'one-to-one: {", ".join(sid_dupe)}')
+
+    def log_missing(df, sid_missing, msg, n_cols=3):
         logger.info(msg)
-        if not idx_missing:
+        if not len(sid_missing):
             logger.info('  <no students>')
             return
-        for idx in sorted(idx_missing):
-            logger.info(f'  {df.loc[idx, :].iloc[:n_cols].to_dict()}')
+        for sid in sorted(sid_missing):
+            logger.info(f'  {df.loc[sid, :].iloc[:n_cols].to_dict()}')
 
-    # find and report canvas students not in gradescope (and vice versa)
+    # find and report canvas students not in gradescope (and vice versa).
+    # id-less rows are excluded: nan is in both sets, so leaving it in makes
+    # every set difference empty and hides genuine mismatches.
+    sid_canvas_set = set(df_canvas.index[df_canvas.index.notna()])
+    sid_grade_set = set(df_grade_id.index)
+
     log_missing(df=df_canvas,
-                idx_missing=set(df_canvas.index) - set(df_grade.index),
+                sid_missing=sid_canvas_set - sid_grade_set,
                 msg='students in canvas, not in gradescope:')
-    log_missing(df=df_grade,
-                idx_missing=set(df_grade.index) - set(df_canvas.index),
+    log_missing(df=df_grade_id,
+                sid_missing=sid_grade_set - sid_canvas_set,
                 msg='students in gradescope, not in canvas:')
+
+    # students with no sid at all can never match, so report them separately
+    n_no_id = len(df_grade) - len(df_grade_id)
+    if n_no_id:
+        logger.info(f'students in gradescope with no student id (unmatched): '
+                    f'{n_no_id}')
+        for _, row in df_grade[df_grade.index.isna()].iloc[:, :3].iterrows():
+            logger.info(f'  {row.to_dict()}')
 
     df_canvas_out.index.name = 'sid'
     df_canvas_out.reset_index(inplace=True)

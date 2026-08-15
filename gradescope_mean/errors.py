@@ -20,3 +20,7 @@ class GradebookError(GradescopeMeanError):
 
 class AssignmentNotFoundError(GradescopeMeanError):
     """ an assignment name matched no assignment, or more than one """
+
+
+class CanvasError(GradescopeMeanError):
+    """ the canvas export can't be merged against the computed grades """
