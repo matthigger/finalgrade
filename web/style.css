@@ -238,6 +238,132 @@ button.link {
   margin-right: .1rem;
 }
 
+/* ---- category widgets ---- */
+
+.cat-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .6rem .7rem;
+  margin-bottom: .55rem;
+  background: var(--bg);
+}
+
+.cat-head {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+}
+
+.cat-name {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: .95rem;
+  min-width: 4rem;
+}
+
+.cat-share {
+  font-size: .8rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  min-width: 3rem;
+}
+
+.cat-late { margin-top: .4rem; display: flex; gap: .8rem; flex-wrap: wrap; }
+
+.cat-hit {
+  margin-top: .4rem;
+  font-size: .8rem;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+}
+
+label.f {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .82rem;
+  color: var(--ink-soft);
+}
+
+label.f input[type="number"] {
+  width: 4.2rem;
+  font: inherit;
+  font-size: .85rem;
+  padding: .2rem .35rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+button.x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0 .25rem;
+}
+
+button.x:hover { color: var(--bad); }
+
+.quick .other { background: transparent; border: 1px dashed var(--line);
+  color: var(--ink-soft); }
+
+/* ---- waivers ---- */
+
+.waive-pick { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+.waive-pick input, .waive-pick select {
+  font: inherit;
+  font-size: .88rem;
+  padding: .35rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.waive-pick input { flex: 1 1 12rem; }
+
+.checks {
+  display: flex;
+  gap: .8rem;
+  flex-wrap: wrap;
+  margin: .6rem 0 .2rem;
+  padding: .5rem .6rem;
+  background: var(--bg);
+  border-radius: 6px;
+}
+
+.checks label.f { font-family: var(--mono); font-size: .84rem; }
+
+.waive-table { margin-top: .7rem; margin-bottom: 0; }
+.waive-table td { font-size: .84rem; }
+
+.tag.late { background: var(--ink-faint); color: #fff; }
+
+details > summary {
+  cursor: pointer;
+  font-size: .95rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+details > summary .sub {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--ink-faint);
+  margin-left: .5rem;
+}
+
+details[open] > summary { margin-bottom: .7rem; }
+
 /* ---- report ---- */
 
 .verdict {

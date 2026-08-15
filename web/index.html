@@ -55,18 +55,49 @@
 
   <div class="cols">
 
-    <div class="panel col-config">
-      <h2>config.yaml <span class="sub">your grading policy</span></h2>
-      <div id="quick" class="quick"></div>
-      <textarea id="yaml" spellcheck="false" autocapitalize="off"
-        autocorrect="off" aria-label="config.yaml"></textarea>
-      <div class="row">
-        <button type="button" id="dl-config">download config.yaml</button>
-        <button type="button" id="reset" class="secondary">start over</button>
+    <div class="col-config">
+
+      <div class="panel">
+        <h2>categories <span class="sub">what counts, and how much</span></h2>
+        <div id="cats"></div>
+        <div id="quick" class="quick"></div>
+        <p class="hint" id="cats-hint"></p>
       </div>
-      <p class="hint">Keep this file. Next time, drop it back in — or use it
-        with the command line tool, which reads exactly the same format.</p>
-      <input type="file" id="file-config" accept=".yaml,.yml" hidden>
+
+      <div class="panel">
+        <h2>waivers <span class="sub">for one student</span></h2>
+        <div class="waive-pick">
+          <input id="stud" list="roster" placeholder="find a student…"
+            autocomplete="off" aria-label="find a student">
+          <datalist id="roster"></datalist>
+          <select id="waive-kind" aria-label="kind of waiver">
+            <option value="waive">waive the assignment</option>
+            <option value="waive_late">waive only the late penalty</option>
+          </select>
+        </div>
+        <div id="waive-pick-ass"></div>
+        <div id="waive-list"></div>
+      </div>
+
+      <details class="panel" id="raw">
+        <summary>config.yaml <span class="sub">the file itself</span></summary>
+        <textarea id="yaml" spellcheck="false" autocapitalize="off"
+          autocorrect="off" aria-label="config.yaml"></textarea>
+        <p class="hint">Everything above edits this file, and anything you
+          type here shows up above. Options with no widget yet
+          (<code>substitute</code>, <code>grade_thresh</code>,
+          <code>email_list</code>) are edited here.</p>
+      </details>
+
+      <div class="panel">
+        <div class="row">
+          <button type="button" id="dl-config">download config.yaml</button>
+          <button type="button" id="reset" class="secondary">start over</button>
+        </div>
+        <p class="hint">Keep this file. Next time, drop it back in — or use it
+          with the command line tool, which reads exactly the same format.</p>
+      </div>
+
     </div>
 
     <div class="panel col-report">

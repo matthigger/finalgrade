@@ -160,6 +160,119 @@ class TestSeed:
         assert rep['ok']
 
 
+class TestRoster:
+    def test_every_student_is_listed(self, csv_text):
+        info = web.load_csv(csv_text)
+
+        assert [s['email'] for s in info['student_list']] == \
+            ['alice@u.edu', 'bob@u.edu', 'carol@u.edu']
+
+    def test_names_come_along_for_searching(self, csv_text):
+        info = web.load_csv(csv_text)
+
+        alice = info['student_list'][0]
+        assert alice['first'] == 'alice'
+        assert alice['last'] == 'anders'
+
+
+class TestFormState:
+    def test_reads_the_categories(self, csv_text):
+        state = web.form_state(YAML_STD)
+
+        assert [(c['name'], c['weight'], c['weight_frac'])
+                for c in state['cat_list']] == \
+            [('hw', 50, .5), ('quiz', 50, .5)]
+
+    def test_reads_drops_and_late(self):
+        state = web.form_state(
+            'category:\n  weight:\n    hw: 1\n  drop_low:\n    hw: 2\n'
+            '  late_penalty:\n    hw:\n      penalty_per_day: .15\n')
+
+        cat = state['cat_list'][0]
+        assert cat['drop_low'] == 2
+        assert cat['late'] == {'penalty_per_day': .15}
+
+    def test_reads_waivers_of_both_kinds(self):
+        state = web.form_state('waive:\n  a@u.edu: hw1, hw2\n'
+                               'waive_late:\n  b@u.edu: hw3\n')
+
+        assert state['waive_list'] == [
+            dict(email='a@u.edu', ass_list=['hw1', 'hw2'])]
+        assert state['waive_late_list'] == [
+            dict(email='b@u.edu', ass_list=['hw3'])]
+
+    def test_a_yaml_list_of_waivers_reads_the_same(self):
+        """ the readme's comma form and a real list must look alike here """
+        state = web.form_state('waive:\n  a@u.edu:\n    - hw1\n    - hw2\n')
+
+        assert state['waive_list'][0]['ass_list'] == ['hw1', 'hw2']
+
+    def test_is_plain_data(self, csv_text):
+        assert is_plain(web.form_state(web.seed_config(csv_text)))
+
+    def test_half_typed_yaml_says_so_rather_than_raising(self):
+        state = web.form_state('category:\n\tweight: 1\n')
+
+        assert not state['ok']
+        assert state['error']
+
+    def test_empty_config_is_empty_not_broken(self):
+        state = web.form_state('')
+
+        assert state['ok']
+        assert state['cat_list'] == []
+
+
+class TestEditConfig:
+    def test_applies_an_edit(self):
+        res = web.edit_config('', 'add_category', '{"cat": "hw"}')
+
+        assert res['ok']
+        assert 'hw' in res['yaml']
+
+    def test_keeps_the_file_when_an_edit_cannot_apply(self):
+        text = 'category:\n\tweight: 1\n'
+        res = web.edit_config(text, 'add_category', '{"cat": "hw"}')
+
+        assert not res['ok']
+        assert res['yaml'] == text
+
+    def test_unknown_action(self):
+        res = web.edit_config('', 'drop_everything', '{}')
+
+        assert not res['ok']
+
+    def test_bad_json_is_a_message(self):
+        res = web.edit_config('', 'add_category', 'not json')
+
+        assert not res['ok']
+        assert res['yaml'] == ''
+
+    def test_a_policy_built_only_by_edits_grades(self, csv_text, f_scope_std):
+        """ end to end: what the widgets produce is what grading reads """
+        yaml_text = web.seed_config(csv_text)
+        for action, args in (
+                ('add_category', '{"cat": "hw"}'),
+                ('add_category', '{"cat": "quiz"}'),
+                ('set_drop_low', '{"cat": "hw", "n": 1}'),
+                ('set_waive', '{"email": "alice@u.edu",'
+                              ' "ass_list": ["hw1"]}')):
+            res = web.edit_config(yaml_text, action, args)
+            assert res['ok'], res['error']
+            yaml_text = res['yaml']
+
+        assert web.check_config(csv_text, yaml_text)['ok']
+
+        result = web.grade(csv_text, yaml_text)
+        assert result['ok']
+        assert result['n_student'] == 3
+
+        # the waiver the widget wrote is the waiver grading applied
+        state = web.form_state(yaml_text)
+        assert state['waive_list'] == [
+            dict(email='alice@u.edu', ass_list=['hw1'])]
+
+
 class TestNoStrayFiles:
     def test_nothing_is_left_behind(self, csv_text, tmp_path, monkeypatch):
         """ a browser has no filesystem to litter, but a temp dir still does

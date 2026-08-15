@@ -10,19 +10,20 @@ string the browser offers as a download.  No grade is ever sent anywhere,
 which is the entire reason this runs in the page instead of on a server.
 """
 import dataclasses
+import json
 import pathlib
 import tempfile
 import warnings
 
+from . import edit
 from .check import build_report, render
 from .config import F_CONFIG_DEFAULT, Config
 from .errors import GradescopeMeanError
 from .gradebook import Gradebook
 from .seed import seed_text
 
-# letters are ordered by the threshold that earns them, best first, so a
-# distribution reads the way a gradebook does
-__all__ = ['load_csv', 'check_config', 'grade', 'seed_config', 'default_yaml']
+__all__ = ['load_csv', 'check_config', 'grade', 'seed_config', 'default_yaml',
+           'form_state', 'edit_config']
 
 
 class _Csv:
@@ -91,7 +92,21 @@ def load_csv(csv_text, name='scope.csv'):
                            points=float(gradebook.points[ass]),
                            n_complete=int(complete[ass]),
                            n_student=len(gradebook.df_perc))
-                      for ass in gradebook.ass_list])
+                      for ass in gradebook.ass_list],
+            # the roster, so waivers are picked rather than typed: an email
+            # the user never types is an email they cannot misspell
+            student_list=_student_list(gradebook))
+
+
+def _student_list(gradebook):
+    """ one entry per student, for the waiver picker """
+    meta = gradebook.df_meta
+    return [dict(email=str(email),
+                 first=str(meta.at[email, 'firstname'])
+                 if 'firstname' in meta.columns else '',
+                 last=str(meta.at[email, 'lastname'])
+                 if 'lastname' in meta.columns else '')
+            for email in gradebook.df_perc.index]
 
 
 def check_config(csv_text, yaml_text, name='scope.csv'):
@@ -171,6 +186,118 @@ def seed_config(csv_text, name='scope.csv'):
             return seed_text(gradebook, name, default_yaml())
         except Exception:
             return default_yaml()
+
+
+def form_state(yaml_text):
+    """ the config as the widgets need it: sections, in file order
+
+    Read from the file rather than from a Config, so that a half-typed
+    policy still draws something.  Whether it is *valid* is check_config's
+    question, and the page asks that separately.
+
+    Args:
+        yaml_text (str): contents of a config.yaml
+
+    Returns:
+        state (dict): ok, and one entry per section the widgets edit
+    """
+    try:
+        data = _plain(edit.load(yaml_text))
+    except GradescopeMeanError as e:
+        return dict(ok=False, error=str(e))
+
+    cat_dict = data.get('category') or {}
+    weight_dict = cat_dict.get('weight') or {}
+    drop_dict = cat_dict.get('drop_low') or {}
+    late_dict = cat_dict.get('late_penalty') or {}
+    ass_dict = data.get('assignments') or {}
+
+    total = sum(w for w in weight_dict.values()
+                if isinstance(w, (int, float))) or 0
+
+    return dict(
+        ok=True,
+        error=None,
+        cat_list=[dict(name=str(cat),
+                       weight=weight,
+                       weight_frac=_share(weight, total),
+                       drop_low=drop_dict.get(cat) or 0,
+                       late=late_dict.get(cat))
+                  for cat, weight in weight_dict.items()],
+        waive_list=_waive_list(data.get('waive')),
+        waive_late_list=_waive_list(data.get('waive_late')),
+        exclude_list=_str_list(ass_dict.get('exclude')),
+        complete_thresh=ass_dict.get('exclude_complete_thresh'),
+        email_list=_str_list(data.get('email_list')))
+
+
+def edit_config(yaml_text, action, args_json='{}'):
+    """ applies one widget edit, keeping the rest of the file as written
+
+    Arguments arrive as json rather than as keywords: it is one unambiguous
+    thing to pass across the language boundary, and it cannot leave a proxy
+    object alive on the other side.
+
+    Args:
+        yaml_text (str): contents of a config.yaml
+        action (str): a key of edit.ACTION_DICT
+        args_json (str): json object of keyword arguments
+
+    Returns:
+        result (dict): ok, and the edited yaml
+    """
+    try:
+        arg_dict = json.loads(args_json or '{}')
+        return dict(ok=True, error=None,
+                    yaml=edit.apply(yaml_text, action, arg_dict))
+    except GradescopeMeanError as e:
+        return dict(ok=False, error=str(e), yaml=yaml_text)
+    except Exception as e:
+        return dict(ok=False, error=f'could not apply that edit: {e}',
+                    yaml=yaml_text)
+
+
+def _share(weight, total):
+    """ one category's share of the whole, or None while it can't be told """
+    if not total or not isinstance(weight, (int, float)):
+        return None
+    return weight / total
+
+
+def _waive_list(section):
+    """ a waiver section as one entry per student """
+    if not isinstance(section, dict):
+        return []
+    return [dict(email=str(email), ass_list=_str_list(val))
+            for email, val in section.items()]
+
+
+def _str_list(val):
+    """ a yaml list, or a comma separated string, as a list of strings """
+    if val is None:
+        return []
+    if isinstance(val, str):
+        return [s.strip() for s in val.split(',') if s.strip()]
+    if isinstance(val, list):
+        return [str(s).strip() for s in val if str(s).strip()]
+    return [str(val)]
+
+
+def _plain(obj):
+    """ ruamel's types are dict / str subclasses; javascript wants neither """
+    if isinstance(obj, dict):
+        return {str(k): _plain(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_plain(v) for v in obj]
+    if isinstance(obj, bool) or obj is None:
+        return obj
+    if isinstance(obj, int):
+        return int(obj)
+    if isinstance(obj, float):
+        return float(obj)
+    if isinstance(obj, str):
+        return str(obj)
+    return obj
 
 
 def _letter_order(config, letter_count):

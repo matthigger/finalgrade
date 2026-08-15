@@ -29,6 +29,115 @@ YAML_KEY_DICT = {
     'email_list': ('email_list',),
 }
 
+# what a late_penalty entry may say.  these are passed straight through as
+# keyword arguments, so an unknown one used to reach python as a TypeError
+LATE_KEY_TUP = ('penalty_per_day', 'excuse_day', 'excuse_day_offset',
+                'grace_period_minutes')
+
+
+def _key_tree():
+    """ the shape a config file may have, as nested dicts
+
+    Derived from YAML_KEY_DICT rather than written out again, so a new
+    section can't be added in one place and rejected as unknown in the
+    other.  A leaf is None: everything below it is the user's own names
+    (categories, emails, thresholds), not keywords.
+    """
+    tree = dict()
+    for key_tup in YAML_KEY_DICT.values():
+        node = tree
+        for key in key_tup[:-1]:
+            node = node.setdefault(key, dict())
+        node.setdefault(key_tup[-1], None)
+
+    # one level deeper than the table goes: each category's late penalty
+    tree['category']['late_penalty'] = {'*': dict.fromkeys(LATE_KEY_TUP)}
+
+    return tree
+
+
+KEY_TREE = _key_tree()
+
+
+def _find_problem(d, tree, path=()):
+    """ every setting in d that the schema has no place for
+
+    A misspelled key is the quietest failure this config has: nothing reads
+    it, so `late_penalty123` is not a late penalty misapplied, it is a late
+    penalty silently not applied at all.
+
+    Args:
+        d (dict): a config file, or a section of one
+        tree (dict): the shape it may have.  a None value is a leaf, whose
+            contents are the user's own names; a '*' key means every key
+            here is a user's name, whose *value* is checked against it
+        path (tuple): where in the file d came from
+
+    Returns:
+        problem_list (list): messages, one per problem
+    """
+    import difflib
+
+    problem_list = []
+    for key, val in d.items():
+        where = '/'.join(path) or 'the top level'
+
+        if '*' in tree:
+            # a name the user chose (a category, a student), not a keyword
+            sub = tree['*']
+        elif key in tree:
+            sub = tree[key]
+        else:
+            known_list = sorted(str(k) for k in tree if k != '*')
+            near_list = difflib.get_close_matches(str(key), known_list, n=1)
+            hint = f', did you mean "{near_list[0]}"?' if near_list else ''
+            problem_list.append(
+                f'"{key}" under {where} is not a setting{hint}\n'
+                f'    known here: {", ".join(known_list)}')
+            continue
+
+        if not isinstance(sub, dict):
+            # a leaf: below here are the user's own names, not keywords
+            continue
+
+        if isinstance(val, dict):
+            problem_list += _find_problem(val, sub, path + (str(key),))
+        elif val is not None:
+            problem_list.append(
+                f'"{key}" under {where} should be a section with settings '
+                f'indented below it, not {val!r}')
+
+    return problem_list
+
+
+def check_key(d):
+    """ raises unless every setting in d is one this package reads
+
+    Args:
+        d (dict): a loaded config file
+    """
+    problem_list = _find_problem(d, KEY_TREE)
+    if problem_list:
+        raise ConfigError(
+            'config has settings that nothing reads, so they would do '
+            'nothing at all:\n  ' + '\n  '.join(problem_list))
+
+
+# what each section has to be when it is given at all.  a section of the
+# wrong shape used to be read anyway: `exclude: hw2` is a string, and
+# iterating a string gives its letters, so it excluded every assignment
+# whose name contains an h, a w or a 2
+SECTION_TYPE_DICT = {
+    'cat_weight_dict': dict, 'cat_drop_dict': dict, 'cat_late_dict': dict,
+    'sub_dict': dict, 'waive_dict': dict, 'late_waive_dict': dict,
+    'grade_thresh': dict, 'remove_list': list, 'email_list': list,
+}
+
+SECTION_SHAPE_DICT = {
+    dict: "a section of 'name: value' lines indented below it",
+    list: "a list, one '- item' per line",
+}
+
 
 @dataclass
 class Config:
@@ -63,7 +172,29 @@ class Config:
         if self.exclude_complete_thresh is None:
             self.exclude_complete_thresh = 0
 
+        self._check_section_type()
         self._normalize()
+
+    def _check_section_type(self):
+        """ raises unless each section is the shape its reader expects
+
+        A single string where a list belongs is accepted and split on
+        commas, the way `waive` already accepts "hw1, hw2" -- iterating it
+        as written would silently exclude assignments a letter at a time.
+        """
+        for name in self.EMPTY_LIST_TUP:
+            val = getattr(self, name)
+            if isinstance(val, str):
+                setattr(self, name, [s.strip() for s in val.split(',')
+                                     if s.strip()])
+
+        for name, want in SECTION_TYPE_DICT.items():
+            val = getattr(self, name)
+            if val is None or isinstance(val, want):
+                continue
+            raise ConfigError(
+                f'{"/".join(YAML_KEY_DICT[name])} must be '
+                f'{SECTION_SHAPE_DICT[want]}, got {val!r}')
 
     @staticmethod
     def _parse_waive_value(a_list, email, field_name):
@@ -370,6 +501,10 @@ class Config:
             raise ConfigError(
                 f'config file must be a YAML mapping, got {type(d).__name__} '
                 f'in {f_config}')
+
+        # before reading anything: a key nothing reads is a policy the user
+        # believes is in force and isn't
+        check_key(d)
 
         def _get(*key_tup, default=None):
             """Safely navigate nested dicts, returning default for missing."""

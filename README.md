@@ -224,6 +224,12 @@ reported as an error rather than quietly producing plausible-looking numbers:
   every student the lowest grade), or with no entry reaching 0
 - a `substitute` naming an assignment that doesn't exist
 - the same student email appearing on two rows of the Gradescope export
+- a setting nothing reads, because it is misspelled or in the wrong place —
+  `late_penalty123` is not a late penalty applied wrongly, it is one not
+  applied at all. The error names the closest real setting
+- a section given the wrong shape, such as `grade_thresh: 0.9` where a list of
+  thresholds belongs. (`exclude` and `email_list` do accept a single line of
+  comma-separated names, the same form `waive` takes)
 - an email in `waive`, `waive_late` or `excuse_day_offset` that matches no
   student in the export — a typo there is an assignment silently *not* waived.
   The error names the closest matching students. An email that matches a
@@ -280,6 +286,12 @@ It is worth being precise about what that does and doesn't do:
 - **The config is the same `config.yaml`.** Download it and use it with the CLI, or drop a CLI-written one into the page.
 
 The left pane edits the config; the right pane shows what it does to your assignments, updating as you type. That mapping is the whole point — it is `check`, live.
+
+**Categories** are widgets: weight, drop-lowest and late penalty per category, with the assignments each one catches listed underneath as you change it.
+
+**Waivers** are a roster picker. You search for a student by name and tick the assignments to waive, so the email is selected from your csv rather than typed — which is why a waiver made here can't be the silent typo described above.
+
+Widgets and the file are one document, not two. An edit goes through a round-trip YAML writer, so changing a weight leaves your comments, your key order, and any section with no widget (`substitute`, `grade_thresh`, `email_list`) exactly as they were. Those are edited in the `config.yaml` panel, and anything typed there shows up in the widgets.
 
 ### Building the site
 

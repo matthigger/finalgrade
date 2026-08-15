@@ -21,6 +21,9 @@ const state = {
   name: null,
   gradeCsv: null,
   seq: 0,
+  assList: [],
+  studentList: [],
+  catHintList: [],
 };
 
 /* ------------------------------------------------------------------ boot */
@@ -96,19 +99,29 @@ function useCsv(name, text) {
 
   state.csv = text;
   state.name = name;
+  state.assList = info.ass_list;
+  state.studentList = info.student_list;
+  state.catHintList = info.cat_hint_list;
 
   $('file-name').textContent = name;
   $('file-facts').textContent =
     `${info.source} export · ${info.n_student} students · ` +
     `${info.ass_list.length} assignments`;
 
+  drawRoster();
   $('yaml').value = state.api.seed_config(text, name);
-  drawQuick(info);
 
   $('pick').hidden = true;
   $('work').hidden = false;
 
   resetGrades();
+  refresh();
+}
+
+/* One place where a change becomes everything the page shows: the widgets,
+ * the report, and the fact that any computed grades are now stale. */
+function refresh() {
+  drawForm();
   check();
 }
 
@@ -119,7 +132,7 @@ let timer = null;
 function checkSoon() {
   clearTimeout(timer);
   busy();
-  timer = setTimeout(check, 250);
+  timer = setTimeout(refresh, 250);
 }
 
 function busy() {
@@ -253,66 +266,191 @@ function fmtLate(late) {
   return escapeHtml(part.join(', '));
 }
 
-/* ------------------------------------------------ quick add for categories */
+/* ---------------------------------------------- the policy widgets
 
-function drawQuick(info) {
-  const guess = toJs(state.seed.guess_cat_list(
-    info.ass_list.map((a) => a.name), info.cat_hint_list));
+ * The widgets and the textarea are one document, not two: an edit goes
+ * through python's round-trip yaml, so a form control can change one line
+ * and leave every comment (and every section that has no widget) alone.
+ */
 
-  if (!guess.length) return ($('quick').innerHTML = '');
-
-  const label = info.cat_hint_list.length
-    ? 'add a category (from your canvas groups):'
-    : 'add a category:';
-
-  $('quick').innerHTML = `<span class="quick-label">${label}</span>` +
-    guess.map((c) =>
-      `<button type="button" data-cat="${escapeHtml(c)}">${escapeHtml(c)}` +
-      `</button>`).join('');
+function applyEdit(action, args) {
+  const res = toJs(state.api.edit_config($('yaml').value, action,
+                                         JSON.stringify(args || {})));
+  if (!res.ok) {
+    // an edit that can't apply means the file no longer parses; the report
+    // will say so, and the user's own text is left exactly as they typed it
+    return check();
+  }
+  $('yaml').value = res.yaml;
+  refresh();
 }
 
-/* Writing yaml by string surgery is crude, but it keeps the textarea the
- * single source of truth: a structured editor would have to round-trip every
- * section, including the ones it doesn't understand.  The textarea is still
- * editable, so a config this can't express is always one keystroke away. */
-
-// '    hw: 50   # hw1, hw2' -> key, value and any trailing comment
-const RE_WEIGHT = /^(\s{4}[^:#]+:)([^#]*)(#.*)?$/;
-
-function addCategory(cat) {
-  const el = $('yaml');
-  const lines = el.value.split('\n');
-
-  let at = lines.findIndex((l) => /^\s{2}weight:/.test(l));
-  if (at < 0) {
-    lines.unshift('category:', '  weight:');
-    at = 1;
-  } else if (/^\s{2}weight:\s*null\s*$/.test(lines[at])) {
-    // the placeholder the packaged config ships with
-    lines[at] = '  weight:';
+function drawForm() {
+  const form = toJs(state.api.form_state($('yaml').value));
+  if (!form.ok) {
+    $('cats').innerHTML =
+      '<p class="empty">The file below cannot be read as yaml, so these ' +
+      'controls are paused. Fix it there and they come back.</p>';
+    $('quick').innerHTML = '';
+    $('waive-list').innerHTML = '';
+    return;
   }
 
-  let end = at + 1;
-  while (end < lines.length && RE_WEIGHT.test(lines[end])) end++;
+  drawCategories(form);
+  drawQuick(form);
+  drawWaivers(form);
+}
 
-  if (lines.slice(at + 1, end).some((l) => l.trim().startsWith(`${cat}:`))) {
-    return;  // already there
+function catches(cat) {
+  // exactly the substring rule python matches with
+  return state.assList.map((a) => a.name).filter((n) => n.includes(cat));
+}
+
+function drawCategories(form) {
+  if (!form.cat_list.length) {
+    $('cats').innerHTML = '<p class="empty">No categories yet — every ' +
+      'assignment counts in proportion to its own points.</p>';
+    $('cats-hint').textContent = 'Add one to weight homework against exams.';
+    return;
   }
 
-  lines.splice(end, 0, `    ${cat}: 0`);
-  end++;
+  $('cats-hint').textContent = 'Weights are normalized, so they need not ' +
+    'sum to 100.';
 
-  // equal shares, so clicking two chips reads as 50/50 rather than 100/50.
-  // weights are normalized anyway, but a number nobody chose is confusing
-  const share = Math.round(100 / (end - at - 1));
-  for (let i = at + 1; i < end; i++) {
-    const [, key, , comment] = lines[i].match(RE_WEIGHT);
-    const head = `${key} ${share}`;
-    lines[i] = comment ? head.padEnd(24) + comment : head;
+  $('cats').innerHTML = form.cat_list.map((c) => {
+    const hit = catches(c.name);
+    const late = c.late || {};
+    const on = !!c.late;
+
+    return `<div class="cat-card" data-cat="${escapeHtml(c.name)}">
+      <div class="cat-head">
+        <span class="cat-name">${escapeHtml(c.name)}</span>
+        <label class="f">weight
+          <input type="number" data-act="weight" min="0" step="1"
+            value="${escapeHtml(c.weight)}"></label>
+        <span class="cat-share">${c.weight_frac === null ? ''
+          : (c.weight_frac * 100).toFixed(1) + '%'}</span>
+        <label class="f">drop lowest
+          <input type="number" data-act="drop" min="0" step="1"
+            value="${c.drop_low || 0}"></label>
+        <button type="button" class="x" data-act="remove"
+          title="remove ${escapeHtml(c.name)}">&times;</button>
+      </div>
+      <div class="cat-late">
+        <label class="f"><input type="checkbox" data-act="late-on"
+          ${on ? 'checked' : ''}> late penalty</label>
+        ${on ? `
+        <label class="f"><input type="number" data-act="late-per" min="0"
+          step="1" value="${pctOf(late.penalty_per_day)}">% per day</label>
+        <label class="f"><input type="number" data-act="late-excuse" min="0"
+          step="1" value="${late.excuse_day || 0}"> excused days</label>` : ''}
+      </div>
+      <div class="cat-hit">${hit.length
+        ? 'catches ' + escapeHtml(hit.join(', '))
+        : '<span class="tag error">matches no assignment</span>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function pctOf(x) {
+  return Math.round((Number(x) || 0) * 100);
+}
+
+function drawQuick(form) {
+  const have = new Set(form.cat_list.map((c) => c.name));
+  const guess = toJs(state.seed.guess_cat_list(
+    state.assList.map((a) => a.name), state.catHintList))
+    .filter((c) => !have.has(c));
+
+  const label = state.catHintList.length
+    ? 'add (from your canvas groups):' : 'add:';
+
+  $('quick').innerHTML =
+    (guess.length
+      ? `<span class="quick-label">${label}</span>` + guess.map((c) =>
+        `<button type="button" data-cat="${escapeHtml(c)}">${escapeHtml(c)}` +
+        `</button>`).join('')
+      : '') +
+    `<button type="button" data-cat="" class="other">+ other…</button>`;
+}
+
+/* ------------------------------------------------------ waivers by roster */
+
+function drawRoster() {
+  $('roster').innerHTML = state.studentList.map((s) => {
+    const name = [s.first, s.last].filter(Boolean).join(' ');
+    return `<option value="${escapeHtml(s.email)}">${escapeHtml(name)}` +
+      `</option>`;
+  }).join('');
+}
+
+function waiveOf(form, kind) {
+  return kind === 'waive_late' ? form.waive_late_list : form.waive_list;
+}
+
+function drawWaivers(form) {
+  state.form = form;
+  drawWaiveChecks(form);
+
+  const rows = [
+    ...form.waive_list.map((w) => ({ ...w, kind: 'waive' })),
+    ...form.waive_late_list.map((w) => ({ ...w, kind: 'waive_late' })),
+  ];
+
+  if (!rows.length) {
+    $('waive-list').innerHTML = '<p class="empty">No waivers yet.</p>';
+    return;
   }
 
-  el.value = lines.join('\n');
-  checkSoon();
+  $('waive-list').innerHTML = `<table class="waive-table"><tbody>` +
+    rows.map((w) => `<tr>
+      <td class="name">${escapeHtml(w.email)}</td>
+      <td>${escapeHtml(w.ass_list.join(', '))}</td>
+      <td>${w.kind === 'waive_late'
+        ? '<span class="tag late">late only</span>' : ''}</td>
+      <td><button type="button" class="x" data-drop="${escapeHtml(w.email)}"
+        data-kind="${w.kind}" title="remove">&times;</button></td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+function drawWaiveChecks(form) {
+  const email = $('stud').value.trim();
+  const kind = $('waive-kind').value;
+
+  if (!email) {
+    $('waive-pick-ass').innerHTML = '';
+    return;
+  }
+
+  const known = state.studentList.some((s) => s.email === email);
+  if (!known) {
+    $('waive-pick-ass').innerHTML =
+      '<p class="empty">Pick a student from the list — the roster comes ' +
+      'from your csv, so a name here is never a typo.</p>';
+    return;
+  }
+
+  const cur = waiveOf(form, kind).find((w) => w.email === email);
+  const have = new Set(cur ? cur.ass_list : []);
+
+  $('waive-pick-ass').innerHTML = '<div class="checks">' +
+    state.assList.map((a) => `<label class="f">
+      <input type="checkbox" data-waive="${escapeHtml(a.name)}"
+        ${have.has(a.name) ? 'checked' : ''}> ${escapeHtml(a.name)}
+    </label>`).join('') + '</div>';
+}
+
+function setWaive(ass, on) {
+  const email = $('stud').value.trim();
+  const kind = $('waive-kind').value;
+  const cur = waiveOf(state.form, kind).find((w) => w.email === email);
+
+  const set = new Set(cur ? cur.ass_list : []);
+  if (on) set.add(ass); else set.delete(ass);
+
+  applyEdit('set_waive', {
+    email, ass_list: [...set], field: kind,
+  });
 }
 
 /* ------------------------------------------------------------- grading */
@@ -418,7 +556,55 @@ $('yaml').addEventListener('input', checkSoon);
 
 $('quick').addEventListener('click', (e) => {
   const cat = e.target.getAttribute('data-cat');
-  if (cat) addCategory(cat);
+  if (cat === null) return;
+
+  const name = cat || (prompt('Category name — it matches any assignment ' +
+    'whose name contains it:') || '').trim().replace(/\s+/g, '').toLowerCase();
+  if (name) applyEdit('add_category', { cat: name });
+});
+
+/* number inputs commit on change (blur or enter), not on every keystroke:
+ * re-rendering mid-keystroke would take the caret with it */
+$('cats').addEventListener('change', (e) => {
+  const act = e.target.getAttribute('data-act');
+  const cat = e.target.closest('.cat-card').getAttribute('data-cat');
+  if (!act) return;
+
+  const num = Number(e.target.value);
+
+  if (act === 'weight') applyEdit('set_weight', { cat, weight: num });
+  else if (act === 'drop') applyEdit('set_drop_low', { cat, n: num });
+  else if (act === 'late-on') {
+    applyEdit('set_late', e.target.checked
+      ? { cat, late_dict: { penalty_per_day: 0.1, excuse_day: 0 } }
+      : { cat, late_dict: null });
+  } else if (act === 'late-per') {
+    applyEdit('set_late', { cat, late_dict: { penalty_per_day: num / 100 } });
+  } else if (act === 'late-excuse') {
+    applyEdit('set_late', { cat, late_dict: { excuse_day: num } });
+  }
+});
+
+$('cats').addEventListener('click', (e) => {
+  if (e.target.getAttribute('data-act') !== 'remove') return;
+  const cat = e.target.closest('.cat-card').getAttribute('data-cat');
+  applyEdit('remove_category', { cat });
+});
+
+$('stud').addEventListener('input', () => drawWaiveChecks(state.form));
+$('waive-kind').addEventListener('change', () => drawWaiveChecks(state.form));
+
+$('waive-pick-ass').addEventListener('change', (e) => {
+  const ass = e.target.getAttribute('data-waive');
+  if (ass) setWaive(ass, e.target.checked);
+});
+
+$('waive-list').addEventListener('click', (e) => {
+  const email = e.target.getAttribute('data-drop');
+  if (!email) return;
+  applyEdit('set_waive', {
+    email, ass_list: [], field: e.target.getAttribute('data-kind'),
+  });
 });
 
 $('dl-config').addEventListener('click', () =>
@@ -437,7 +623,7 @@ $('change').addEventListener('click', () => {
 
 $('reset').addEventListener('click', () => {
   $('yaml').value = state.api.seed_config(state.csv, state.name);
-  check();
+  refresh();
 });
 
 boot();
