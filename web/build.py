@@ -79,6 +79,39 @@ def bust_cache(out):
     return stamp_dict
 
 
+def hash_path(folder, name_list):
+    """ files a browser cannot serve a stale copy of, by moving each into a
+    directory named for its own contents
+
+    A wheel's filename carries its version, and this package's version does
+    not change on every fix -- so the url stayed the same while the file
+    behind it did not, and a browser that had the old one kept it.  The
+    query-string trick the page's assets use is not available here: micropip
+    reads the package name out of the filename, so the name has to stay
+    exactly what a wheel is called.  The directory can be anything.
+
+    Args:
+        folder (pathlib.Path): where the files are now
+        name_list (list): their filenames
+
+    Returns:
+        path_dict (dict): filename to the site-relative path to fetch it at
+    """
+    import hashlib
+
+    path_dict = dict()
+    for name in name_list:
+        f_wheel = folder / name
+        digest = hashlib.sha256(f_wheel.read_bytes()).hexdigest()[:10]
+
+        sub = folder / digest
+        sub.mkdir(exist_ok=True)
+        f_wheel.rename(sub / name)
+        path_dict[name] = f'{folder.name}/{digest}/{name}'
+
+    return path_dict
+
+
 def fetch_vendor(folder):
     """ downloads the pure-python wheels pyodide doesn't ship """
     before_set = set(folder.glob('*.whl'))
@@ -122,9 +155,11 @@ def main():
 
     wheel = build_wheel(out / 'wheel')
     vendor_list = fetch_vendor(out / 'wheel')
+
+    path_dict = hash_path(out / 'wheel', [wheel] + vendor_list)
     (out / 'wheel.json').write_text(json.dumps({
-        'wheel': f'wheel/{wheel}',
-        'vendor': [f'wheel/{name}' for name in vendor_list],
+        'wheel': path_dict[wheel],
+        'vendor': [path_dict[name] for name in vendor_list],
         'stamp': stamp_dict,
     }, indent=2) + '\n')
 

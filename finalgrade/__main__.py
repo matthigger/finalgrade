@@ -9,6 +9,7 @@ from collections import Counter
 import pandas as pd
 
 import finalgrade
+from finalgrade.audit import build_log, late_detail, student_frame
 from finalgrade.errors import FinalgradeError
 
 logger = logging.getLogger('finalgrade')
@@ -154,8 +155,10 @@ def cmd_grade(args):
     folder = pathlib.Path(args.f_scope).resolve().parent
     policy = _resolve_config(args, folder, force_new=args.new_policy)
 
-    # process
-    gradebook, df_grade_full = policy(f_scope=args.f_scope)
+    # process.  the log is only worth keeping when a per-student file will
+    # carry it, but it costs nothing to collect
+    prepare_log = dict()
+    gradebook, df_grade_full = policy(f_scope=args.f_scope, log=prepare_log)
 
     # output
     f_output = args.f_output or str(folder / 'grade_full.csv')
@@ -166,6 +169,9 @@ def cmd_grade(args):
     if args.per_stud:
         _folder = folder / 'per_student'
         _folder.mkdir(exist_ok=True)
+        log_dict = build_log(gradebook, policy, df_grade_full,
+                             log=prepare_log,
+                             late_dict=late_detail(gradebook, policy)[0])
         stem_count = Counter()
         for email, row in df_grade_full.iterrows():
             last = _safe_stem(row.get('lastname', ''))
@@ -175,7 +181,8 @@ def cmd_grade(args):
             if stem_count[stem] > 1:
                 # two students share a name: disambiguate with the email
                 stem = f'{stem}_{_safe_stem(str(email).split("@")[0])}'
-            pd.DataFrame(row).to_csv(_folder / f'{stem}.csv')
+            student_frame(row, log_dict.get(str(email), [])).to_csv(
+                _folder / f'{stem}.csv')
         logger.info(f'wrote per-student CSVs to {_folder}')
 
     # late days CSV (using each category's own grace period, so that the

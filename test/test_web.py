@@ -382,6 +382,26 @@ class TestStudentCsv:
 
         assert res['csv'] == f_cli.read_text()
         assert 'alice' in pd.read_csv(f_cli).columns[1]
+        # including the log at the end: the whole point of the file is that
+        # it answers the question the grade provokes
+        assert '\ncategory,' in res['csv']
+        assert '\nfinal,' in res['csv']
+
+    def test_the_log_is_appended_as_kind_then_text(self, csv_text):
+        """ the two columns the rest of the file already uses """
+        res = web.student_csv(csv_text, YAML_STD, 'carol@u.edu')
+
+        assert res['ok']
+        line_list = res['csv'].strip().split('\n')
+
+        tail = [ln for ln in line_list
+                if ln.startswith(('category,', 'final,'))]
+        assert tail, res['csv']
+        assert tail[-1].startswith('final,')
+        assert 'final grade' in tail[-1]
+
+        # and it comes after the numbers, rather than among them
+        assert line_list.index(tail[0]) > line_list.index('mean_hw,0.4')
 
     def test_an_unknown_student(self, csv_text):
         res = web.student_csv(csv_text, YAML_STD, 'nobody@u.edu')

@@ -19,6 +19,7 @@ import warnings
 import pandas as pd
 
 from . import edit
+from .audit import build_log, late_detail, student_frame
 from .check import build_report, render
 from .policy import F_POLICY_DEFAULT, Policy
 from .errors import FinalgradeError
@@ -242,7 +243,8 @@ def student_csv(csv_text, yaml_text, email, name='scope.csv'):
 
     The same file an instructor attaches to an email asking why a grade is
     what it is, so it holds everything: the metadata, every category mean,
-    the final grade and every assignment behind it.
+    the final grade, every assignment behind it, and then the log of how
+    those numbers were arrived at.
 
     Args:
         csv_text (str): the grade source
@@ -257,9 +259,11 @@ def student_csv(csv_text, yaml_text, email, name='scope.csv'):
     if policy is None:
         return dict(ok=False, error=error)
 
+    prepare_log = dict()
     with _Csv(csv_text, name) as f_csv:
         try:
-            df_grade, _ = _warn_list(lambda: policy(f_csv)[1])
+            (gradebook, df_grade), _ = _warn_list(
+                lambda: policy(f_csv, log=prepare_log))
         except FinalgradeError as e:
             return dict(ok=False, error=str(e))
 
@@ -268,9 +272,11 @@ def student_csv(csv_text, yaml_text, email, name='scope.csv'):
                     error=f'{email} is not among the students being graded')
 
     row = df_grade.loc[email]
+    log_dict = build_log(gradebook, policy, df_grade, log=prepare_log,
+                         late_dict=late_detail(gradebook, policy)[0])
 
     return dict(ok=True, error=None,
-                csv=pd.DataFrame(row).to_csv(),
+                csv=student_frame(row, log_dict.get(str(email), [])).to_csv(),
                 filename=_student_stem(row, email) + '.csv')
 
 
@@ -359,11 +365,9 @@ def _grade_twice(policy, f_csv):
 
 def _graded_student_list(gradebook, df_grade, policy, prepare_log=None):
     """ one row per student: who they are and what they got """
-    from .audit import build_log
-
     meta = gradebook.df_meta
     cat_list = list(policy.cat_weight_dict)
-    late_dict, day_dict = _late_detail(gradebook, policy)
+    late_dict, day_dict = late_detail(gradebook, policy)
     log_dict = build_log(gradebook, policy, df_grade,
                          log=prepare_log, late_dict=late_dict)
 
@@ -447,58 +451,6 @@ def _resolve_waive(gradebook, waive_dict):
     for email, ass_list in (waive_dict or {}).items():
         out.setdefault(gradebook._resolve_email(email), []).extend(ass_list)
     return out
-
-
-def _late_detail(gradebook, policy):
-    """ what the late penalty did to each student, per category
-
-    A category mean carries its late penalty inside it, so a student looking
-    at 78% cannot see whether it is a 78% or an 86% with two unexcused days
-    against it.  This is the arithmetic that turns one into the other.
-
-    Returns:
-        late_dict (dict): category -> email -> the days and the penalty
-        day_dict (dict): email -> assignment -> late days used
-    """
-    if not policy.cat_late_dict or not gradebook.has_lateness:
-        return dict(), dict()
-
-    late_dict = dict()
-    for cat, kwargs in policy.cat_late_dict.items():
-        try:
-            s_unexcused, s_penalty = gradebook.get_late_penalty(
-                cat=cat, waive_dict=policy.late_waive_dict, **kwargs)
-        except FinalgradeError:
-            continue
-
-        excused = kwargs.get('excuse_day', 0) or 0
-        offset_dict = kwargs.get('excuse_day_offset') or {}
-
-        # the penalty is spread across the category's assignments, which is
-        # what turns "10% a day" into a much smaller dent in the average
-        n_ass = len([a for a in gradebook.ass_list if cat in a])
-
-        late_dict[cat] = {}
-        for email in gradebook.df_perc.index:
-            unexcused = float(s_unexcused.get(email, 0))
-            allowed = excused + float(offset_dict.get(email, 0))
-            late_dict[cat][str(email)] = dict(
-                # unexcused is days used minus days allowed, so used is the
-                # sum of the two -- the number a student actually recognises
-                days_used=round(unexcused + allowed, 2),
-                days_excused=allowed,
-                days_unexcused=max(round(unexcused, 2), 0),
-                penalty=float(s_penalty.get(email, 0)),
-                rate=float(kwargs.get('penalty_per_day', 0) or 0),
-                n_ass=n_ass)
-
-    df_day = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
-    day_dict = {
-        str(email): {ass: float(v) for ass, v in row.items()
-                     if pd.notna(v) and v}
-        for email, row in df_day.iterrows()}
-
-    return late_dict, day_dict
 
 
 def seed_policy(csv_text, name='scope.csv'):

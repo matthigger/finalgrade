@@ -512,13 +512,17 @@ class Policy:
 
         return gradebook
 
-    def __call__(self, f_scope):
+    def __call__(self, f_scope, log=None):
         """ runs the processing pipeline given policy and f_scope
 
         Args:
             f_scope (str): raw gradescope csv, or a canvas gradebook export
                 (told apart by their columns).  a Gradebook may be passed
                 instead, when one has already been read.
+            log (dict): filled in with what prepare() did, per student, for
+                a caller that means to explain the grades as well as write
+                them.  only the pipeline knows what it substituted or
+                waived, so this is the one chance to hear it
 
         Returns:
             gradebook (Gradebook): processed gradebook
@@ -527,7 +531,7 @@ class Policy:
         gradebook = f_scope if isinstance(f_scope, Gradebook) \
             else Gradebook.from_file(f_scope)
 
-        self.prepare(gradebook)
+        self.prepare(gradebook, log=log)
 
         df_grade_full = gradebook.average_full(**self.average_kwargs())
 

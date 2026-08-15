@@ -12,8 +12,90 @@ is reconstructed here from the same numbers grading used.
 """
 import pandas as pd
 
+from .errors import FinalgradeError
 from .get_mean_drop_low import get_drop_idx
 from .gradebook import MINUTES_PER_DAY, match_set
+
+
+def late_detail(gradebook, policy):
+    """ what the late penalty did to each student, per category
+
+    A category mean carries its late penalty inside it, so a student looking
+    at 78% cannot see whether it is a 78% or an 86% with two unexcused days
+    against it.  This is the arithmetic that turns one into the other.
+
+    Returns:
+        late_dict (dict): category -> email -> the days and the penalty
+        day_dict (dict): email -> assignment -> late days used
+    """
+    if not policy.cat_late_dict or not gradebook.has_lateness:
+        return dict(), dict()
+
+    late_dict = dict()
+    for cat, kwargs in policy.cat_late_dict.items():
+        try:
+            s_unexcused, s_penalty = gradebook.get_late_penalty(
+                cat=cat, waive_dict=policy.late_waive_dict, **kwargs)
+        except FinalgradeError:
+            continue
+
+        excused = kwargs.get('excuse_day', 0) or 0
+        offset_dict = kwargs.get('excuse_day_offset') or {}
+
+        # the penalty is spread across the category's assignments, which is
+        # what turns "10% a day" into a much smaller dent in the average
+        n_ass = len([a for a in gradebook.ass_list if cat in a])
+
+        late_dict[cat] = {}
+        for email in gradebook.df_perc.index:
+            unexcused = float(s_unexcused.get(email, 0))
+            allowed = excused + float(offset_dict.get(email, 0))
+            late_dict[cat][str(email)] = dict(
+                # unexcused is days used minus days allowed, so used is the
+                # sum of the two -- the number a student actually recognises
+                days_used=round(unexcused + allowed, 2),
+                days_excused=allowed,
+                days_unexcused=max(round(unexcused, 2), 0),
+                penalty=float(s_penalty.get(email, 0)),
+                rate=float(kwargs.get('penalty_per_day', 0) or 0),
+                n_ass=n_ass)
+
+    df_day = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
+    day_dict = {
+        str(email): {ass: float(v) for ass, v in row.items()
+                     if pd.notna(v) and v}
+        for email, row in df_day.iterrows()}
+
+    return late_dict, day_dict
+
+
+def student_frame(row, log_list=()):
+    """ one student's whole file: every number, then how it was arrived at
+
+    The log goes at the end of the same two columns the rest of the file
+    uses -- what kind of step it was, then what happened -- so the file that
+    answers "what did I get" also answers "why", and an instructor forwards
+    one attachment instead of explaining it in the mail.
+
+    Args:
+        row (pd.Series): the student's row of average_full's output
+        log_list (list): their events, as build_log records them
+
+    Returns:
+        df_stud (pd.DataFrame): one column, ready for to_csv
+    """
+    df_stud = pd.DataFrame(row)
+    if not len(log_list):
+        return df_stud
+
+    col = df_stud.columns[0]
+    # a blank line first: the numbers above are a table and the log below is
+    # prose, and a reader should not have to work out where one ends
+    key_list = [''] + [str(event['kind']) for event in log_list]
+    val_list = [''] + [str(event['text']) for event in log_list]
+
+    return pd.concat([df_stud,
+                      pd.DataFrame({col: val_list}, index=key_list)])
 
 
 def fmt_late(minutes):
