@@ -12,13 +12,45 @@ Compute final grades from a Gradescope CSV export — with category weighting, l
 
         gradescope-mean grade scope.csv
 
-   This produces [grade_full.csv](doc/grade_full.csv) and creates a `config.yaml` in the same directory.
+   This produces [grade_full.csv](doc/grade_full.csv) and creates a `config.yaml` in the same directory. That config is written for *your* csv: it lists your assignments by the names a config has to use, and suggests a category split (commented out) based on them.
 
-3. Edit `config.yaml` to set up your grading policy (see below), then re-run:
+3. Edit `config.yaml` to set up your grading policy (see below), then check what it will do:
+
+        gradescope-mean check scope.csv
+
+4. When the split looks right, re-run:
 
         gradescope-mean grade scope.csv --config config.yaml
 
 That's it. The rest of this README covers what you can put in that config file and the additional flags available.
+
+### Checking a config
+
+Categories match assignments by substring, which is easy to get subtly wrong — and a mistake shows up as a plausible-looking grade rather than an error. `check` answers "what does this config actually do?" without computing any grades:
+
+    $ gradescope-mean check scope.csv
+    grade source : scope.csv (gradescope)
+    students     : 5
+    assignments  : 4 graded, 0 excluded
+
+    assignment  points  submitted  category
+    ----------  ------  ---------  ------------------------------------
+    hw1         1       1/5        hw
+    hw2         2       2/5        hw
+    hw3         3       5/5        hw
+    quiz1       4       5/5        (none) <- not graded in any category
+
+    category  weight  drop  late                assignments
+    --------  ------  ----  ------------------  -------------------------------
+    hw        50.0%   1     15%/day, 3 excused  hw1, hw2, hw3
+    exam      50.0%   -     -                   (none) <- matches no assignment
+
+    error: category matches no assignment: exam
+    warn : assignment not in any category: quiz1
+
+    config has an error, grading would stop here
+
+It exits non-zero when grading would fail, so it works in a script. Unlike grading, it reports every problem it finds at once rather than stopping at the first.
 
 ### Grading from Canvas instead
 
@@ -33,6 +65,8 @@ Everything downstream is the same. Three differences are worth knowing, all of t
 - **Excused (`EX`) becomes a waiver**, and a blank cell counts as 0 — the same meaning a blank Gradescope cell has.
 
 Assignments worth 0 points are dropped, as always. That covers most of what this tool uploads back to Canvas (`mean_hw`, `letter`, ...) along with solution handouts, so re-importing a course you've already exported to is a no-op rather than a feedback loop.
+
+One thing works *better* from Canvas: a config created for a Canvas export seeds its suggested categories from your Canvas assignment groups (read off the rollup columns Canvas exports), rather than guessing from assignment names.
 
 ## Configuration
 
@@ -188,13 +222,18 @@ reported as an error rather than quietly producing plausible-looking numbers:
   every student the lowest grade), or with no entry reaching 0
 - a `substitute` naming an assignment that doesn't exist
 - the same student email appearing on two rows of the Gradescope export
+- an email in `waive`, `waive_late` or `excuse_day_offset` that matches no
+  student in the export — a typo there is an assignment silently *not* waived.
+  The error names the closest matching students. An email that matches a
+  student who is then dropped by `email_list` is fine, and says so quietly
+- a csv that is neither a Gradescope nor a Canvas export
 
 These are also handled quietly but visibly, with a warning:
 
 - an assignment worth 0 points is excluded from grading (it can only produce
   meaningless percentages)
-- an email in `waive`, `waive_late`, `excuse_day_offset` or `email_list` that
-  matches no student
+- an email in `email_list` that matches no student (an enrolled student who
+  never submitted anything is ordinary)
 - an assignment that falls into no weighted category, or into more than one
 
 ## Additional Options

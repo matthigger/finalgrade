@@ -203,21 +203,90 @@ class Config:
         if self.grade_thresh is not None:
             self._validate_grade_thresh()
 
-    def __call__(self, f_scope):
-        """ runs the processing pipeline given config and f_scope
+    def iter_email(self):
+        """ every student email this config names, with the section naming it
 
-        The step order is load bearing; each comment below states what breaks
-        if that step moves.
+        email_list is not among them: it is a roster, and an entry that
+        matches nobody means a student who never submitted -- ordinary, and
+        already warned about in prune_email.
+        """
+        for email in self.waive_dict:
+            yield email, 'waive'
+        for email in self.late_waive_dict:
+            yield email, 'waive_late'
+        for cat, late_dict in self.cat_late_dict.items():
+            if not isinstance(late_dict, dict):
+                continue
+            for email in (late_dict.get('excuse_day_offset') or {}):
+                yield email, f'late_penalty/{cat}/excuse_day_offset'
+
+    def check_email(self, gradebook):
+        """ raises unless every email the config names is a student
+
+        This has to run before prune_email: afterwards a typo and a student
+        who dropped the course look exactly alike.
+
+        An unmatched email used to be only a warning, which made a typo in
+        `waive` a silently un-waived assignment -- a wrong grade that looks
+        entirely reasonable, which is the one thing this config is supposed
+        not to produce.
 
         Args:
-            f_scope (str): raw gradescope csv, or a canvas gradebook export
-                (told apart by their columns)
+            gradebook (Gradebook): as read, before any pruning
+        """
+        import difflib
+
+        prefix_dict = gradebook.email_by_prefix
+
+        where_dict = dict()
+        for email, where in self.iter_email():
+            if email in gradebook.df_perc.index:
+                continue
+            if email.split('@')[0] in prefix_dict:
+                continue
+            where_dict.setdefault(email, []).append(where)
+
+        if not where_dict:
+            return
+
+        line_list = []
+        for email in sorted(where_dict):
+            where = ', '.join(sorted(set(where_dict[email])))
+            near_list = difflib.get_close_matches(
+                email.split('@')[0], prefix_dict.keys(), n=3, cutoff=.6)
+            near = (f' (did you mean: '
+                    f'{", ".join(prefix_dict[k] for k in near_list)}?)'
+                    if near_list else '')
+            line_list.append(f'  {email} in {where}{near}')
+
+        raise ConfigError(
+            'config names a student who is not in the gradebook, so the '
+            'entry would do nothing:\n' + '\n'.join(line_list))
+
+    def prepare(self, gradebook, record=None):
+        """ everything that happens to a gradebook before it is averaged
+
+        The step order is load bearing; each comment below states what breaks
+        if that step moves.  `check` walks this same method rather than a copy
+        of the sequence, so the two cannot drift apart.
+
+        Args:
+            gradebook (Gradebook): modified in place
+            record (dict): if given, filled with assignment -> why it is not
+                being graded, for every assignment dropped along the way
 
         Returns:
-            gradebook (Gradebook): processed gradebook
-            df_grade_full (pd.DataFrame): full data frame
+            gradebook (Gradebook): the same object
         """
-        gradebook = Gradebook.from_file(f_scope)
+        if record is None:
+            record = dict()
+
+        # 0. emails first, against the roster as it arrived: prune_email is
+        #    about to make a typo indistinguishable from a dropped student
+        self.check_email(gradebook)
+
+        for ass in gradebook.zero_point_list:
+            record[ass] = 'worth 0 points'
 
         # 1. prune first, so that every later step (completion threshold in
         #    particular) sees only the students actually being graded
@@ -232,17 +301,43 @@ class Config:
         # 3. explicit exclusions before the completion threshold, so the
         #    threshold isn't computed over assignments already on their way out
         for ass in self.remove_list:
+            before_set = set(gradebook.ass_list)
             gradebook.remove(ass, multi=True)
+            for _ass in sorted(before_set - set(gradebook.ass_list)):
+                record[_ass] = f'assignments/exclude: {ass}'
 
         # 4. completion threshold, now that substitutions have filled in
         #    scores and exclusions have removed the noise
+        before_set = set(gradebook.ass_list)
         gradebook.remove_thresh(
             min_complete_thresh=self.exclude_complete_thresh)
+        for _ass in sorted(before_set - set(gradebook.ass_list)):
+            record[_ass] = ('assignments/exclude_complete_thresh: '
+                            f'{self.exclude_complete_thresh:g}')
 
         # 5. waive last: waivers name assignments, so they must run after the
         #    set of assignments has settled
         if self.waive_dict:
             gradebook.waive(waive_dict=self.waive_dict)
+
+        return gradebook
+
+    def __call__(self, f_scope):
+        """ runs the processing pipeline given config and f_scope
+
+        Args:
+            f_scope (str): raw gradescope csv, or a canvas gradebook export
+                (told apart by their columns).  a Gradebook may be passed
+                instead, when one has already been read.
+
+        Returns:
+            gradebook (Gradebook): processed gradebook
+            df_grade_full (pd.DataFrame): full data frame
+        """
+        gradebook = f_scope if isinstance(f_scope, Gradebook) \
+            else Gradebook.from_file(f_scope)
+
+        self.prepare(gradebook)
 
         df_grade_full = gradebook.average_full(
             cat_weight_dict=self.cat_weight_dict,
@@ -290,18 +385,21 @@ class Config:
                       for attr, key_tup in YAML_KEY_DICT.items()})
 
     @classmethod
-    def resolve_config(cls, folder, force_new=False):
-        """Resolve config: use existing config.yaml or copy default.
+    def resolve_config(cls, folder, f_grade=None, force_new=False):
+        """Resolve config: use existing config.yaml or write a new one.
 
         Non-interactive replacement for the old cli_copy_config. When no
         --config is specified:
           - If config.yaml exists in *folder* and force_new is False, use it.
-          - Otherwise copy the default config.yaml into *folder* and use that.
+          - Otherwise write a new config.yaml into *folder* and use that.
           - If force_new and config.yaml already exists, it is timestamped to
             avoid overwriting.
 
         Args:
             folder (pathlib.Path): directory to look for / place config
+            f_grade (str): the csv being graded.  when given, the new config
+                is written with this course's assignment names in it, so
+                there is nothing to guess or mistype
             force_new (bool): if True, always create a fresh config
         """
         import logging
@@ -320,13 +418,43 @@ class Config:
             f_config = pathlib.Path(
                 str(f_config).replace('.yaml', f'{s_now}.yaml'))
 
-        shutil.copy(F_CONFIG_DEFAULT, f_config)
+        text = cls._seed_text(f_grade)
+        if text is None:
+            shutil.copy(F_CONFIG_DEFAULT, f_config)
+        else:
+            f_config.write_text(text)
+
         logger.info(
             f'created default config — edit as needed, see '
             f'https://github.com/matthigger/gradescope_mean#configuration'
             f' for details:\n  {f_config}')
 
         return cls.from_file(f_config)
+
+    @staticmethod
+    def _seed_text(f_grade):
+        """ contents of a new config that knows f_grade's assignments
+
+        Returns None when there is no csv to read, or when reading it fails:
+        a config file the user can edit by hand is more use than an error
+        raised while trying to be helpful about one.
+        """
+        if f_grade is None:
+            return None
+
+        import warnings
+        from .seed import seed_text
+
+        try:
+            with warnings.catch_warnings():
+                # the csv is about to be read again for grading, which is
+                # where these warnings belong; twice is just noise
+                warnings.simplefilter('ignore')
+                gradebook = Gradebook.from_file(f_grade)
+            return seed_text(gradebook, f_grade,
+                             F_CONFIG_DEFAULT.read_text())
+        except Exception:
+            return None
 
     @classmethod
     def cli_copy_config(cls, folder):

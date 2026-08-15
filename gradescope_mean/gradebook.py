@@ -51,12 +51,23 @@ def read_scope(f_scope):
             points (max points per assignment), df_meta (one row per student)
             and df_late_minutes
     """
-    df_scope = pd.read_csv(str(f_scope), index_col='Email')
+    df_scope = pd.read_csv(str(f_scope))
 
     # groom input data
     df_scope.columns = list(map(normalize, df_scope.columns))
+
+    if 'email' not in df_scope.columns:
+        # neither reader recognises this file.  say so, rather than let
+        # pandas report a missing index column, which reads as a bug in the
+        # csv rather than as "that isn't the file you meant"
+        col_str = ', '.join(list(df_scope.columns)[:6]) or '<none>'
+        raise GradebookError(
+            f'{f_scope} is not a gradescope export (no Email column) nor a '
+            f'canvas one (no Student / SIS User ID columns).  its columns '
+            f'start: {col_str}')
+
+    df_scope = df_scope.set_index('email')
     df_scope.index = df_scope.index.map(lambda s: str(s).lower())
-    df_scope.index.name = str(df_scope.index.name).lower()
 
     if df_scope.index.has_duplicates:
         dupe_list = sorted(set(df_scope.index[df_scope.index.duplicated()]))
@@ -110,7 +121,8 @@ def read_scope(f_scope):
                 df_late_minutes=df_late_minutes)
 
 
-def finalize(df_score, points, df_meta, df_late_minutes=None):
+def finalize(df_score, points, df_meta, df_late_minutes=None,
+             cat_hint_list=None):
     """ the shared tail of both readers: drop the unusable, take percentages
 
     Args:
@@ -119,6 +131,9 @@ def finalize(df_score, points, df_meta, df_late_minutes=None):
         df_meta (pd.DataFrame): one metadata row per student
         df_late_minutes (pd.DataFrame): minutes late per student-assignment,
             or None when the source records no lateness (a canvas csv)
+        cat_hint_list (list): category names the source already knows about
+            (canvas assignment groups), for seeding a new config.  a
+            gradescope csv has no such notion and passes None.
 
     Returns:
         part_dict (dict): the parts a Gradebook is made of
@@ -152,7 +167,9 @@ def finalize(df_score, points, df_meta, df_late_minutes=None):
                                        columns=df_score.columns)
 
     return dict(df_perc=df_perc, df_late_minutes=df_late_minutes,
-                points=points, df_meta=df_meta, has_lateness=has_lateness)
+                points=points, df_meta=df_meta, has_lateness=has_lateness,
+                zero_point_list=zero_list,
+                cat_hint_list=list(cat_hint_list or []))
 
 
 class Gradebook:
@@ -180,6 +197,11 @@ class Gradebook:
         has_lateness (bool): whether the source recorded lateness at all.
             a canvas csv doesn't, so df_late_minutes is all zeros there and
             a configured late penalty is an error rather than a silent no-op.
+        zero_point_list (list): assignments dropped at load for being worth 0
+            points.  kept so that `check` can say where they went, rather
+            than leaving a hole in the assignment list.
+        cat_hint_list (list): category names the source already knows (canvas
+            assignment groups); empty for gradescope.
     """
 
     def __init__(self, f_scope):
@@ -227,6 +249,8 @@ class Gradebook:
         self.points = part_dict['points']
         self.df_meta = part_dict['df_meta']
         self.has_lateness = part_dict['has_lateness']
+        self.zero_point_list = part_dict.get('zero_point_list', [])
+        self.cat_hint_list = part_dict.get('cat_hint_list', [])
 
     @property
     def ass_list(self):
@@ -289,6 +313,14 @@ class Gradebook:
         """
         for email, ass_list in waive_dict.items():
             email = self._resolve_email(email)
+            if email not in self.df_perc.index:
+                # writing to a label that isn't there would *add* the row,
+                # inventing a student.  a typo is caught earlier by
+                # Config.check_email; reaching here means the student was
+                # pruned by email_list, so there is nothing to waive
+                logger.info(
+                    f'waive skipped, student not being graded: {email}')
+                continue
             for ass in ass_list:
                 try:
                     _ass = self.ass_list.match(ass)
@@ -482,6 +514,9 @@ class Gradebook:
         # waive late days per email / assignment
         for email, ass_list in waive_dict.items():
             email = self._resolve_email(email)
+            if email not in df_late.index:
+                # as in waive(): don't let a missing student become a new row
+                continue
             for ass in ass_list:
                 ass = self.ass_list.match(ass)
                 if ass in df_late.columns:

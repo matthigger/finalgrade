@@ -45,6 +45,13 @@ STUDENT_TEST = 'student, test'
 # config file refers to
 RE_ASS_ID = re.compile(r'\s*\(\d+\)$')
 
+# canvas' rollup columns are '<group> Current Score', '<group> Final Points'
+# and so on, with the course-wide totals carrying no group at all.  stripping
+# one of these suffixes leaves the assignment group's name -- which is the
+# category the instructor already set up in canvas, so it seeds a new config
+RE_ROLLUP = re.compile(
+    r'\s*(unposted\s+)?(current|final)\s+(score|points|grade)$', re.IGNORECASE)
+
 
 def is_canvas_export(f_csv):
     """ True when a csv looks like a canvas gradebook export
@@ -105,7 +112,8 @@ def read_canvas(f_canvas):
     points = _get_points(s_point, col_ass_list, name_dict)
 
     return dict(df_score=df_score, points=points,
-                df_meta=_get_meta(df_body, index))
+                df_meta=_get_meta(df_body, index),
+                cat_hint_list=_get_cat_hint_list(df, s_point))
 
 
 def _split_point_row(df):
@@ -129,6 +137,28 @@ def _get_ass_col_list(df, s_point):
     """ the assignment columns: those canvas doesn't compute for itself """
     return [col for col in df.columns[N_COL_CANVAS_META:]
             if str(s_point[col]).strip().lower() != VAL_READ_ONLY]
+
+
+def _get_cat_hint_list(df, s_point):
+    """ the assignment groups canvas computes a rollup column for
+
+    These are the categories the instructor already defined in canvas, so a
+    config seeded for a canvas course can offer them by name instead of
+    guessing from assignment names.  Nothing downstream reads them -- they
+    only ever reach a comment in a freshly written config.yaml.
+    """
+    cat_list = []
+    for col in df.columns[N_COL_CANVAS_META:]:
+        if str(s_point[col]).strip().lower() != VAL_READ_ONLY:
+            # an assignment, not one of canvas' own rollups
+            continue
+        cat, n_sub = RE_ROLLUP.subn('', str(col).strip())
+        cat = cat.strip()
+        # n_sub == 0: not a rollup we recognise.  cat == '': the course-wide
+        # total, which is every assignment rather than a category
+        if n_sub and cat and cat not in cat_list:
+            cat_list.append(cat)
+    return cat_list
 
 
 def _get_name_dict(col_ass_list):

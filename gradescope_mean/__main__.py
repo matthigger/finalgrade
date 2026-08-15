@@ -57,6 +57,21 @@ grade_parser.add_argument(
     '-q', '--quiet', action='store_true',
     help='suppress informational output')
 
+# ---------- "check" subcommand ----------
+check_parser = subparsers.add_parser(
+    'check',
+    help='show which assignments each category catches, and what the config '
+         'would do, without computing any grades')
+check_parser.add_argument(
+    'f_scope', type=str,
+    help='Gradescope CSV, or a Canvas gradebook export')
+check_parser.add_argument(
+    '--config', dest='f_config', default=None,
+    help='YAML configuration file (default: config.yaml beside the CSV)')
+check_parser.add_argument(
+    '-q', '--quiet', action='store_true',
+    help='suppress informational output')
+
 # ---------- "canvas" subcommand ----------
 canvas_parser = subparsers.add_parser(
     'canvas',
@@ -118,18 +133,34 @@ def _banner_id(sid):
     return s_id.zfill(9)
 
 
+def _resolve_config(args, folder, force_new=False):
+    """The config named by --config, or the one beside the csv."""
+    if args.f_config is not None:
+        return gradescope_mean.Config.from_file(args.f_config)
+    return gradescope_mean.Config.resolve_config(
+        folder, f_grade=args.f_scope, force_new=force_new)
+
+
+def cmd_check(args):
+    """Execute the 'check' subcommand."""
+    _setup_logging(quiet=True)
+
+    folder = pathlib.Path(args.f_scope).resolve().parent
+    config = _resolve_config(args, folder)
+
+    report = gradescope_mean.build_report(config=config, f_grade=args.f_scope)
+    print(gradescope_mean.render(report))
+
+    if not report.ok:
+        sys.exit(2)
+
+
 def cmd_grade(args):
     """Execute the 'grade' subcommand."""
     _setup_logging(args.quiet)
 
     folder = pathlib.Path(args.f_scope).resolve().parent
-
-    # --- config resolution (non-interactive) ---
-    if args.f_config is not None:
-        config = gradescope_mean.Config.from_file(args.f_config)
-    else:
-        config = gradescope_mean.Config.resolve_config(
-            folder, force_new=args.new_config)
+    config = _resolve_config(args, folder, force_new=args.new_config)
 
     # process
     gradebook, df_grade_full = config(f_scope=args.f_scope)
@@ -227,6 +258,7 @@ def main(args=None):
 
     dispatch = {
         'grade': cmd_grade,
+        'check': cmd_check,
         'canvas': cmd_canvas,
         'banner': cmd_banner,
     }
