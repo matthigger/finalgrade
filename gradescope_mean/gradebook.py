@@ -1,3 +1,4 @@
+import logging
 from math import ceil
 from warnings import warn
 
@@ -5,90 +6,175 @@ import numpy as np
 import pandas as pd
 
 from .assign_list import AssignmentList, AssignmentNotFoundError, normalize
+from .errors import ConfigError, GradebookError
 from .get_mean_drop_low import get_mean_drop_low
 from .perc_to_letter import perc_to_letter
+
+logger = logging.getLogger('gradescope_mean')
+
+# minutes of grace before a submission counts as late
+GRACE_DEFAULT = 60
+
+MINUTES_PER_DAY = 24 * 60
+
+
+def minutes_to_days(minutes, grace_period_minutes=GRACE_DEFAULT):
+    """ converts raw lateness in minutes to whole late days
+
+    nan (a waived assignment) stays nan so that waivers survive.
+    """
+    if pd.isna(minutes):
+        return np.nan
+    effective = minutes - grace_period_minutes
+    if effective <= 0:
+        return 0
+    return ceil(effective / MINUTES_PER_DAY)
 
 
 class Gradebook:
     """ a grade for every student-assignment pair & manipulations
 
+    There is exactly one source of truth for each thing:
+
+        df_perc          scores       (nan where waived)
+        df_late_minutes  lateness     (nan where waived)
+        points           max points, indexed by assignment name
+
+    Everything else is derived.  ass_list follows df_perc's columns and
+    df_lateday is computed from df_late_minutes on demand, so no method has
+    to keep parallel structures in step -- which is what previously allowed
+    a waived assignment to keep its late penalty.
+
     Attributes:
-        df_perc (pd.DataFrame): index is email of student and each col is assignment
-            values are percentage student earned (nan for waived).
+        df_perc (pd.DataFrame): index is email of student and each col is
+            assignment, values are percentage earned (nan for waived).
         df_meta (pd.DataFrame): index is email, columns are metadata (first
-            name, last name, section, id)
-        df_lateday (pd.DataFarme): index are email, cols are assignment and
-            values are days each assignment is late
-        ass_list (AssignmentList): a list of assignments
-        points (np.array): points per assignment (same order as ass_list)
+            name, last name, section, id ...)
+        df_late_minutes (pd.DataFrame): index is email, cols are assignment,
+            values are raw minutes late (nan for waived)
+        points (pd.Series): max points, indexed by assignment name
     """
-    META_DATA_COLS = 4
 
     def __init__(self, f_scope):
         df_scope = pd.read_csv(str(f_scope), index_col='Email')
 
         # groom input data
-        df_scope.columns = map(normalize, df_scope.columns)
-        for idx in range(self.META_DATA_COLS):
-            if df_scope.columns[idx] == 'sid':
-                # student ids are ints, lets not cast to str
+        df_scope.columns = list(map(normalize, df_scope.columns))
+        df_scope.index = df_scope.index.map(lambda s: str(s).lower())
+        df_scope.index.name = str(df_scope.index.name).lower()
+
+        if df_scope.index.has_duplicates:
+            dupe_list = sorted(set(
+                df_scope.index[df_scope.index.duplicated()]))
+            raise GradebookError(
+                'duplicate email in gradescope csv (each student must appear '
+                f'once): {", ".join(dupe_list)}')
+
+        ass_list = AssignmentList.from_columns(df_scope.columns)
+
+        # metadata is whatever isn't part of an assignment.  (counting a fixed
+        # number of leading columns breaks on exports with an extra column)
+        ass_col_set = ass_list.get_column_set()
+        meta_col_list = [col for col in df_scope.columns
+                         if col not in ass_col_set]
+
+        # a missing score means "no submission", which counts as 0.  a missing
+        # lateness cell means "not late".  (a blanket fillna(0) would put an
+        # int into the H:M:S strings, which then fails to parse)
+        for ass in ass_list:
+            df_scope[ass] = df_scope[ass].fillna(0)
+            df_scope[ass + ass_list.LATE] = \
+                df_scope[ass + ass_list.LATE].fillna('00:00:00')
+
+        # store meta data (lowercased, except student ids)
+        self.df_meta = df_scope.loc[:, meta_col_list].copy()
+        for col in meta_col_list:
+            if col == 'sid':
+                # student ids are sometimes ints, lets not cast to str
                 continue
-            df_scope.iloc[:, idx] = df_scope.iloc[:, idx].astype(str).map(
+            self.df_meta[col] = self.df_meta[col].fillna('').astype(str).map(
                 str.lower)
-        df_scope.index = df_scope.index.map(str.lower)
-        df_scope.index.name = df_scope.index.name.lower()
-        df_scope.fillna(0, inplace=True)
 
-        # store meta data
-        self.df_meta = df_scope.iloc[:, :self.META_DATA_COLS]
+        # points per assignment
+        point_list = []
+        for ass in ass_list:
+            col_max_pt = ass + ass_list.MAX_PTS
+            if df_scope[col_max_pt].nunique(dropna=False) != 1:
+                raise GradebookError(
+                    f'assignment has more than one max points value: {ass}')
+            point_list.append(df_scope[col_max_pt].values[0])
+        self.points = pd.Series(point_list, index=list(ass_list), dtype=float)
 
-        # compute percent per assignment & points
-        self.ass_list = AssignmentList(df_scope.columns)
-        self.df_perc = pd.DataFrame()
-        self.points = np.empty(len(self.ass_list))
-        for idx, ass in enumerate(self.ass_list):
-            # points per assignment
-            ass_max_pt = ass + self.ass_list.MAX_PTS
-            assert len(df_scope[ass_max_pt].unique()) == 1, \
-                f'multiple max pts: {ass}'
-            self.points[idx] = df_scope[ass_max_pt].values[0]
+        # an assignment worth 0 points can only produce inf / nan percentages
+        # and contributes nothing to any weighted mean, so drop it
+        zero_list = sorted(self.points.index[self.points == 0])
+        if zero_list:
+            warn(f'assignment worth 0 points, excluded from grading: '
+                 f'{", ".join(zero_list)}')
+            self.points = self.points.drop(index=zero_list)
+            ass_list = AssignmentList(
+                [ass for ass in ass_list if ass not in zero_list])
 
-            # percentage per assignment
-            self.df_perc[ass] = df_scope[ass] / df_scope[ass_max_pt]
+        # percentage per assignment
+        self.df_perc = pd.DataFrame(index=df_scope.index)
+        for ass in ass_list:
+            self.df_perc[ass] = df_scope[ass] / df_scope[ass + ass_list.MAX_PTS]
 
-        # compute days late (raw minutes; grace period applied later)
-        def get_late_minutes(s_hour_min_sec):
-            """ returns total lateness in minutes (ignoring seconds) """
-            parts = s_hour_min_sec.split(':')
-            return int(parts[0]) * 60 + int(parts[1])
+        # raw lateness in minutes (grace period applied on demand)
+        self.df_late_minutes = pd.DataFrame(index=df_scope.index)
+        for ass in ass_list:
+            self.df_late_minutes[ass] = \
+                df_scope[ass + ass_list.LATE].map(self._get_late_minutes)
 
-        self.df_late_minutes = pd.DataFrame()
-        for ass in self.ass_list:
-            ass_late = ass + self.ass_list.LATE
-            self.df_late_minutes[ass] = df_scope[ass_late].map(
-                get_late_minutes)
+    @staticmethod
+    def _get_late_minutes(s_hour_min_sec):
+        """ returns total lateness in minutes (ignoring seconds) """
+        if not isinstance(s_hour_min_sec, str) or not s_hour_min_sec.strip():
+            # blank lateness cell: not late
+            return 0
+        part_list = s_hour_min_sec.split(':')
+        return int(part_list[0]) * 60 + int(part_list[1])
 
-        # legacy df_lateday: default 60-min grace, computed on demand via
-        # _compute_lateday
-        self.df_lateday = self._compute_lateday(grace_period_minutes=60)
+    @property
+    def ass_list(self):
+        """ assignments currently in the gradebook (follows df_perc) """
+        return AssignmentList(self.df_perc.columns)
 
-    def _compute_lateday(self, grace_period_minutes=60):
-        """Convert raw late-minutes to late-days with a grace period.
+    @property
+    def df_lateday(self):
+        """ late days per student-assignment at the default grace period """
+        return self.get_lateday()
+
+    def get_lateday(self, grace_period_minutes=GRACE_DEFAULT,
+                    cat_late_dict=None):
+        """ late days per student-assignment
 
         Args:
-            grace_period_minutes (int): minutes of grace before lateness
-                counts (default 60, i.e. 1 hour).
+            grace_period_minutes (int): grace applied to any assignment not
+                covered by cat_late_dict
+            cat_late_dict (dict): category -> late penalty kwargs.  each
+                category's assignments use that category's own
+                grace_period_minutes, so the result matches the penalties
+                actually applied.
 
         Returns:
-            df_lateday (pd.DataFrame): late days per student-assignment
+            df_lateday (pd.DataFrame)
         """
-        def _minutes_to_days(minutes):
-            effective = minutes - grace_period_minutes
-            if effective <= 0:
-                return 0
-            return ceil(effective / (24 * 60))
+        df_lateday = self.df_late_minutes.map(
+            lambda m: minutes_to_days(m, grace_period_minutes))
 
-        return self.df_late_minutes.map(_minutes_to_days)
+        for cat, kwargs in (cat_late_dict or {}).items():
+            grace = kwargs.get('grace_period_minutes', GRACE_DEFAULT)
+            for ass in self.ass_list.match_iter(cat):
+                df_lateday[ass] = self.df_late_minutes[ass].map(
+                    lambda m: minutes_to_days(m, grace))
+
+        return df_lateday
+
+    @property
+    def email_by_prefix(self):
+        """ maps the part of each email before '@' to the full email """
+        return {email.split('@')[0]: email for email in self.df_perc.index}
 
     def _resolve_email(self, email):
         """Resolve an email to a matching index entry by prefix.
@@ -99,32 +185,27 @@ class Gradebook:
         """
         if email in self.df_perc.index:
             return email
-
-        prefix = email.split('@')[0]
-        for idx_email in self.df_perc.index:
-            if idx_email.split('@')[0] == prefix:
-                return idx_email
-
-        # no match — return as-is (caller will see KeyError or warning)
-        return email
+        return self.email_by_prefix.get(email.split('@')[0], email)
 
     def waive(self, waive_dict):
-        """ waives assignment (per student) by marking percentages as nan
+        """ waives assignment (per student): the score and its lateness both
+        stop counting, as if the work had never been assigned
 
         Args:
             waive_dict (dict): keys are emails, values are lists of assignments
         """
-
         for email, ass_list in waive_dict.items():
             email = self._resolve_email(email)
             for ass in ass_list:
                 try:
                     _ass = self.ass_list.match(ass)
-                    self.df_perc.loc[email, _ass] = np.nan
-                    self.df_lateday.loc[email, _ass] = np.nan
                 except AssignmentNotFoundError:
-                    msg = f'waive-fail: not found "{ass}" for {email}'
-                    warn(msg)
+                    warn(f'waive-fail: not found "{ass}" for {email}')
+                    continue
+                self.df_perc.loc[email, _ass] = np.nan
+                # nulling the single source of truth is what makes the late
+                # penalty follow the waiver
+                self.df_late_minutes.loc[email, _ass] = np.nan
 
     def substitute(self, sub_dict):
         """ substitutes some assignment percentages (if sub is higher)
@@ -142,13 +223,20 @@ class Gradebook:
         # (were we to substitute, the order of substitutions could cause issue)
         new_col_dict = dict()
         for ass_to, ass_from_list in sub_dict.items():
-            if ass_to not in ass_from_list:
+            ass_all_list = list(ass_from_list)
+            if ass_to not in ass_all_list:
                 # ensure ass_to is in the list of potential substitutes
-                ass_from_list = ass_from_list + [ass_to]
+                ass_all_list = ass_all_list + [ass_to]
+
+            missing_list = sorted(set(ass_all_list) - set(self.df_perc.columns))
+            if missing_list:
+                raise ConfigError(
+                    f'substitute assignment not found: '
+                    f'{", ".join(missing_list)} (assignments are: '
+                    f'{", ".join(self.df_perc.columns)})')
 
             # get max percentage across all assignments, substitute it
-            new_col_dict[ass_to] = self.df_perc.loc[:, ass_from_list].max(
-                axis=1)
+            new_col_dict[ass_to] = self.df_perc.loc[:, ass_all_list].max(axis=1)
 
         # substitute
         for ass_to, s in new_col_dict.items():
@@ -157,45 +245,45 @@ class Gradebook:
     def prune_email(self, email_list, ignore_suffix=True):
         """ discards rows not in email_list, warns if emails in list not a row
 
+        row order always follows the input csv, never set iteration order,
+        so that repeated runs produce identical output.
+
         Args:
             email_list (list): list of strings
+            ignore_suffix (bool): if True, emails match on the part before '@'
         """
-        if ignore_suffix:
-            def discard_suffix(email_list):
-                prefix_list = [email.split('@')[0] for email in email_list]
-                prefix_set = set(prefix_list)
-                assert len(prefix_list) == len(set(prefix_list)), \
-                    'non-unique email (before @) found, disable ignore_suffix'
+        def get_key(email):
+            return email.split('@')[0] if ignore_suffix else email
 
-                prefix_email_dict = dict(zip(prefix_list, email_list))
+        key_scope_list = [get_key(email) for email in self.df_meta.index]
+        if len(key_scope_list) != len(set(key_scope_list)):
+            dupe_list = sorted({key for key in key_scope_list
+                                if key_scope_list.count(key) > 1})
+            raise GradebookError(
+                'two students share an email prefix, pass ignore_suffix='
+                f'False: {", ".join(dupe_list)}')
 
-                return prefix_set, prefix_email_dict
+        key_scope_set = set(key_scope_list)
+        key_target_set = {get_key(email) for email in email_list}
 
-            email_target, _ = discard_suffix(email_list)
-            email_scope, prefix_email_dict = discard_suffix(self.df_meta.index)
-        else:
-            email_scope = set(self.df_meta.index)
-            email_target = set(email_list)
-
-        # warn if any emails not found
-        email_target_missing = email_target - email_scope
-        if email_target_missing:
-            s = '\n'.join(email_target_missing)
+        # warn if any emails not found (sorted: warnings must be stable too)
+        key_missing_set = key_target_set - key_scope_set
+        if key_missing_set:
+            s = '\n'.join(sorted(key_missing_set))
             warn(f'email not found in scope:\n{s}')
 
-            email_scope_extra = email_scope - email_target
-            if email_scope_extra:
-                s = '\n'.join(email_scope_extra)
+            key_extra_set = key_scope_set - key_target_set
+            if key_extra_set:
+                s = '\n'.join(sorted(key_extra_set))
                 warn(f'maybe its one of these?\n{s}')
 
-        # discard rows not in email_list
-        email_list_found = list(email_scope.intersection(email_target))
-        if ignore_suffix:
-            email_list_found = [prefix_email_dict[prefix]
-                                for prefix in email_list_found]
-        self.df_perc = self.df_perc.loc[email_list_found, :]
-        self.df_meta = self.df_meta.loc[email_list_found, :]
-        self.df_lateday = self.df_lateday.loc[email_list_found, :]
+        # discard rows not in email_list, preserving the csv's row order
+        keep_bool_list = [key in key_target_set for key in key_scope_list]
+        idx_keep = self.df_meta.index[keep_bool_list]
+
+        self.df_perc = self.df_perc.loc[idx_keep, :]
+        self.df_meta = self.df_meta.loc[idx_keep, :]
+        self.df_late_minutes = self.df_late_minutes.loc[idx_keep, :]
 
     def remove_thresh(self, min_complete_thresh):
         """ removes assignments which not enough students have submitted
@@ -213,7 +301,7 @@ class Gradebook:
                 self.remove(ass, skip_match=True)
             else:
                 msg = f'   kept: {comp_perc * 100:.0f}% complete {ass}'
-            print(msg)
+            logger.info(msg)
 
     def remove(self, ass, multi=False, skip_match=False):
         """ deletes an assignment
@@ -234,17 +322,15 @@ class Gradebook:
         # normalize assignment name
         if not skip_match:
             ass = self.ass_list.match(ass)
-        ass_idx = self.ass_list.index(ass)
 
-        # remove
-        del self.df_perc[ass]
-        del self.df_lateday[ass]
-        self.ass_list.pop(ass_idx)
-        self.points = np.delete(self.points, ass_idx)
+        # no index bookkeeping: ass_list follows df_perc's columns
+        self.df_perc = self.df_perc.drop(columns=[ass])
+        self.df_late_minutes = self.df_late_minutes.drop(columns=[ass])
+        self.points = self.points.drop(index=[ass])
 
     def get_late_penalty(self, cat, penalty_per_day, excuse_day=0,
                          excuse_day_offset=None, waive_dict=None,
-                         grace_period_minutes=60):
+                         grace_period_minutes=GRACE_DEFAULT):
         """ computes modifier to category mean to incorporate late penalty
 
         Let late_day be the total number of days late (across all hws of one
@@ -276,19 +362,21 @@ class Gradebook:
             s_penalty (pd.Series): index is email.  values are adjustments
         """
         if penalty_per_day < 0:
-            raise AttributeError(
+            raise ConfigError(
                 'penalty_per_day should be positive to lower credit when late')
 
         if waive_dict is None:
             waive_dict = dict()
 
-        # compute late days using the configured grace period
-        df_lateday = self._compute_lateday(
-            grace_period_minutes=grace_period_minutes)
-
-        # get late days across category
+        # get late days across category (waived assignments are already nan in
+        # df_late_minutes, so they carry through as nan here)
         ass_cat_list = list(self.ass_list.match_iter(s_assign=cat))
-        df_late = df_lateday.loc[:, ass_cat_list].copy()
+        if not ass_cat_list:
+            raise ConfigError(
+                f'late_penalty category matches no assignment: "{cat}"')
+
+        df_late = self.get_lateday(
+            grace_period_minutes=grace_period_minutes).loc[:, ass_cat_list]
 
         # waive late days per email / assignment
         for email, ass_list in waive_dict.items():
@@ -300,7 +388,8 @@ class Gradebook:
 
         # get number of excuse days per student
         s_late_day = df_late.sum(axis=1, skipna=True)
-        s_excuse_day = pd.Series(index=s_late_day.index, data=excuse_day)
+        s_excuse_day = pd.Series(index=s_late_day.index, data=excuse_day,
+                                 dtype=float)
         if excuse_day_offset is not None:
             for email, offset in excuse_day_offset.items():
                 email = self._resolve_email(email)
@@ -350,7 +439,7 @@ class Gradebook:
         Returns:
             df_grade (pd.DataFrame): final grade
         """
-        if cat_weight_dict is None or cat_weight_dict == dict():
+        if not cat_weight_dict:
             # all assignments contain ''
             cat_weight_dict = {'': 1}
 
@@ -360,47 +449,52 @@ class Gradebook:
         if cat_drop_dict is None:
             cat_drop_dict = dict()
         else:
-            assert set(cat_drop_dict.keys()).issubset(cat_weight_dict.keys())
+            unknown_set = set(cat_drop_dict.keys()) - set(cat_weight_dict)
+            if unknown_set:
+                raise ConfigError(
+                    f'drop_low category has no weight: '
+                    f'{", ".join(sorted(unknown_set))}')
 
-        # ensure that categories partition assignments (warn if they don't)
-        cat_bool_dict = {cat: np.array([cat in ass for ass in self.ass_list])
-                         for cat in cat_weight_dict.keys()}
-        cat_bool_sum = sum(cat_bool_dict.values())
-        if not (cat_bool_sum == 1).all():
-            # assignment not included in any category
-            ass_not_include = np.array(self.ass_list)[cat_bool_sum < 1]
-            if ass_not_include.size:
-                s = ', '.join(sorted(ass_not_include))
-                warn(f'assignment not in any category: {s}')
+        ass_list = self.ass_list
+        cat_ass_dict = {cat: [ass for ass in ass_list if cat in ass]
+                        for cat in cat_weight_dict}
 
-            # assignment included in more than 1 category
-            ass_over_include = np.array(self.ass_list)[cat_bool_sum > 1]
-            if ass_over_include.size:
-                s = ', '.join(sorted(ass_over_include))
-                warn(f'assignment in multiple categories: {s}')
+        # a category matching nothing is a typo: it would be silently ignored
+        empty_list = sorted(cat for cat, a_list in cat_ass_dict.items()
+                            if not a_list)
+        if empty_list:
+            raise ConfigError(
+                f'category matches no assignment: {", ".join(empty_list)} '
+                f'(assignments are: {", ".join(ass_list)})')
 
-        # extract percentages as array (a bit quicker)
-        perc_all = self.df_perc.values
+        # warn when categories don't partition the assignments
+        cat_count = pd.Series(0, index=list(ass_list))
+        for ass_cat_list in cat_ass_dict.values():
+            cat_count[ass_cat_list] += 1
+        if (cat_count != 1).any():
+            ass_none_list = sorted(cat_count.index[cat_count < 1])
+            if ass_none_list:
+                warn(f'assignment not in any category: '
+                     f'{", ".join(ass_none_list)}')
+            ass_many_list = sorted(cat_count.index[cat_count > 1])
+            if ass_many_list:
+                warn(f'assignment in multiple categories: '
+                     f'{", ".join(ass_many_list)}')
 
-        df_grade = pd.DataFrame({'mean': 0}, index=self.df_perc.index)
+        df_grade = pd.DataFrame({'mean': 0.}, index=self.df_perc.index)
+        weight_total = pd.Series(0., index=self.df_perc.index)
 
-        weight_total = pd.Series(0, index=self.df_perc.index)
-        for cat, cat_bool in cat_bool_dict.items():
-            perc_cat = perc_all[:, cat_bool]
-            _points = self.points[cat_bool]
-
-            # drop lowest n assignments
+        for cat, ass_cat_list in cat_ass_dict.items():
+            perc_cat = self.df_perc.loc[:, ass_cat_list].values
+            point_cat = self.points.loc[ass_cat_list].values
             drop_n = cat_drop_dict.get(cat, 0)
 
             s_mean = f'mean_{cat}'
-            for idx, email in enumerate(self.df_perc.index):
-                # compute mean per student-category
-                _perc = perc_cat[idx, :]
-
-                # average across all assignments
-                df_grade.loc[email, s_mean] = get_mean_drop_low(perc=_perc,
-                                                                weight=_points,
-                                                                drop_n=drop_n)
+            df_grade[s_mean] = pd.Series(
+                [get_mean_drop_low(perc=perc_cat[idx, :], weight=point_cat,
+                                   drop_n=drop_n)
+                 for idx in range(perc_cat.shape[0])],
+                index=self.df_perc.index)
 
             if cat in cat_late_dict:
                 s_unexcused_late, s_penalty = self.get_late_penalty(
@@ -414,27 +508,25 @@ class Gradebook:
                 df_grade[s_mean] = df_grade[s_mean].map(lambda x: max(x, 0))
 
                 # add late days remaining to output
-                df_grade[f'late days remain ({cat})'] = \
-                    - s_unexcused_late
+                df_grade[f'late days remain ({cat})'] = -s_unexcused_late
 
             # add category's contribution to overall mean
             cat_missing = df_grade[s_mean].isna()
             for email in cat_missing.index[cat_missing]:
-                print(
-                    f'{email} has no assignments in category: {cat} (ignored in final mean)')
+                logger.info(f'{email} has no assignments in category: {cat} '
+                            f'(ignored in final mean)')
             weight_total += cat_weight_dict[cat] * ~cat_missing
 
-            cat_mean = df_grade[s_mean].copy()
-            cat_mean.fillna(0, inplace=True)
-            df_grade['mean'] += cat_mean * cat_weight_dict[cat]
+            df_grade['mean'] += df_grade[s_mean].fillna(0) * \
+                cat_weight_dict[cat]
 
-        df_grade['mean'] *= 1 / weight_total
+        # a student with no assignments at all has no meaningful mean
+        df_grade['mean'] = df_grade['mean'].where(weight_total > 0) \
+            / weight_total.where(weight_total > 0)
 
         # compute letter grade
-        def _perc_to_letter(perc):
-            return perc_to_letter(perc, grade_thresh=grade_thresh)
-
-        df_grade['letter'] = df_grade['mean'].map(_perc_to_letter)
+        df_grade['letter'] = df_grade['mean'].map(
+            lambda perc: perc_to_letter(perc, grade_thresh=grade_thresh))
 
         if 'mean_' in df_grade.columns:
             # delete dummy category (equivalent to default behavior)

@@ -1,6 +1,6 @@
 [project]
 name = "gradescope-mean"
-version = "0.0.20"
+version = "0.1.0"
 description = "Utility to average gradescope csv output to final grades"
 authors = [
     {name = "Matt Higger",email = "mhigger@ccs.neu.edu"}
@@ -24,4 +24,11 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
+hypothesis = "^6.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+# warnings are part of this package's user interface (missing emails, config
+# problems).  make them loud in the test suite so they can't be ignored.
+filterwarnings = ["error"]
 

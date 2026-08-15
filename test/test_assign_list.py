@@ -7,22 +7,35 @@ columns = ['skip me', 'H W 1 - max points', 'hw1', 'HW2 - max points', 'hw2']
 
 @pytest.fixture
 def ass_list():
-    return AssignmentList(columns)
+    return AssignmentList.from_columns(columns)
 
 
 class TestAssignmentList:
     def test_normalize(self):
         assert normalize('  A B C 1 2 3') == 'abc123'
 
-    def test_init(self, ass_list):
+    def test_from_columns(self, ass_list):
+        # only columns with a matching ' - max points' are assignments
         ass_list_exp = ['hw1', 'hw2']
         assert ass_list == ass_list_exp
 
-    def test_init_warns_prefix(self):
-        with pytest.warns():
-            l = [AssignmentList.MAX_PTS + s for s in
-                 ('hw1', 'hw10', 'hw_another')]
-            AssignmentList(l)
+    def test_init_is_plain_list(self):
+        # building from known names is side effect free (no filtering, no
+        # warnings) so that it is cheap to derive from a dataframe's columns
+        assert AssignmentList(['hw2', 'hw1']) == ['hw2', 'hw1']
+
+    def test_from_columns_warns_prefix(self):
+        with pytest.warns(UserWarning, match='prefixes'):
+            col_list = [s + AssignmentList.MAX_PTS for s in
+                        ('hw1', 'hw10', 'hw_another')]
+            AssignmentList.from_columns(col_list)
+
+    def test_get_column_set(self):
+        col_set = AssignmentList(['hw1']).get_column_set()
+        assert 'hw1' in col_set
+        assert 'hw1' + AssignmentList.MAX_PTS in col_set
+        assert 'hw1' + AssignmentList.LATE in col_set
+        assert 'hw1' + AssignmentList.SUB_TIME in col_set
 
     def test_match(self, ass_list):
         assert ass_list.match('  hw1  ') == 'hw1'

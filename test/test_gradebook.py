@@ -2,6 +2,7 @@ import pytest
 
 import gradescope_mean
 from gradescope_mean.config import *
+from gradescope_mean.errors import ConfigError, GradebookError
 from gradescope_mean.gradebook import *
 
 test_folder = pathlib.Path(gradescope_mean.__file__).parents[1] / 'test'
@@ -173,7 +174,7 @@ class TestGradebook:
         assert 'hw1' not in gradebook.ass_list
 
     def test_get_late_penalty_negative_raises(self, gradebook):
-        with pytest.raises(AttributeError):
+        with pytest.raises(ConfigError):
             gradebook.get_late_penalty(cat='hw1', penalty_per_day=-0.1)
 
     def test_waive_nonexistent_warns(self, gradebook):
@@ -237,18 +238,18 @@ class TestGradebook:
 
     def test_compute_lateday_default(self, gradebook):
         """Default 60-min grace gives same late days as before"""
-        df_late = gradebook._compute_lateday(grace_period_minutes=60)
+        df_late = gradebook.get_lateday(grace_period_minutes=60)
         np.testing.assert_allclose([0, 1, 2, 3, 4], df_late['hw1'])
 
     def test_compute_lateday_zero_grace(self, gradebook):
         """With 0 grace, any lateness counts"""
-        df_late = gradebook._compute_lateday(grace_period_minutes=0)
+        df_late = gradebook.get_lateday(grace_period_minutes=0)
         # 00:00:00 → 0 days, 24:00:00 → 1 day, etc.
         np.testing.assert_allclose([0, 1, 2, 3, 4], df_late['hw1'])
 
     def test_compute_lateday_large_grace(self, gradebook):
         """Grace period larger than 24h should forgive first day"""
-        df_late = gradebook._compute_lateday(grace_period_minutes=25 * 60)
+        df_late = gradebook.get_lateday(grace_period_minutes=25 * 60)
         # 0h→0, 24h→0 (under 25h grace), 48h→1, 72h→2, 96h→3
         np.testing.assert_allclose([0, 0, 1, 2, 3], df_late['hw1'])
 
@@ -271,7 +272,7 @@ class TestGradebook:
         gb = Gradebook(str(f))
 
         # with default 60-min grace: 49h → 2 days (NOT 3)
-        df_late = gb._compute_lateday(grace_period_minutes=60)
+        df_late = gb.get_lateday(grace_period_minutes=60)
         assert df_late.loc['jane@uni.edu', 'hw1'] == 2
 
     def test_grace_period_minutes_in_late_penalty(self, gradebook):

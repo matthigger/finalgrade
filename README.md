@@ -33,7 +33,7 @@ category:
     exam: 50
 ```
 
-A category is a subset of assignments. The example above gives homework 50% and exams 50% of the final grade. Weights need not sum to 100 — they're normalized automatically — but should be positive.
+A category is a subset of assignments. The example above gives homework 50% and exams 50% of the final grade. Weights need not sum to 100 — they're normalized automatically — but at least one must be positive, and each category must match at least one assignment.
 
 **How assignments map to categories:** each Gradescope assignment name is matched to categories by substring (case/space-insensitive). An assignment named "HW 3" lands in the `hw` category, "Exam - Midterm" lands in `exam`. Every assignment should match exactly one category. By default no categories are created and every assignment is weighted by its Gradescope point value.
 
@@ -103,6 +103,8 @@ assignments:
 
 Replaces each student's `quiz1` score with the maximum percentage among `quiz1`, `quiz1_v2`, and `quiz1_v3`. Useful when you have multiple Gradescope assignments for different versions of the same quiz — each needs its own rubric, but you want a single score for grading. Be sure to also exclude the alternates so they don't double-count. By default nothing is substituted.
 
+Unlike `exclude` (which matches by substring), the names under `substitute` must match a whole assignment name — an unmatched name is reported as an error rather than silently ignored.
+
 ### Waive assignments
 
 ```yaml
@@ -158,6 +160,28 @@ By default every student in Gradescope is included.
 ### Email matching
 
 Everywhere an email appears in the config — `waive`, `waive_late`, `excuse_day_offset`, and `email_list` — matching is done by the **prefix** (everything before `@`). This means `student@husky.neu.edu` in the config will correctly match `student@northeastern.edu` in Gradescope. All comparisons are case-insensitive.
+
+## What gets checked
+
+Grades are hard to eyeball, so a config that can't mean what you intended is
+reported as an error rather than quietly producing plausible-looking numbers:
+
+- a `drop_low` or `late_penalty` category with no entry in `category/weight`
+  (it would never be applied)
+- a category that matches no assignment (usually a typo)
+- category weights that are negative, or that are all zero
+- `grade_thresh` outside 0–1 (writing `93: A` instead of `.93: A` used to give
+  every student the lowest grade), or with no entry reaching 0
+- a `substitute` naming an assignment that doesn't exist
+- the same student email appearing on two rows of the Gradescope export
+
+These are also handled quietly but visibly, with a warning:
+
+- an assignment worth 0 points is excluded from grading (it can only produce
+  meaningless percentages)
+- an email in `waive`, `waive_late`, `excuse_day_offset` or `email_list` that
+  matches no student
+- an assignment that falls into no weighted category, or into more than one
 
 ## Additional Options
 
