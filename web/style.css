@@ -75,6 +75,8 @@ h1 {
   color: var(--ink-soft);
 }
 
+.nowrap { white-space: nowrap; }
+
 .intro li { margin-bottom: .4rem; }
 .intro li::marker { color: var(--ink-faint); }
 .intro strong { color: var(--ink); }
@@ -130,14 +132,16 @@ h2 .sub {
 
 /* ---- header and file picking ---- */
 
+/* the drop box is wide enough to hold "Assignments > Download Grades > CSV"
+   on one line: a path that wraps reads as two steps rather than one */
 .head-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(15rem, 22rem);
+  grid-template-columns: minmax(0, 1fr) minmax(22rem, 33rem);
   gap: 1.5rem;
   align-items: start;
 }
 
-@media (max-width: 780px) {
+@media (max-width: 900px) {
   .head-grid { grid-template-columns: 1fr; }
 }
 
@@ -201,6 +205,7 @@ h2 .sub {
   font-size: .78rem;
   line-height: 1.7;
   color: var(--ink-faint);
+  white-space: nowrap;
 }
 
 .drop-how .where {
