@@ -28,6 +28,17 @@ const state = {
   api: null,
   seed: null,
   yaml: '',
+  // the policy as it exists in a file the reader has -- set when one is
+  // loaded, and again when one is saved.  what "unsaved changes" is measured
+  // against, and null until there has been a file at all
+  savedYaml: null,
+  // the policy as this page first wrote it, before any editing.  an untouched
+  // seed is worth nothing, so it is the one unsaved document not worth
+  // stopping anybody over on the way out
+  seedYaml: null,
+  // something the page did that the check cannot say, kept across redraws
+  // until the reader has dealt with it
+  notice: null,
   csv: null,
   name: null,
   policyName: 'policy.yaml',
@@ -172,27 +183,57 @@ async function findWheels() {
 
 /* --------------------------------------------------------- picking files */
 
-function readFile(file, then) {
-  const reader = new FileReader();
-  reader.onerror = () => showPickError('Could not read that file.');
-  reader.onload = () => then(String(reader.result));
-  reader.readAsText(file);
+function readText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsText(file);
+  });
 }
 
-function takeFile(file) {
+function isYamlName(name) {
+  return /\.(ya?ml)$/i.test(name);
+}
+
+/* Dropping both files in one gesture is the natural thing to do, and the
+ * order they arrive in belongs to the operating system rather than to the
+ * reader.  A policy read before its gradebook has nothing to grade, so the
+ * gradebook is applied first -- and each file is finished before the next is
+ * started, because a FileReader that has merely been kicked off is a
+ * gradebook that is not there yet.  Sorting the calls alone would not do it. */
+async function takeFileList(fileList) {
+  const list = [...fileList].sort(
+    (a, b) => isYamlName(a.name) - isYamlName(b.name));
+
+  for (const file of list) {
+    if (!okToRead(file)) return;
+
+    let text;
+    try {
+      text = await readText(file);
+    } catch (err) {
+      return showPickError(err.message);
+    }
+
+    if (isYamlName(file.name)) useYaml(file.name, text);
+    else useCsv(file.name, text);
+  }
+}
+
+function okToRead(file) {
   $('pick-error').hidden = true;
 
   if (!state.api) {
-    return showPickError('Python is still loading — try again in a moment.');
+    showPickError('Python is still loading — try again in a moment.');
+    return false;
   }
   if (file.size > 40e6) {
-    return showPickError('That file is over 40 MB, which is far larger than ' +
+    showPickError('That file is over 40 MB, which is far larger than ' +
       'any gradebook — is it the right one?');
+    return false;
   }
-
-  const isYaml = /\.(ya?ml)$/i.test(file.name);
-  readFile(file, (text) =>
-    isYaml ? useYaml(file.name, text) : useCsv(file.name, text));
+  return true;
 }
 
 function showPickError(text) {
@@ -205,6 +246,10 @@ function useCsv(name, text) {
   const info = toJs(state.api.load_csv(text, name));
   if (!info.ok) return showPickError(info.error);
 
+  // a gradebook is the answer to every complaint the picker makes, and the
+  // example links reach here without having gone past one
+  $('pick-error').hidden = true;
+
   // a canvas gradebook arriving alongside a gradescope one is the file to
   // merge grades back into, not a replacement for what is being graded
   if (state.csv && info.source === 'canvas' && !state.sourceIsCanvas) {
@@ -214,6 +259,12 @@ function useCsv(name, text) {
     drawExport();
     return;
   }
+
+  // re-exporting the gradebook is routine -- a regrade, a late submission,
+  // one more assignment -- and seeding over the policy would throw away every
+  // weight and waiver set so far, with nothing on the page to get them back.
+  // the new numbers are what was asked for; the grading was not
+  const keep = !!state.yaml;
 
   state.csv = text;
   state.name = name;
@@ -233,10 +284,27 @@ function useCsv(name, text) {
   }
 
   drawRoster();
-  setYaml(state.api.seed_policy(text, name));
+
+  if (keep) {
+    state.notice = 'Your policy was kept — this gradebook replaced the last ' +
+      'one, not your grading. Anything new in it is unweighted until you ' +
+      'place it.';
+  } else {
+    seedPolicy();
+  }
 
   $('work').hidden = false;
   refresh();
+}
+
+/* A policy that knows this course's assignments, and the one document the
+ * page is allowed to write without being asked.  Recorded as the seed so the
+ * exit guard can tell it apart from work: nobody has lost anything yet. */
+function seedPolicy() {
+  setYaml(state.api.seed_policy(state.csv, state.name));
+  state.seedYaml = state.yaml;
+  state.savedYaml = null;
+  state.notice = null;
 }
 
 function useYaml(name, text) {
@@ -246,6 +314,9 @@ function useYaml(name, text) {
   }
   state.policyName = name;
   setYaml(text);
+  // it came from a file, so that file is what unsaved is measured against
+  state.savedYaml = text;
+  state.notice = null;
   refresh();
 }
 
@@ -268,7 +339,12 @@ function applyEdit(action, args) {
   const res = toJs(state.api.edit_policy(state.yaml, action,
                                          JSON.stringify(args || {})));
   // an edit that cannot apply leaves the document exactly as it was
-  if (res.ok) setYaml(res.yaml);
+  if (res.ok) {
+    setYaml(res.yaml);
+    // editing the kept policy is deciding to keep it, so the offer to
+    // replace it has been answered and should stop taking up room
+    state.notice = null;
+  }
   refresh();
 }
 
@@ -284,9 +360,20 @@ function check() {
   // whatever belongs to one assignment is shown on that assignment; what is
   // left is about the file, the roster or the letters, and has nowhere else
   // to go
-  $('messages').innerHTML =
+  $('messages').innerHTML = noticeHtml() +
     msgList(rep.error_list, 'error') + msgList(rep.warn_list, 'warn');
   return rep.ok;
+}
+
+/* The check's messages are redrawn from the document on every edit.  This one
+ * is not about the document -- it reports what the page did with a file, and
+ * carries the only way back from it, so it outlives the redraw. */
+function noticeHtml() {
+  if (!state.notice) return '';
+  return '<div class="msg note"><span class="what">note</span>' +
+    escapeHtml(state.notice) +
+    '<button type="button" id="reseed" class="link">start a fresh policy' +
+    '</button></div>';
 }
 
 function msgList(list, kind) {
@@ -1338,10 +1425,38 @@ function trace(hist, name, color) {
  * page redraws -- which happens on every edit -- and a link clicked against a
  * revoked url downloads as a uuid with no extension, which is worse than not
  * offering it.  The content is always current for the same reason. */
-function fileLink(key, name, note) {
+function fileLink(key, name, note, noteClass) {
   return `<a href="#" data-file="${key}" download="${escapeHtml(name)}">` +
     `${escapeHtml(name)}</a>` +
-    (note ? `<span class="file-note">${escapeHtml(note)}</span>` : '');
+    (note ? `<span class="file-note ${noteClass || ''}">` +
+      `${escapeHtml(note)}</span>` : '');
+}
+
+/* Three answers to "is what I have done in a file yet", of which only the
+ * last is a problem.  An untouched seed is told apart from work on purpose:
+ * warning about a document the page wrote by itself, and that the reader has
+ * not touched, is how an indicator teaches people to ignore it. */
+function saveState() {
+  if (state.yaml === state.savedYaml) return 'clean';
+  if (state.savedYaml === null && state.yaml === state.seedYaml) return 'fresh';
+  return 'dirty';
+}
+
+/* the link is the save button, which the page had never said anywhere */
+const SAVE_NOTE = {
+  clean: 'saved',
+  fresh: 'not saved yet — click to save',
+  dirty: 'unsaved changes — click to save',
+};
+
+/* An anchor download reports nothing back: not that it succeeded, and not
+ * that the reader cancelled a save dialog.  So this is the page believing it
+ * did what it was told.  Believing it is still the better bet -- browsers
+ * save without asking by default, and an indicator that can never reach
+ * 'saved' is one nobody reads by the second afternoon. */
+function markSaved(text) {
+  state.savedYaml = text;
+  drawFiles();
 }
 
 function fileOf(key) {
@@ -1360,10 +1475,12 @@ function fileOf(key) {
 function drawFiles() {
   if (!state.csv) return ($('files').innerHTML = '');
 
+  const save = saveState();
   const part = [
     '<span class="file-k">files</span>',
     fileLink('csv', state.name, state.facts),
-    fileLink('yaml', state.policyName, 'your whole grading policy'),
+    fileLink('yaml', state.policyName, SAVE_NOTE[save],
+             `save-state is-${save}`),
   ];
 
   if (state.canvasText && !state.sourceIsCanvas) {
@@ -1403,6 +1520,13 @@ function drawCanvasDrop() {
       : ' ') +
     '<button type="button" id="canvas-browse" class="link">use a different ' +
     'file</button>';
+}
+
+/* this box has its own error line, which is where its own trouble belongs */
+function takeCanvasFile(file) {
+  readText(file)
+    .then((text) => setCanvasTemplate(file.name, text))
+    .catch((err) => ($('export-hint').textContent = err.message));
 }
 
 function setCanvasTemplate(name, text) {
@@ -1548,7 +1672,7 @@ function pct(x) {
 
 $('browse').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', (e) => {
-  if (e.target.files[0]) takeFile(e.target.files[0]);
+  if (e.target.files.length) takeFileList(e.target.files);
   e.target.value = '';
 });
 
@@ -1564,7 +1688,7 @@ const drop = $('drop');
     drop.classList.remove('over');
   }));
 drop.addEventListener('drop', (e) => {
-  for (const file of e.dataTransfer.files) takeFile(file);
+  takeFileList(e.dataTransfer.files);
 });
 
 /* the same hundred students, exported by each platform.  the pair is worth
@@ -2008,8 +2132,21 @@ $('files').addEventListener('click', (e) => {
   const key = e.target.getAttribute('data-file');
   if (key === null) return;
   e.preventDefault();
+
   const part = fileOf(key);
-  if (part) download(part[0], part[1], part[2]);
+  if (!part) return;
+  download(part[0], part[1], part[2]);
+
+  // the text that went out, not whatever the document says by the time this
+  // is read: those are the same right now, and an edit mid-download would
+  // make marking the live document a lie
+  if (key === 'yaml') markSaved(part[0]);
+});
+
+$('messages').addEventListener('click', (e) => {
+  if (e.target.id !== 'reseed') return;
+  seedPolicy();
+  refresh();
 });
 
 /* the export box takes one kind of file and means one thing by it, so a csv
@@ -2027,14 +2164,14 @@ const canvasDrop = $('canvas-drop');
   }));
 canvasDrop.addEventListener('drop', (e) => {
   const file = e.dataTransfer.files[0];
-  if (file) readFile(file, (text) => setCanvasTemplate(file.name, text));
+  if (file) takeCanvasFile(file);
 });
 canvasDrop.addEventListener('click', (e) => {
   if (e.target.id === 'canvas-browse') $('canvas-file').click();
 });
 $('canvas-file').addEventListener('change', (e) => {
   const file = e.target.files[0];
-  if (file) readFile(file, (text) => setCanvasTemplate(file.name, text));
+  if (file) takeCanvasFile(file);
   e.target.value = '';
 });
 
@@ -2053,6 +2190,19 @@ $('mode').addEventListener('click', (e) => {
   if (!mode || e.target.disabled) return;
   state.mode = mode;
   drawInspector();
+});
+
+/* This tab is the only place the policy exists until it is downloaded, and a
+ * closed tab takes it with it -- an afternoon of weights and waivers, gone to
+ * a stray ctrl-w.  Only unsaved editing is worth stopping anybody over: a
+ * saved document is not at risk, and a seed nobody has touched is not work.
+ *
+ * The browser picks the wording; nothing said here is shown. */
+window.addEventListener('beforeunload', (e) => {
+  if (!state.csv || saveState() !== 'dirty') return;
+  e.preventDefault();
+  // older browsers want the property set, and one of the two always lands
+  e.returnValue = '';
 });
 
 boot();
