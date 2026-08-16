@@ -7,9 +7,11 @@ package to install, and needs to be told its filename (which carries a
 version).  So: build a wheel, copy the page next to it, write wheel.json.
 
     python web/build.py [--out _site]
+    python -m http.server -d _site
 
 Serve the result with any static file server; opening index.html straight
-off disk will not work, because it loads a module over http.
+off disk will not work, because it loads a module over http.  Pushing to
+main deploys it (.github/workflows/pages.yml).
 """
 import argparse
 import json

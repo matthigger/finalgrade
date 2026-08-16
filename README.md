@@ -108,10 +108,7 @@ finalgrade banner grade_full.csv 202310 -c 12345 -c 67890
 See [doc/upload_canvas.md](doc/upload_canvas.md) and
 [doc/upload_banner.md](doc/upload_banner.md).
 
-## Reference
+## Policy reference
 
-- **[doc/policy.md](doc/policy.md)** — every setting a `policy.yaml` can hold,
-  and everything that gets checked.
-- Building the site: `python web/build.py` writes `_site/`, then
-  `python -m http.server -d _site`. Pushing to `main` deploys it. (Opening
-  `index.html` off disk won't work — it loads a module over http.)
+**[doc/policy.md](doc/policy.md)** — every setting a `policy.yaml` can hold, and
+everything that gets checked.
