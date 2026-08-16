@@ -70,23 +70,6 @@ class TestMainCLI:
         main(args)
         assert (tmp_path / 'late.csv').exists()
 
-    def test_plot_default_name(self, tmp_path):
-        """--plot without a filename should use hist.html"""
-        f_scope, f_policy = _copy_test_data(tmp_path)
-        args = parser.parse_args([
-            'grade', f_scope, '--policy', f_policy, '--plot', '-q'])
-        main(args)
-        assert (tmp_path / 'hist.html').exists()
-
-    def test_plot_custom_name(self, tmp_path):
-        """--plot with a filename should use that name"""
-        f_scope, f_policy = _copy_test_data(tmp_path)
-        args = parser.parse_args([
-            'grade', f_scope, '--policy', f_policy, '--plot', 'my_hist.html',
-            '-q'])
-        main(args)
-        assert (tmp_path / 'my_hist.html').exists()
-
     def test_resolve_config_existing(self, tmp_path):
         """Without --policy, should pick up existing policy.yaml"""
         f_scope, f_policy = _copy_test_data(tmp_path)

@@ -45,10 +45,6 @@ grade_parser.add_argument(
     help='output CSV path (default: grade_full.csv in same directory as '
          'the Gradescope CSV)')
 grade_parser.add_argument(
-    '--plot', dest='f_hist', nargs='?', const='hist.html', default=None,
-    help='generate histogram HTML per assignment category '
-         '(default filename: hist.html)')
-grade_parser.add_argument(
     '--late_csv', dest='f_late_csv', default=None,
     help='output CSV of late days per student-assignment pair')
 grade_parser.add_argument(
@@ -192,15 +188,6 @@ def cmd_grade(args):
         df_lateday = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
         df_lateday.to_csv(f_late.with_suffix('.csv'))
         logger.info(f'wrote {f_late}')
-
-    # histogram
-    if args.f_hist:
-        fig = finalgrade.plot_hist(
-            df_grade_full=df_grade_full,
-            cat_weight_dict=policy.cat_weight_dict)
-        f_html = folder / args.f_hist
-        fig.write_html(str(f_html), include_plotlyjs='cdn')
-        logger.info(f'wrote {f_html}')
 
 
 
