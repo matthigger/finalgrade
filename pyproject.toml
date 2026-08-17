@@ -1,6 +1,6 @@
 [project]
 name = "finalgrade"
-version = "0.2.0"
+version = "0.2.1"
 description = "Final course grades from a Gradescope or Canvas csv export, by a grading policy you write down once"
 authors = [
     {name = "Matt Higger",email = "mhigger@ccs.neu.edu"}

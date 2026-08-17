@@ -331,6 +331,55 @@ class Policy:
                 'grade_thresh needs an entry at 0 so that every grade maps '
                 f'to a letter, lowest given is {min(self.grade_thresh)}')
 
+    def _validate_late(self):
+        """ validates each late_penalty block against get_late_penalty()
+
+        penalty_per_day is a fraction like every other rate in this file, so
+        "15" meaning 15% is a hundredfold penalty: enough to zero a class off
+        a single day of lateness.  check_key() reads the key names here;
+        these are the values behind them.
+        """
+        where = '/'.join(YAML_KEY_DICT['cat_late_dict'])
+        for cat, late_dict in self.cat_late_dict.items():
+            if not isinstance(late_dict, dict):
+                raise PolicyError(
+                    f'{where}/{cat} must be a section with '
+                    f'{", ".join(LATE_KEY_TUP)} indented below it, got '
+                    f'{late_dict!r}')
+
+            # a block with no rate applies no penalty, so it reads as a
+            # policy that was set and did nothing
+            if 'penalty_per_day' not in late_dict:
+                raise PolicyError(
+                    f'{where}/{cat} needs a penalty_per_day, got only '
+                    f'{", ".join(sorted(late_dict)) or "an empty section"}')
+
+            penalty = late_dict['penalty_per_day']
+            if not self._is_number(penalty) or not 0 <= penalty <= 1:
+                raise PolicyError(
+                    f'penalty_per_day must be a fraction between 0 and 1, '
+                    f'got {penalty!r} for "{cat}" (write .15 rather than 15)')
+
+            for key in ('excuse_day', 'grace_period_minutes'):
+                val = late_dict.get(key)
+                if val is not None and (not self._is_number(val) or val < 0):
+                    raise PolicyError(
+                        f'{key} must be a non-negative number, got {val!r} '
+                        f'for "{cat}"')
+
+            offset_dict = late_dict.get('excuse_day_offset')
+            if offset_dict is None:
+                continue
+            if not isinstance(offset_dict, dict):
+                raise PolicyError(
+                    f'excuse_day_offset must map an email to a number of '
+                    f'days, got {offset_dict!r} for "{cat}"')
+            for email, offset in offset_dict.items():
+                if not self._is_number(offset):
+                    raise PolicyError(
+                        f'excuse_day_offset must be a number of days, got '
+                        f'{offset!r} for {email} in "{cat}"')
+
     def _validate(self):
         """ validates policy values against each other (no gradebook needed)
         """
@@ -371,6 +420,9 @@ class Policy:
                 raise PolicyError(
                     f'exclude_complete_thresh must be between 0 and 1, '
                     f'got {t!r}')
+
+        # each late_penalty block is passed to get_late_penalty() as kwargs
+        self._validate_late()
 
         if self.grade_thresh is not None:
             self._validate_grade_thresh()

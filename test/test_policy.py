@@ -169,6 +169,78 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match='exclude_complete_thresh'):
             Policy(exclude_complete_thresh=1.5)
 
+    # late_penalty values.  a late_penalty category needs a weight too, else
+    # _check_category_keys raises first and these would pass for the wrong
+    # reason
+    @staticmethod
+    def _late(late_dict):
+        return Policy(cat_weight_dict={'hw': 1},
+                      cat_late_dict={'hw': late_dict})
+
+    def test_whole_number_penalty_per_day_raises(self):
+        """15 meaning 15% is a hundredfold penalty, not a valid rate"""
+        with pytest.raises(ValueError, match='write .15 rather than 15'):
+            self._late({'penalty_per_day': 15})
+
+    def test_fraction_penalty_per_day_accepted(self):
+        """the same rate written as a fraction is what was meant"""
+        policy = self._late({'penalty_per_day': .15})
+        assert policy.cat_late_dict['hw']['penalty_per_day'] == .15
+
+    def test_penalty_per_day_of_one_accepted(self):
+        """a full assignment per late day is a rate, not an error"""
+        policy = self._late({'penalty_per_day': 1})
+        assert policy.cat_late_dict['hw']['penalty_per_day'] == 1
+
+    def test_negative_penalty_per_day_raises(self):
+        """a negative rate would raise credit for being late"""
+        with pytest.raises(ValueError, match='penalty_per_day'):
+            self._late({'penalty_per_day': -.1})
+
+    def test_non_numeric_penalty_per_day_raises(self):
+        with pytest.raises(ValueError, match='penalty_per_day'):
+            self._late({'penalty_per_day': 'a lot'})
+
+    def test_missing_penalty_per_day_raises(self):
+        """a late_penalty block with no rate applies no penalty at all"""
+        with pytest.raises(ValueError, match='needs a penalty_per_day'):
+            self._late({'excuse_day': 3})
+
+    def test_negative_excuse_day_raises(self):
+        with pytest.raises(ValueError, match='excuse_day'):
+            self._late({'penalty_per_day': .1, 'excuse_day': -3})
+
+    def test_non_numeric_grace_period_raises(self):
+        with pytest.raises(ValueError, match='grace_period_minutes'):
+            self._late({'penalty_per_day': .1,
+                        'grace_period_minutes': 'soon'})
+
+    def test_late_penalty_not_a_mapping_raises(self):
+        """`late_penalty: {hw: 15}` names no setting at all"""
+        with pytest.raises(ValueError, match='indented below it'):
+            self._late(15)
+
+    def test_excuse_day_offset_not_a_mapping_raises(self):
+        with pytest.raises(ValueError, match='excuse_day_offset'):
+            self._late({'penalty_per_day': .1, 'excuse_day_offset': 4})
+
+    def test_non_numeric_excuse_day_offset_raises(self):
+        with pytest.raises(ValueError, match='excuse_day_offset'):
+            self._late({'penalty_per_day': .1,
+                        'excuse_day_offset': {'a@b.edu': 'two'}})
+
+    def test_whole_number_penalty_from_file_raises(self, tmp_path):
+        """the path a grader actually takes: a policy file, then check"""
+        f_policy = tmp_path / 'policy.yaml'
+        f_policy.write_text('category:\n'
+                            '  weight:\n'
+                            '    hw: 100\n'
+                            '  late_penalty:\n'
+                            '    hw:\n'
+                            '      penalty_per_day: 15\n')
+        with pytest.raises(ValueError, match='write .15 rather than 15'):
+            Policy.from_file(f_policy)
+
     def test_null_values_in_yaml(self, tmp_path):
         """Policy with all nulls (as in default) should load cleanly"""
         policy_content = """\
