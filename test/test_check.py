@@ -219,3 +219,27 @@ class TestCli:
         main(args)
 
         assert not (f_scope_std.parent / 'grade_full.csv').exists()
+
+    def test_check_demands_a_policy(self, f_scope_std):
+        """ the policy is named outright: there is nothing to learn from a
+        report on whichever file happened to be lying beside the csv """
+        from finalgrade.__main__ import parser
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(['check', str(f_scope_std)])
+
+        assert exc_info.value.code == 2
+
+    def test_check_writes_no_policy(self, f_scope_std):
+        """ a missing policy is an error, not a file this command seeds """
+        from finalgrade.__main__ import main, parser
+
+        f_policy = f_scope_std.parent / 'policy.yaml'
+        args = parser.parse_args(
+            ['check', str(f_scope_std), '--policy', str(f_policy)])
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(args)
+
+        assert exc_info.value.code == 2
+        assert not f_policy.exists()

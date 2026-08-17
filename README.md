@@ -62,18 +62,31 @@ The same code, same policy file, same results.
 
 ```bash
 finalgrade grade scope.csv                        # grades, and seeds a policy.yaml
-finalgrade check scope.csv                        # what does this policy actually do?
-finalgrade grade scope.csv --policy policy.yaml   # with your edits
+$EDITOR policy.yaml                               # weights, drops, late rules
+finalgrade check scope.csv --policy policy.yaml   # what will that policy do?
+finalgrade grade scope.csv --policy policy.yaml   # grade with it
 ```
+
+The seeded `policy.yaml` lists your assignments by the names a policy has to
+use and suggests a category split, commented out. Editing it is the middle
+step — until you do, every assignment counts in proportion to its own points.
 
 `check` answers "what will this do?" without computing any grades, reports
 every problem at once, and exits non-zero when grading would fail — so it
-works in a script:
+works in a script. It wants the policy named outright and will not write one
+for you: a report on a file finalgrade just seeded tells you only what
+finalgrade guessed.
 
-    $ finalgrade check scope.csv
+    $ finalgrade check scope.csv --policy policy.yaml
+    grade source : scope.csv (gradescope)
+    students     : 5
+    assignments  : 4 graded, 0 excluded
+
     assignment  points  submitted  category
     ----------  ------  ---------  ------------------------------------
     hw1         1       1/5        hw
+    hw2         2       2/5        hw
+    hw3         3       5/5        hw
     quiz1       4       5/5        (none) <- not graded in any category
 
     category  weight  drop  late                assignments
@@ -81,8 +94,9 @@ works in a script:
     hw        50.0%   1     15%/day, 3 excused  hw1, hw2, hw3
     exam      50.0%   -     -                   (none) <- matches no assignment
 
-    error: category matches no assignment: exam
-    warn : assignment not in any category: quiz1
+    error: category matches no assignment: exam (assignments are: hw1, hw2, hw3, quiz1)
+
+    policy has an error, grading would stop here
 
 Other flags: `-o` output path, `--late_csv` late days per student-assignment,
 `--per_student` a csv each, `--new-policy` a fresh one, `-q` quiet. Run

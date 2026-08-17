@@ -10,7 +10,7 @@ import pandas as pd
 
 import finalgrade
 from finalgrade.audit import build_log, late_detail, student_frame
-from finalgrade.errors import FinalgradeError
+from finalgrade.errors import FinalgradeError, PolicyError
 
 logger = logging.getLogger('finalgrade')
 
@@ -63,8 +63,11 @@ check_parser.add_argument(
     'f_scope', type=str,
     help='Gradescope CSV, or a Canvas gradebook export')
 check_parser.add_argument(
-    '--policy', dest='f_policy', default=None,
-    help='YAML policy file (default: policy.yaml beside the CSV)')
+    '--policy', dest='f_policy', required=True,
+    help='YAML policy file to check. Required: "finalgrade grade" seeds a '
+         'policy beside the csv, but check will not write one for you — a '
+         'report on a file finalgrade just invented answers no question you '
+         'had')
 check_parser.add_argument(
     '-q', '--quiet', action='store_true',
     help='suppress informational output')
@@ -134,8 +137,16 @@ def cmd_check(args):
     """Execute the 'check' subcommand."""
     _setup_logging(quiet=True)
 
-    folder = pathlib.Path(args.f_scope).resolve().parent
-    policy = _resolve_config(args, folder)
+    # the policy is named outright, and a missing one is an error rather than
+    # a file this command quietly writes: check reports on the policy you
+    # wrote, and seeding one here would only report back the defaults
+    f_policy = pathlib.Path(args.f_policy)
+    if not f_policy.is_file():
+        raise PolicyError(
+            f'no such policy file: {f_policy} — '
+            f'"finalgrade grade {args.f_scope}" writes one beside the csv')
+
+    policy = finalgrade.Policy.from_file(f_policy)
 
     report = finalgrade.build_report(policy=policy, f_grade=args.f_scope)
     print(finalgrade.render(report))
