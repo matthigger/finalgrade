@@ -119,10 +119,13 @@ finalgrade canvas grade_full.csv canvas.csv --scale100
 finalgrade banner grade_full.csv 202310 -c 12345 -c 67890
 ```
 
-See [doc/upload_canvas.md](doc/upload_canvas.md) and
-[doc/upload_banner.md](doc/upload_banner.md).
+See [doc/upload_canvas.md][canvas] and [doc/upload_banner.md][banner].
 
 ## Policy reference
 
-**[doc/policy.md](doc/policy.md)** — every setting a `policy.yaml` can hold, and
+**[doc/policy.md][policy]** — every setting a `policy.yaml` can hold, and
 everything that gets checked.
+
+[canvas]: https://github.com/matthigger/finalgrade/blob/main/doc/upload_canvas.md
+[banner]: https://github.com/matthigger/finalgrade/blob/main/doc/upload_banner.md
+[policy]: https://github.com/matthigger/finalgrade/blob/main/doc/policy.md
