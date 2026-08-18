@@ -58,8 +58,21 @@ class TestWhatHappened:
         assert late
         assert any('hw1' in e['text'] and 'h' in e['text'] for e in late)
 
-    def test_the_days_and_the_arithmetic_are_separate_lines(self, graded):
-        """ two facts, and the second is the one nobody does in their head """
+    def test_the_days_and_the_arithmetic_are_separate_lines(self,
+                                                            f_scope_std):
+        """ two facts, and the second is the one nobody does in their head
+
+        No drop_low here: the shared fixture discards the only hw carol was
+        late on, which under "a score that does not count charges nothing"
+        leaves her with no penalty to print a second line about.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            graded = web.grade(f_scope_std.read_text(),
+                               'category:\n  weight:\n    hw: 1\n'
+                               '  late_penalty:\n    hw:\n'
+                               '      penalty_per_day: .2\n'
+                               '      excuse_day: 1\n')
         log = log_of(graded, 'carol@u.edu')
 
         days = next(e for e in log

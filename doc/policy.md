@@ -57,6 +57,7 @@ Only each student's 2 highest puzzle scores count, however many they attempted. 
 Three things follow:
 
 - **`waive` cannot lower the number required.** A student excused from one puzzle still needs their best 2, out of the five left. (Which is usually what you want: being let off one of six changes nothing when only two count.)
+- **A late puzzle that isn't counted costs nothing**, which is the point of attempting freely — but a late day on one of the 2 that *are* counted is charged over those 2, so it costs more here than the same rate would in a category of six.
 - **Mid-term grades are deflated**, the same way an ungraded assignment deflates any average — if only one puzzle has been released and 2 count, nobody can be above 50% yet.
 - **Watch `exclude_complete_thresh`.** A puzzle a third of the class attempted is exactly what that threshold is built to throw out, and here it is the expected submission rate rather than a sign of a broken assignment. Keep the threshold below the rate you expect, or drop it and `exclude` by name instead.
 
@@ -77,6 +78,7 @@ category:
 ```
 
 - **`penalty_per_day: 0.15`** — every unexcused [late day](https://help.gradescope.com/article/ude437e7li-faq-late-submissions) costs 15% of an average HW's point value. Write it as a fraction: `15` would be a hundredfold penalty, so anything outside 0–1 is refused rather than graded. For example, if one HW is 3 unexcused days late, the student loses 45% of the average HW points. The penalty is spread across the category mean (it won't appear on any single HW score, but shows up in the `mean_hw` column of the output).
+  - **Only the scores that count are involved**, on both sides of that. An assignment a student was waived from, or that `drop_low` discarded, or that `keep_high` didn't count, charges no late days — and is not one of the HWs the penalty is an average over. Being late on work that isn't in your grade costs nothing, because there is nothing for it to cost. So with 4 HWs where the lowest is dropped, a late day costs 15% ÷ 3, and if the dropped HW was the late one it costs nothing at all.
   - **`grace_period_minutes: 60`** (optional, default 60) — minutes of grace before lateness starts counting. A submission 59 minutes late uses 0 late days; one at 24 hours 5 minutes uses 1 late day (not 2). Set to `0` to disable the grace period.
 - **`excuse_day: 3`** — every student gets 3 free late days across all HWs before penalties kick in. (Helps avoid emails over deadline minutiae.)
 - **`excuse_day_offset`** — adjust the excuse-day count per student, useful for DRC accommodations. Values are additive: in the example above `student0` has 0 excuse days (3 + (−3)) and `student1` has 7 (3 + 4).
@@ -168,7 +170,7 @@ waive:
   student1@uni.edu: hw1, hw2, hw3
 ```
 
-Waives assignments for individual students. The final grade is computed as if the work was never assigned, and any associated late penalties are also waived. By default nothing is waived.
+Waives assignments for individual students. The final grade is computed as if the work was never assigned: it charges no late days, and it is not counted among the assignments a late penalty is an average over, so a student waived from one of three HWs has each late day charged over the two that are left. By default nothing is waived.
 
 ### Waive late penalties
 

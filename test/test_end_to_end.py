@@ -115,9 +115,10 @@ class TestFeatureInteractions:
             cat_late_dict={'hw': {'penalty_per_day': .15,
                                   'excuse_day': 0}})(f_scope_std)
         # carol's hw1 is gone: mean_hw = 12/20 = .6, and only hw2's single
-        # late day remains -> penalty .15*1/3 = .05  ->  .55
+        # late day remains.  the day is a fraction of the two hw that count
+        # for her, not of all three -> penalty .15*1/2 = .075  ->  .525
         assert df.loc['carol@u.edu', 'late days remain (hw)'] == -1
-        assert df.loc['carol@u.edu', 'mean_hw'] == pytest.approx(.55)
+        assert df.loc['carol@u.edu', 'mean_hw'] == pytest.approx(.525)
 
     def test_waive_late_keeps_score_drops_penalty(self, f_scope_std):
         """ waive_late forgives lateness but keeps the score """

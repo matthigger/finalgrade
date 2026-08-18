@@ -76,7 +76,9 @@ email_list: null
 #         student@uni.edu: 4
 
 # what this does:
-# each unexcused late day costs 15% of the average hw.
+# each unexcused late day costs 15% of an average hw -- averaged over the
+# hw that count for that student, since a waived or dropped assignment
+# charges no late days and is not one of them.
 # every student gets 3 free late days across all hw assignments.
 # submissions within 60 minutes of the deadline are not counted as late.
 # student@uni.edu gets 4 extra excuse days (7 total), e.g. for a DRC

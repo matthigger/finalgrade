@@ -19,7 +19,8 @@ import warnings
 import pandas as pd
 
 from . import edit
-from .audit import build_log, late_detail, student_frame
+from .audit import (build_log, count_frame_dict, counted_set, late_detail,
+                    student_frame)
 from .check import build_report, render
 from .policy import F_POLICY_DEFAULT, Policy
 from .errors import FinalgradeError
@@ -370,6 +371,7 @@ def _graded_student_list(gradebook, df_grade, policy, prepare_log=None):
     meta = gradebook.df_meta
     cat_list = list(policy.cat_weight_dict)
     late_dict, day_dict = late_detail(gradebook, policy)
+    count_dict = count_frame_dict(gradebook, policy)
     log_dict = build_log(gradebook, policy, df_grade,
                          log=prepare_log, late_dict=late_dict)
 
@@ -393,6 +395,7 @@ def _graded_student_list(gradebook, df_grade, policy, prepare_log=None):
             ass_dict={ass: val(row, ass) for ass in gradebook.ass_list},
             ass_list=_student_ass_list(
                 gradebook, policy, email, row, day_dict.get(str(email), {}),
+                counted_set(count_dict, email),
                 late_cat_set=frozenset(policy.cat_late_dict)),
             late_dict={cat: d.get(email) for cat, d in late_dict.items()},
             late_day_dict=day_dict.get(str(email), {}),
@@ -408,7 +411,7 @@ def _cat_of(policy, ass):
 
 
 def _student_ass_list(gradebook, policy, email, row, day_dict,
-                      late_cat_set=frozenset()):
+                      counted=frozenset(), late_cat_set=frozenset()):
     """ one record per assignment for one student, with why it is what it is
 
     A zero on screen can mean three different things -- nothing handed in, a
@@ -433,9 +436,11 @@ def _student_ass_list(gradebook, policy, email, row, day_dict,
         out_list.append(dict(
             name=ass,
             category=cat_hit[0] if cat_hit else None,
-            # only where a penalty exists is lateness a thing that acts on
-            # the grade; elsewhere it is trivia
-            late_counts=any(c in late_cat_set for c in cat_hit),
+            # only where a penalty exists, and only on a score that is in
+            # this student's grade, is lateness a thing that acts on it;
+            # elsewhere it is trivia
+            late_counts=(any(c in late_cat_set for c in cat_hit)
+                         and ass in counted),
             late_minutes=0 if pd.isna(minutes) else int(minutes),
             perc=None if pd.isna(perc) else float(perc),
             submitted=submitted,

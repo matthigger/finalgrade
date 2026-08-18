@@ -7,7 +7,7 @@ import pandas as pd
 
 from .assign_list import AssignmentList, AssignmentNotFoundError, normalize
 from .errors import PolicyError, GradebookError
-from .get_mean_drop_low import get_mean_drop_low
+from .get_mean_drop_low import get_count_idx, get_mean_drop_low
 from .perc_to_letter import perc_to_letter
 
 logger = logging.getLogger('finalgrade')
@@ -588,9 +588,46 @@ class Gradebook:
         if self.df_submit is not None and ass in self.df_submit.columns:
             self.df_submit = self.df_submit.drop(columns=[ass])
 
+    def get_count_frame(self, cat, drop_n=0, keep_n=0, extra_list=None):
+        """ which assignments are part of each student's mean of a category
+
+        The same decision the mean is made of, so that a late penalty can
+        charge days on the work that counted and nothing else: an assignment
+        that is not part of a student's grade is not one they can be late on,
+        and is not one of the assignments a late day is a fraction of.
+
+        Args:
+            cat (str): category, matched as a substring of assignment names
+            drop_n (int): the category's drop_low
+            keep_n (int): the category's keep_high
+            extra_list (list): assignments that are extra credit
+
+        Returns:
+            df_count (pd.DataFrame): bool, index is email, one column per
+                assignment in cat, True where it counts for that student
+        """
+        ass_cat_list = list(self.ass_list.match_iter(s_assign=cat))
+        extra_set = match_set(self.ass_list, extra_list)
+        extra_cat = [ass in extra_set for ass in ass_cat_list]
+
+        perc_cat = self.df_perc.loc[:, ass_cat_list].values
+        point_cat = self.points.loc[ass_cat_list].values
+
+        row_list = []
+        for idx in range(perc_cat.shape[0]):
+            count = np.zeros(len(ass_cat_list), dtype=bool)
+            count[get_count_idx(perc=perc_cat[idx, :], weight=point_cat,
+                                drop_n=drop_n, keep_n=keep_n,
+                                extra=extra_cat)] = True
+            row_list.append(count)
+
+        return pd.DataFrame(row_list, index=self.df_perc.index,
+                            columns=ass_cat_list, dtype=bool)
+
     def get_late_penalty(self, cat, penalty_per_day, excuse_day=0,
                          excuse_day_offset=None, waive_dict=None,
-                         grace_period_minutes=GRACE_DEFAULT):
+                         grace_period_minutes=GRACE_DEFAULT,
+                         df_count=None):
         """ computes modifier to category mean to incorporate late penalty
 
         Let late_day be the total number of days late (across all hws of one
@@ -601,6 +638,12 @@ class Gradebook:
         to an average assignment score.  For example, when penalty_per_day=.15
         then every unexcused late day effectively negates %15 of a single hw.
         (since all hws needn't have same weight, penalty applied to average hw)
+
+        Only the assignments that count for a student are in either half of
+        that: a waived one, or one drop_low discarded, charges no days and is
+        not one of the hws the penalty is an average over.  Being late on
+        work that is not in your grade costs nothing, because there is
+        nothing for it to cost.
 
         Args:
             cat (str): category of assignment to apply penalty to
@@ -615,6 +658,9 @@ class Gradebook:
                 of assignments whose late days are to be waived
             grace_period_minutes (int): minutes of grace before lateness
                 counts.  Defaults to 60 (1 hour).
+            df_count (pd.DataFrame): which assignments count, per student,
+                as get_count_frame builds it.  given None every assignment
+                in the category counts for everybody
 
         Returns:
             s_unexcuse_late_day (pd.Series): number of unexcused late days
@@ -646,6 +692,12 @@ class Gradebook:
         df_late = self.get_lateday(
             grace_period_minutes=grace_period_minutes).loc[:, ass_cat_list]
 
+        if df_count is None:
+            s_n_count = pd.Series(len(ass_cat_list), index=df_late.index)
+        else:
+            df_late = df_late.where(df_count.loc[:, ass_cat_list])
+            s_n_count = df_count.loc[:, ass_cat_list].sum(axis=1)
+
         # waive late days per email / assignment
         for email, ass_list in waive_dict.items():
             email = self._resolve_email(email)
@@ -673,8 +725,13 @@ class Gradebook:
         # get unexcused late days per student
         s_unexcuse_late_day = s_late_day - s_excuse_day
 
-        # get penalty
-        s_penalty = - penalty_per_day * s_unexcuse_late_day / len(ass_cat_list)
+        # get penalty.  a student with nothing counting in this category has
+        # no assignment for a late day to be a fraction of, and no mean for a
+        # penalty to come off, so the division is simply not made
+        s_penalty = pd.Series(0., index=df_late.index)
+        counts = s_n_count > 0
+        s_penalty[counts] = (- penalty_per_day * s_unexcuse_late_day[counts]
+                             / s_n_count[counts])
         s_penalty = s_penalty.apply(lambda x: min(x, 0))
 
         return s_unexcuse_late_day, s_penalty
@@ -809,6 +866,9 @@ class Gradebook:
                 s_unexcused_late, s_penalty = self.get_late_penalty(
                     cat=cat,
                     waive_dict=late_waive_dict,
+                    df_count=self.get_count_frame(
+                        cat, drop_n=drop_n, keep_n=keep_n,
+                        extra_list=extra_list),
                     **cat_late_dict[cat])
 
                 df_grade[s_mean] += s_penalty

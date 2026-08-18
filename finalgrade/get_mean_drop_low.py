@@ -1,4 +1,4 @@
-""" one category's mean, under the two rules that change which scores count
+""" which of a student's scores count in a category, and their mean
 
 drop_low discards a student's worst few; keep_high counts only their best
 few.  A category takes one or the other, never both: which of a student's
@@ -13,7 +13,9 @@ a waiver, a canvas excusal or an ungraded assignment reaches this far as
     keep_high    nan is a zero, because the count is what was required: two
                  of six puzzles where the best three count is over three
 
-Everything else -- the points weighting, extra credit -- is shared.
+get_count_idx answers that question once.  The mean is built from it, and so
+is the late penalty (Gradebook.get_late_penalty), because an assignment that
+is not part of a student's grade is not one they can be late on.
 """
 import numpy as np
 
@@ -27,25 +29,12 @@ def _as_arr(perc, weight, extra):
     return perc, weight, extra
 
 
-def _clean(perc, weight, extra):
-    """ the assignments that count, as arrays of the same length
-
-    An assignment with no score or no weight is not a low score, it is an
-    absence of one, and averaging it in either direction would be inventing
-    data.
-    """
-    perc, weight, extra = _as_arr(perc, weight, extra)
-
-    idx_keep = ~(np.isnan(weight) | np.isnan(perc))
-    return perc[idx_keep], weight[idx_keep], extra[idx_keep]
-
-
 def get_drop_idx(perc, weight, drop_n=0, extra=None):
     """ which assignments drop_low would discard, by index
 
-    Split out of get_mean_drop_low so that an audit can name them: a student
-    asking why a grade is what it is is often asking which one was dropped,
-    and that answer is different for every student.
+    Split out so that an audit can name them: a student asking why a grade
+    is what it is is often asking which one was dropped, and that answer is
+    different for every student.
 
     Args:
         perc (np.array): percentage earned per assignment
@@ -65,8 +54,8 @@ def get_drop_idx(perc, weight, drop_n=0, extra=None):
               if not (np.isnan(weight[idx]) or np.isnan(perc[idx]))
               and not (extra is not None and extra[idx])]
 
-    # the same order get_mean_drop_low keeps: worst percentage first, and
-    # the heavier assignment first when two are equal
+    # worst percentage first, and the heavier assignment first when two are
+    # equal
     iter_ass = sorted((perc[idx], -weight[idx], idx) for idx in idx_ok)
     return [idx for _, _, idx in iter_ass[:drop_n]]
 
@@ -113,13 +102,48 @@ def get_keep_idx(perc, weight, keep_n=0, extra=None):
     return [idx for _, _, idx in iter_ass[:keep_n]]
 
 
+def get_count_idx(perc, weight, drop_n=0, keep_n=0, extra=None):
+    """ which of one student's assignments are part of their category mean
+
+    An assignment with no score or no weight is not a low score, it is an
+    absence of one, and averaging it in either direction would be inventing
+    data -- so it is left out.  keep_high is the exception, and says so
+    (see the module docstring).
+
+    Args:
+        perc (np.array): percentage earned per assignment, nan for no score
+        weight (np.array): weight of each assignment
+        drop_n (int): number of assignments to drop, exclusive with keep_n
+        keep_n (int): number of assignments to count
+        extra (np.array): True where an assignment is extra credit
+
+    Returns:
+        idx_list (list): indices into perc, ascending
+    """
+    if drop_n and keep_n:
+        raise ValueError('a category takes drop_low or keep_high, not both')
+
+    perc, weight, extra = _as_arr(perc, weight, extra)
+
+    if keep_n:
+        idx_set = set(get_keep_idx(perc, weight, keep_n, extra))
+        # extra credit is added to whatever the counted scores came to,
+        # which is what makes it extra
+        idx_set |= {idx for idx in range(len(perc)) if extra[idx]
+                    and not (np.isnan(perc[idx]) or np.isnan(weight[idx]))}
+        return sorted(idx_set)
+
+    idx_ok = [idx for idx in range(len(perc))
+              if not (np.isnan(weight[idx]) or np.isnan(perc[idx]))]
+
+    drop_set = set(get_drop_idx(perc, weight, drop_n, extra))
+    return [idx for idx in idx_ok if idx not in drop_set]
+
+
 def get_mean_drop_low(perc, weight, drop_n=0, keep_n=0, extra=None):
     """ Compute one category's mean, weighted by points.
 
-    drop_low discards the worst drop_n (the heaviest of them, where two are
-    tied) and skips any assignment whose perc or weight is nan.  keep_high
-    counts only the best keep_n and reads a missing score as a zero.  Given
-    neither, every scored assignment counts.
+    Over the assignments get_count_idx leaves counting.
 
     note: this doesn't necessarily maximize grade with varying weight ... might
     be worth optimizing down the road but its not obvious (to me) how to do
@@ -129,9 +153,7 @@ def get_mean_drop_low(perc, weight, drop_n=0, keep_n=0, extra=None):
         perc (np.array): percentage earned per assignment
         weight (np.array): weight of each assignment
         drop_n (int): number of assignments to drop
-        keep_n (int): number of assignments to keep, counting a missing
-            score as a zero (see get_keep_idx).  exclusive with drop_n:
-            the two disagree about what a missing score is
+        keep_n (int): number of assignments to count, exclusive with drop_n
         extra (np.array): True where an assignment is extra credit.  its
             points count towards what was earned and not towards what was
             available, which is the whole of what "extra" means -- so a
@@ -140,30 +162,16 @@ def get_mean_drop_low(perc, weight, drop_n=0, keep_n=0, extra=None):
 
     Returns:
         mean (float): mean score, weighted by weight over whichever
-            assignments the rule left counting.  nan where nothing counted
+            assignments counted.  nan where nothing counted
     """
-    if drop_n and keep_n:
-        raise ValueError('a category takes drop_low or keep_high, not both')
+    perc, weight, extra = _as_arr(perc, weight, extra)
 
-    if keep_n:
-        perc, weight, extra = _as_arr(perc, weight, extra)
+    idx_list = get_count_idx(perc, weight, drop_n, keep_n, extra)
+    perc, weight, extra = perc[idx_list], weight[idx_list], extra[idx_list]
 
-        idx_list = get_keep_idx(perc, weight, keep_n, extra)
-        # extra credit is added to whatever the kept scores came to, which
-        # is what makes it extra
-        idx_list += [idx for idx in range(len(perc)) if extra[idx]
-                     and not (np.isnan(perc[idx]) or np.isnan(weight[idx]))]
-
-        perc, weight, extra = perc[idx_list], weight[idx_list], extra[idx_list]
-        # a kept assignment with no score is the zero keep_high counts
-        perc = np.nan_to_num(perc)
-    else:
-        perc, weight, extra = _clean(perc, weight, extra)
-
-        if drop_n:
-            drop_set = set(get_drop_idx(perc, weight, drop_n, extra))
-            keep = [idx for idx in range(len(perc)) if idx not in drop_set]
-            perc, weight, extra = perc[keep], weight[keep], extra[keep]
+    # only keep_high counts a slot it has no score for, and that slot is the
+    # zero it asks for
+    perc = np.nan_to_num(perc)
 
     # what was available is what was required: extra credit is not part of it
     denom = weight[~extra].sum()
