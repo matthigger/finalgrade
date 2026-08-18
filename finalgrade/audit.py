@@ -17,6 +17,32 @@ from .get_mean_drop_low import get_drop_idx, get_keep_idx
 from .gradebook import MINUTES_PER_DAY, match_set
 
 
+def count_frame_dict(gradebook, policy, cat_iter=None):
+    """ which assignments count for each student, one frame per category
+
+    Args:
+        gradebook (Gradebook): after policy.prepare
+        policy (Policy): the policy it was prepared with
+        cat_iter (iterable): categories to build for.  default is every
+            category with a late penalty, the only place it changes an answer
+
+    Returns:
+        count_dict (dict): category -> df_count, as get_count_frame builds it
+    """
+    cat_iter = policy.cat_late_dict if cat_iter is None else cat_iter
+    return {cat: gradebook.get_count_frame(
+        cat,
+        drop_n=policy.cat_drop_dict.get(cat, 0),
+        keep_n=policy.cat_keep_dict.get(cat, 0),
+        extra_list=policy.extra_list) for cat in cat_iter}
+
+
+def counted_set(count_dict, email):
+    """ the assignments that count for one student, across categories """
+    return {ass for df in count_dict.values() if email in df.index
+            for ass in df.columns if df.at[email, ass]}
+
+
 def late_detail(gradebook, policy):
     """ what the late penalty did to each student, per category
 
@@ -31,20 +57,28 @@ def late_detail(gradebook, policy):
     if not policy.cat_late_dict or not gradebook.has_lateness:
         return dict(), dict()
 
+    # the same frames average() penalised on, or this would explain a
+    # number the grade does not have
+    count_dict = count_frame_dict(gradebook, policy)
+
     late_dict = dict()
     for cat, kwargs in policy.cat_late_dict.items():
+        df_count = count_dict[cat]
+
         try:
             s_unexcused, s_penalty = gradebook.get_late_penalty(
-                cat=cat, waive_dict=policy.late_waive_dict, **kwargs)
+                cat=cat, waive_dict=policy.late_waive_dict,
+                df_count=df_count, **kwargs)
         except FinalgradeError:
             continue
 
         excused = kwargs.get('excuse_day', 0) or 0
         offset_dict = kwargs.get('excuse_day_offset') or {}
 
-        # the penalty is spread across the category's assignments, which is
-        # what turns "10% a day" into a much smaller dent in the average
-        n_ass = len([a for a in gradebook.ass_list if cat in a])
+        # the penalty is spread across the assignments that counted for
+        # this student, which is what turns "10% a day" into a much smaller
+        # dent in the average
+        s_n_ass = df_count.sum(axis=1)
 
         late_dict[cat] = {}
         for email in gradebook.df_perc.index:
@@ -58,7 +92,7 @@ def late_detail(gradebook, policy):
                 days_unexcused=max(round(unexcused, 2), 0),
                 penalty=float(s_penalty.get(email, 0)),
                 rate=float(kwargs.get('penalty_per_day', 0) or 0),
-                n_ass=n_ass)
+                n_ass=int(s_n_ass.get(email, 0)))
 
     df_day = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
     day_dict = {
@@ -158,10 +192,12 @@ def _add_late(gradebook, policy, out):
         return
 
     df_day = gradebook.get_lateday(cat_late_dict=policy.cat_late_dict)
+    count_dict = count_frame_dict(gradebook, policy)
 
     for email in out:
         if email not in gradebook.df_late_minutes.index:
             continue
+        counted = counted_set(count_dict, email)
 
         for ass in charged_list:
             minutes = gradebook.df_late_minutes.at[email, ass]
@@ -169,12 +205,20 @@ def _add_late(gradebook, policy, out):
             if not minutes or minutes != minutes:
                 continue
 
+            if not day:
+                why = ', inside the grace period'
+            elif ass not in counted:
+                # charging it would be charging for work that is not in the
+                # grade, and this is the line the student would write about
+                why = ', and not one of the scores that counted, so it '\
+                      'costs no late days'
+            else:
+                why = (f', counted as {day:g} late '
+                       f'{"day" if day == 1 else "days"}')
+
             out[email].append(dict(
                 kind='late',
-                text=f'{ass} was {fmt_late(minutes)} late'
-                     + (f', counted as {day:g} late '
-                        f'{"day" if day == 1 else "days"}' if day else
-                        ', inside the grace period')))
+                text=f'{ass} was {fmt_late(minutes)} late' + why))
 
 
 def _add_penalty(out, late_dict, df_grade):
