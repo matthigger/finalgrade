@@ -841,11 +841,12 @@ class Gradebook:
 
             # a rule set to nothing grades as though it were never
             # written, which is not what anyone who typed it meant
-            for name, d in (('drop_low', cat_drop_dict),
-                            ('keep_high', cat_keep_dict)):
+            for name, d, did in (('drop_low', cat_drop_dict, 'drops nothing'),
+                                 ('keep_high', cat_keep_dict,
+                                  'counts every score')):
                 if d.get(cat) == 0:
-                    warn(f'{name} is 0 for {cat}, so no rule is in force '
-                         f'and every score counts')
+                    warn(f'{name} is 0 for {cat}: it {did}, which is the '
+                         f'same as no rule at all')
 
             # nothing is left to count a missing score against, so keep_high
             # quietly becomes the ordinary mean of everything
