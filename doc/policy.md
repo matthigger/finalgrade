@@ -36,6 +36,32 @@ category:
 
 Drops each student's 2 lowest homework scores. Any category listed here must also appear in `category/weight`. By default nothing is dropped.
 
+An assignment nobody handed in reads as a 0 in a Gradescope or Canvas export, so it is a low score like any other and is the first thing dropped. Only a waived or Canvas-excused assignment is skipped instead of dropped: it was never assigned, so it is neither.
+
+### Keep highest
+
+```yaml
+category:
+  weight:
+    puzzle: 20
+  keep_high:
+    puzzle: 2
+```
+
+Only each student's 2 highest puzzle scores count, however many they attempted. Written for a set of interchangeable assignments — six puzzles, pick any two — where students stop as soon as they have enough good ones, so `drop_low` can't express it: the number to drop would be different for every student.
+
+**A student short of the number is averaged over zeros.** The count is what is required: one puzzle at 90% and nothing else is 45%, not 90%. Mostly this needs no thought, because an assignment nobody handed in already reads as a 0 in your export. It holds for the slots that don't, too — a waived, Canvas-excused or not-yet-graded assignment is counted as a zero where a student has nothing else to make the number up with.
+
+`drop_low` and `keep_high` are mutually exclusive — a category takes one rule or the other, and a policy that sets both on one category is refused. Which of a student's scores count is one question with one answer.
+
+Three things follow:
+
+- **`waive` cannot lower the number required.** A student excused from one puzzle still needs their best 2, out of the five left. (Which is usually what you want: being let off one of six changes nothing when only two count.)
+- **Mid-term grades are deflated**, the same way an ungraded assignment deflates any average — if only one puzzle has been released and 2 count, nobody can be above 50% yet.
+- **Watch `exclude_complete_thresh`.** A puzzle a third of the class attempted is exactly what that threshold is built to throw out, and here it is the expected submission rate rather than a sign of a broken assignment. Keep the threshold below the rate you expect, or drop it and `exclude` by name instead.
+
+If the category holds fewer assignments than the number to keep, all of them count and a warning says so. By default every score counts.
+
 ### Late penalty
 
 ```yaml
@@ -207,8 +233,10 @@ Everywhere an email appears in the policy — `waive`, `waive_late`, `excuse_day
 Grades are hard to eyeball, so a policy that can't mean what you intended is
 reported as an error rather than quietly producing plausible-looking numbers:
 
-- a `drop_low` or `late_penalty` category with no entry in `category/weight`
-  (it would never be applied)
+- a `drop_low`, `keep_high` or `late_penalty` category with no entry in
+  `category/weight` (it would never be applied)
+- both `drop_low` and `keep_high` on one category, which are two answers to
+  the one question of which of a student's scores count
 - a category that matches no assignment (usually a typo)
 - category weights that are negative, or that are all zero
 - `grade_thresh` outside 0–1 (writing `93: A` instead of `.93: A` used to give
@@ -234,3 +262,5 @@ These are also handled quietly but visibly, with a warning:
 - an email in `email_list` that matches no student (an enrolled student who
   never submitted anything is ordinary)
 - an assignment that falls into no weighted category, or into more than one
+- a `keep_high` larger than the number of assignments in its category, which
+  leaves nothing to make the number up with, so every one of them counts

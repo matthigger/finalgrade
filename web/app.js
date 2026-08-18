@@ -428,6 +428,9 @@ function drawCategories(form) {
     const late = c.late || {};
     const on = !!c.late;
     const grace = late.grace_period_minutes;
+    // one control for the two exclusive rules: which one, and how many
+    const keep = !!c.keep_high;
+    const n = keep ? c.keep_high : (c.drop_low || 0);
 
     return `<div class="cat-card" data-cat="${escapeHtml(c.name)}">
       <div class="cat-head">
@@ -437,9 +440,12 @@ function drawCategories(form) {
             value="${escapeHtml(c.weight)}"></label>
         <span class="cat-share">${c.weight_frac === null ? ''
           : (c.weight_frac * 100).toFixed(1) + '%'}</span>
-        <label class="f">drop lowest
-          <input type="number" data-act="drop" min="0" step="1"
-            value="${c.drop_low || 0}"></label>
+        <span class="f"><select data-act="rule" aria-label="score rule">
+          <option value="drop"${keep ? '' : ' selected'}>drop lowest</option>
+          <option value="keep"${keep ? ' selected' : ''}>keep highest</option>
+          </select>
+          <input type="number" data-act="rule-n" min="0" step="1"
+            value="${n}" aria-label="how many"></span>
         <button type="button" class="x" data-act="remove"
           title="remove ${escapeHtml(c.name)}">&times;</button>
       </div>
@@ -455,11 +461,30 @@ function drawCategories(form) {
           step="15" value="${grace === undefined ? 60 : grace}"> min
           grace</label>` : ''}
       </div>
-      ${catches(c.name).length ? '' :
+      ${catches(c.name).length ? ruleHint(c, catches(c.name).length) :
         '<div class="cat-hit"><span class="tag error">matches no ' +
         'assignment</span></div>'}
     </div>`;
   }).join('');
+}
+
+/* what the chosen rule does to this category, spelled out.  keep highest is
+ * the one that needs saying: a student short of the number is averaged over
+ * zeros, which is not what dropping the lowest few would have done */
+function ruleHint(c, nAss) {
+  if (c.keep_high) {
+    const short = c.keep_high > nAss
+      ? `<span class="tag warn">only ${nAss} to count, so every one
+         does</span>` : '';
+    return `<div class="cat-rule">best ${c.keep_high} of ${nAss} count;
+      anyone with fewer than ${c.keep_high} scores is averaged over zeros
+      to make up the number ${short}</div>`;
+  }
+  if (c.drop_low) {
+    return `<div class="cat-rule">the ${c.drop_low} lowest of ${nAss} are
+      dropped, whatever they are for each student</div>`;
+  }
+  return '';
 }
 
 function pctOf(x) {
@@ -1261,11 +1286,12 @@ function runGrades() {
 /* --------------------------------------------------------- the inspector */
 
 const MODE_HINT = {
-  final: 'The grade as it stands, with drops and late penalties applied.',
-  raw: 'The same grade before drop-lowest and late penalties — what the ' +
-       'scores alone would give.',
+  final: 'The grade as it stands, with the score rules and late penalties ' +
+         'applied.',
+  raw: 'The same grade before drop-lowest / keep-highest and late ' +
+       'penalties — what every score, weighted by its points, would give.',
   both: 'Before and after the policy, overlaid. The gap between them is ' +
-        'what your drops and late penalties did.',
+        'what your score rules and late penalties did.',
 };
 
 function drawInspector() {
@@ -1719,8 +1745,13 @@ $('cats').addEventListener('change', (e) => {
   const num = Number(e.target.value);
 
   if (act === 'weight') applyEdit('set_weight', { cat, weight: num });
-  else if (act === 'drop') applyEdit('set_drop_low', { cat, n: num });
-  else if (act === 'late-on') {
+  else if (act === 'rule' || act === 'rule-n') {
+    // the select and the number are one setting: read both, whichever moved
+    const card = e.target.closest('.cat-card');
+    const rule = card.querySelector('[data-act="rule"]').value;
+    const n = Number(card.querySelector('[data-act="rule-n"]').value);
+    applyEdit(rule === 'keep' ? 'set_keep_high' : 'set_drop_low', { cat, n });
+  } else if (act === 'late-on') {
     applyEdit('set_late', e.target.checked
       ? { cat, late_dict: { penalty_per_day: 0.1, excuse_day: 0 } }
       : { cat, late_dict: null });

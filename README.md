@@ -1,7 +1,7 @@
 # finalgrade
 
 Final grades from a Gradescope or Canvas csv export — category weights,
-dropped lowests, late penalties, per-student waivers.
+dropped lowests, best-n-of-m, late penalties, per-student waivers.
 
 ## → [matthigger.github.io/finalgrade](https://matthigger.github.io/finalgrade)
 
@@ -62,7 +62,7 @@ The same code, same policy file, same results.
 
 ```bash
 finalgrade grade scope.csv                        # grades, and seeds a policy.yaml
-$EDITOR policy.yaml                               # weights, drops, late rules
+$EDITOR policy.yaml                               # weights, score rules, late
 finalgrade check scope.csv --policy policy.yaml   # what will that policy do?
 finalgrade grade scope.csv --policy policy.yaml   # grade with it
 ```
@@ -89,10 +89,10 @@ finalgrade guessed.
     hw3         3       5/5        hw
     quiz1       4       5/5        (none) <- not graded in any category
 
-    category  weight  drop  late                assignments
-    --------  ------  ----  ------------------  -------------------------------
-    hw        50.0%   1     15%/day, 3 excused  hw1, hw2, hw3
-    exam      50.0%   -     -                   (none) <- matches no assignment
+    category  weight  drop/keep  late                assignments
+    --------  ------  ---------  ------------------  -------------------------------
+    hw        50.0%   drop 1     15%/day, 3 excused  hw1, hw2, hw3
+    exam      50.0%   -          -                   (none) <- matches no assignment
 
     error: category matches no assignment: exam (assignments are: hw1, hw2, hw3, quiz1)
 

@@ -3,11 +3,11 @@
 A gradebook answers "what did everyone get".  This answers the two questions
 that come next: *who* is at a given number, and *what did the policy do to
 them* -- the second being the one a spreadsheet can't answer, because the
-drops and the late penalties are exactly what a spreadsheet hides.
+score rules and the late penalties are exactly what a spreadsheet hides.
 
 So every series comes in two versions:
 
-    raw     the grade before drop_low and late_penalty were applied
+    raw     the grade before drop_low / keep_high and late_penalty
     final   the grade as it stands
 
 Waivers and exclusions are in both.  They decide what was assigned, which is
@@ -32,7 +32,8 @@ def build_view(gradebook, policy, df_final, df_raw):
         gradebook (Gradebook): after policy.prepare
         policy (Policy): the policy df_final was computed with
         df_final (pd.DataFrame): average_full with the policy applied
-        df_raw (pd.DataFrame): average_full with no drops or late penalties
+        df_raw (pd.DataFrame): average_full with no score rules or late
+            penalties
 
     Returns:
         view_dict (dict): view_list, value_dict and the students they index
@@ -49,7 +50,7 @@ def build_view(gradebook, policy, df_final, df_raw):
     for ass in gradebook.ass_list:
         key = f'ass:{ass}'
         view_list.append(dict(key=key, label=ass, kind='assignment'))
-        # an assignment has no drops or penalties of its own: the two series
+        # an assignment has no rules or penalties of its own: the two series
         # are the same, and the toggle says so rather than pretending
         value_dict[key] = _pair(gradebook.df_perc[ass], None)
 
@@ -61,8 +62,9 @@ def build_table(gradebook, policy):
 
     The weights are the ones the policy implies, not the ones any particular
     student got: inside a category assignments are weighted by their points,
-    and drop_low then removes whichever is worst *for that student*, so a
-    single number here would be a lie for everybody it wasn't computed on.
+    and drop_low or keep_high then decides which of them count *for that
+    student*, so a single number here would be a lie for everybody it wasn't
+    computed on.
 
     Args:
         gradebook (Gradebook): after policy.prepare

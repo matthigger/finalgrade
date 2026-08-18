@@ -42,6 +42,7 @@ class CategoryRow:
     weight: float
     weight_frac: float
     drop_low: int = 0
+    keep_high: int = 0
     late: dict = None
     ass_list: list = field(default_factory=list)
 
@@ -149,6 +150,7 @@ def build_report(policy, f_grade):
             weight=weight,
             weight_frac=weight / weight_sum,
             drop_low=policy.cat_drop_dict.get(cat, 0),
+            keep_high=policy.cat_keep_dict.get(cat, 0),
             late=policy.cat_late_dict.get(cat),
             ass_list=cat_ass_dict[cat]))
 
@@ -175,6 +177,13 @@ def _add_problem(report, policy, gradebook):
             f'category matches no assignment: {", ".join(empty_list)} '
             f'(assignments are: {", ".join(a.name for a in report.ass_list)})')
 
+    for cat in report.cat_list:
+        if cat.ass_list and cat.keep_high > len(cat.ass_list):
+            report.warn_list.append(
+                f'keep_high is {cat.keep_high} where {cat.name} has '
+                f'{len(cat.ass_list)} assignments to count, so every one of '
+                f'them does')
+
     if policy.cat_late_dict and not gradebook.has_lateness:
         report.error_list.append(
             f'late_penalty set for '
@@ -198,6 +207,19 @@ def _add_problem(report, policy, gradebook):
 def _blame(report, ass, problem):
     """ files a problem against the assignment it is about """
     report.ass_problem_dict.setdefault(ass, []).append(problem)
+
+
+def _fmt_rule(cat):
+    """ a category's drop_low or keep_high as one short phrase
+
+    One column, because a category takes one rule or the other: two columns
+    would be one of them empty on every row, saying nothing twice.
+    """
+    if cat.drop_low:
+        return f'drop {cat.drop_low}'
+    if cat.keep_high:
+        return f'keep {cat.keep_high}'
+    return '-'
 
 
 def _fmt_late(late):
@@ -281,12 +303,13 @@ def render(report):
     else:
         row_list = [
             (cat.name, f'{cat.weight_frac * 100:.1f}%',
-             str(cat.drop_low) if cat.drop_low else '-',
+             _fmt_rule(cat),
              _fmt_late(cat.late),
              ', '.join(cat.ass_list) or '(none) <- matches no assignment')
             for cat in report.cat_list]
         line_list += text_table(
-            ('category', 'weight', 'drop', 'late', 'assignments'), row_list)
+            ('category', 'weight', 'drop/keep', 'late', 'assignments'),
+            row_list)
 
     if report.warn_list or report.error_list:
         line_list.append('')
