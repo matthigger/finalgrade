@@ -839,6 +839,14 @@ class Gradebook:
             drop_n = cat_drop_dict.get(cat, 0)
             keep_n = cat_keep_dict.get(cat, 0)
 
+            # a rule set to nothing grades as though it were never
+            # written, which is not what anyone who typed it meant
+            for name, d in (('drop_low', cat_drop_dict),
+                            ('keep_high', cat_keep_dict)):
+                if d.get(cat) == 0:
+                    warn(f'{name} is 0 for {cat}, so no rule is in force '
+                         f'and every score counts')
+
             # nothing is left to count a missing score against, so keep_high
             # quietly becomes the ordinary mean of everything
             n_keepable = sum(not x for x in extra_cat)

@@ -429,8 +429,8 @@ function drawCategories(form) {
     const on = !!c.late;
     const grace = late.grace_period_minutes;
     // one control for the two exclusive rules: which one, and how many
-    const keep = !!c.keep_high;
-    const n = keep ? c.keep_high : (c.drop_low || 0);
+    const rule = ruleOf(c);
+    const n = rule === 'keep' ? c.keep_high : c.drop_low;
 
     return `<div class="cat-card" data-cat="${escapeHtml(c.name)}">
       <div class="cat-head">
@@ -441,11 +441,14 @@ function drawCategories(form) {
         <span class="cat-share">${c.weight_frac === null ? ''
           : (c.weight_frac * 100).toFixed(1) + '%'}</span>
         <span class="f"><select data-act="rule" aria-label="score rule">
-          <option value="drop"${keep ? '' : ' selected'}>drop lowest</option>
-          <option value="keep"${keep ? ' selected' : ''}>keep highest</option>
-          </select>
+          <option value=""${rule ? '' : ' selected'}>no rule</option>
+          <option value="drop"${rule === 'drop' ? ' selected' : ''}>drop
+            lowest</option>
+          <option value="keep"${rule === 'keep' ? ' selected' : ''}>keep
+            highest</option>
+          </select>${rule ? `
           <input type="number" data-act="rule-n" min="0" step="1"
-            value="${n}" aria-label="how many"></span>
+            value="${n}" aria-label="how many">` : ''}</span>
         <button type="button" class="x" data-act="remove"
           title="remove ${escapeHtml(c.name)}">&times;</button>
       </div>
@@ -468,10 +471,25 @@ function drawCategories(form) {
   }).join('');
 }
 
+/* which rule the file gives this category, or '' for neither.  a 0 is a
+ * rule: the user picked it and has not said how many yet, and a control that
+ * throws that away reads as a page which is not responding */
+function ruleOf(c) {
+  if (c.keep_high !== null && c.keep_high !== undefined) return 'keep';
+  if (c.drop_low !== null && c.drop_low !== undefined) return 'drop';
+  return '';
+}
+
 /* what the chosen rule does to this category, spelled out.  keep highest is
  * the one that needs saying: a student short of the number is averaged over
  * zeros, which is not what dropping the lowest few would have done */
 function ruleHint(c, nAss) {
+  const rule = ruleOf(c);
+  if (rule && !(rule === 'keep' ? c.keep_high : c.drop_low)) {
+    // it grades as no rule at all, which is not what typing one means
+    return `<div class="cat-rule"><span class="tag warn">0 counts
+      nothing</span> every score counts until you say how many</div>`;
+  }
   if (c.keep_high) {
     const short = c.keep_high > nAss
       ? `<span class="tag warn">only ${nAss} to count, so every one
@@ -1749,8 +1767,12 @@ $('cats').addEventListener('change', (e) => {
     // the select and the number are one setting: read both, whichever moved
     const card = e.target.closest('.cat-card');
     const rule = card.querySelector('[data-act="rule"]').value;
-    const n = Number(card.querySelector('[data-act="rule-n"]').value);
-    applyEdit(rule === 'keep' ? 'set_keep_high' : 'set_drop_low', { cat, n });
+    const box = card.querySelector('[data-act="rule-n"]');
+    // picking a rule where there was none has no number yet, and writing the
+    // 0 is what makes the choice stick and the warning appear
+    if (!rule) applyEdit('clear_rule', { cat });
+    else applyEdit(rule === 'keep' ? 'set_keep_high' : 'set_drop_low',
+                   { cat, n: box ? Number(box.value) : 0 });
   } else if (act === 'late-on') {
     applyEdit('set_late', e.target.checked
       ? { cat, late_dict: { penalty_per_day: 0.1, excuse_day: 0 } }

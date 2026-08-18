@@ -120,6 +120,20 @@ class TestPipeline:
 
         assert df.loc['bob@u.edu', 'mean_puzzle'] == pytest.approx(.4)
 
+    def test_a_zero_grades_as_no_rule_and_says_so(self, f_scope_puz):
+        """ it is what the widget writes the moment a rule is picked, so it
+        must not quietly change a grade -- but nor should it stay unnoticed
+        """
+        policy = Policy(cat_weight_dict={'puzzle': 1, 'hw': 1},
+                        cat_keep_dict={'puzzle': 0})
+
+        with pytest.warns(UserWarning, match='keep_high is 0'):
+            _, df = policy(f_scope_puz)
+
+        # every score counts, exactly as if the rule were not there
+        _, plain = Policy(cat_weight_dict={'puzzle': 1, 'hw': 1})(f_scope_puz)
+        np.testing.assert_allclose(plain['mean_puzzle'], df['mean_puzzle'])
+
     def test_short_category_counts_everything_and_warns(self, tmp_path):
         f = write_scope(tmp_path / 'scope.csv', {'Puzzle1': 10, 'Puzzle2': 10},
                         [{'email': 'a@u.edu', 'scores': {'Puzzle1': 10}}])
@@ -196,6 +210,17 @@ class TestReport:
         assert any('keep_high' in s for s in report.warn_list)
         assert report.ok
 
+    def test_a_rule_set_to_zero_is_warned_about(self, f_scope_puz):
+        """ and shown as "keep 0" rather than as no rule, so that the report
+        and the file say the same thing """
+        report = build_report(
+            Policy(cat_weight_dict={'puzzle': 1, 'hw': 1},
+                   cat_keep_dict={'puzzle': 0}), str(f_scope_puz))
+
+        assert any('keep_high is 0' in s for s in report.warn_list)
+        assert 'keep 0' in render(report)
+        assert report.ok
+
 
 class TestEdit:
     def test_sets_and_clears_the_count(self):
@@ -203,8 +228,26 @@ class TestEdit:
                          'set_keep_high', dict(cat='puzzle', n=2))
         assert yaml.load(out)['category']['keep_high'] == {'puzzle': 2}
 
-        out = edit.apply(out, 'set_keep_high', dict(cat='puzzle', n=0))
+        out = edit.apply(out, 'clear_rule', dict(cat='puzzle'))
         assert not yaml.load(out)['category']['keep_high']
+
+    def test_a_zero_is_a_rule_the_file_keeps(self):
+        """ the widget writes it the moment the rule is picked, before any
+        number is typed.  discarding it put the select back where it was,
+        which reads as a page that is not responding """
+        out = edit.apply('category:\n  weight:\n    puzzle: 1\n',
+                         'set_keep_high', dict(cat='puzzle', n=0))
+
+        assert yaml.load(out)['category']['keep_high'] == {'puzzle': 0}
+
+    def test_a_zero_still_replaces_the_other_rule(self):
+        out = edit.apply('category:\n  weight:\n    hw: 1\n'
+                         '  drop_low:\n    hw: 2\n',
+                         'set_keep_high', dict(cat='hw', n=0))
+        data = yaml.load(out)
+
+        assert data['category']['keep_high'] == {'hw': 0}
+        assert not data['category']['drop_low']
 
     def test_the_two_rules_replace_each_other(self):
         """ exclusive, so the widget cannot leave both behind """
@@ -219,15 +262,17 @@ class TestEdit:
         assert data['category']['drop_low'] == {'hw': 1}
         assert not data['category']['keep_high']
 
-    def test_neither_rule_invents_an_empty_section(self):
+    def test_setting_one_rule_does_not_invent_the_other(self):
         """ a section the file never had is one the user never wanted """
-        bare = 'category:\n  weight:\n    hw: 1\n'
+        out = edit.apply('category:\n  weight:\n    hw: 1\n',
+                         'set_drop_low', dict(cat='hw', n=1))
 
-        out = edit.apply(bare, 'set_drop_low', dict(cat='hw', n=1))
         assert 'keep_high' not in out
 
-        # and typing a 0 into a category with no rule at all writes nothing
-        out = edit.apply(bare, 'set_keep_high', dict(cat='hw', n=0))
+    def test_clearing_a_rule_that_was_never_there_writes_nothing(self):
+        bare = 'category:\n  weight:\n    hw: 1\n'
+        out = edit.apply(bare, 'clear_rule', dict(cat='hw'))
+
         assert 'keep_high' not in out and 'drop_low' not in out
 
     def test_removing_a_category_takes_its_rule_with_it(self):
@@ -244,7 +289,17 @@ class TestWeb:
 
         cat = next(c for c in state['cat_list'] if c['name'] == 'puzzle')
         assert cat['keep_high'] == 2
-        assert cat['drop_low'] == 0
+        # None, not 0: the page has to tell "no rule" from a rule set to 0,
+        # or picking one and typing nothing looks like nothing happened
+        assert cat['drop_low'] is None
+
+    def test_the_form_tells_a_zero_from_no_rule(self):
+        state = web.form_state('category:\n  weight:\n    hw: 1\n'
+                               '  keep_high:\n    hw: 0\n')
+
+        cat = state['cat_list'][0]
+        assert cat['keep_high'] == 0
+        assert cat['drop_low'] is None
 
     def test_raw_is_the_grade_without_the_rule(self, f_scope_puz):
         """ the inspector's 'before' has to have keep_high switched off, or

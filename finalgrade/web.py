@@ -508,8 +508,8 @@ def form_state(yaml_text):
         cat_list=[dict(name=str(cat),
                        weight=weight,
                        weight_frac=_share(weight, total),
-                       drop_low=drop_dict.get(cat) or 0,
-                       keep_high=keep_dict.get(cat) or 0,
+                       drop_low=drop_dict.get(cat),
+                       keep_high=keep_dict.get(cat),
                        late=late_dict.get(cat))
                   for cat, weight in weight_dict.items()],
         waive_list=_waive_list(data.get('waive')),

@@ -196,31 +196,36 @@ def set_weight(data, cat, weight):
 
 
 def _set_count(data, cat, key, n):
-    """ sets one of the two exclusive per-category counts (0 removes)
+    """ sets one of the two exclusive per-category counts
 
-    Setting either clears the other: a category takes drop_low or keep_high,
-    so a form that left the previous rule behind would write a policy that
-    Policy then refuses to read.
+    A 0 is written like any other number rather than taken as a request to
+    remove the rule.  It does nothing to a grade, and check warns about it --
+    but a form whose only way to say "keep highest" is to also say how many
+    cannot show the choice until both are made, and a control that discards
+    what you just picked reads as a page that is not responding.  clear_rule
+    is how a rule goes away.
     """
     other = 'keep_high' if key == 'drop_low' else 'drop_low'
 
-    if n:
-        _put(_section(data, 'category', key), cat, int(n))
-        _clear_if_empty(data, 'category', key)
-    else:
-        _pop_from(data, ('category', key), cat)
-
+    _put(_section(data, 'category', key), cat, int(n))
+    _clear_if_empty(data, 'category', key)
     _pop_from(data, ('category', other), cat)
 
 
 def set_drop_low(data, cat, n):
-    """ sets how many of a category's lowest scores to drop (0 removes) """
+    """ sets how many of a category's lowest scores to drop """
     _set_count(data, cat, 'drop_low', n)
 
 
 def set_keep_high(data, cat, n):
-    """ sets how many of a category's highest scores count (0 removes) """
+    """ sets how many of a category's highest scores count """
     _set_count(data, cat, 'keep_high', n)
+
+
+def clear_rule(data, cat):
+    """ removes whichever of drop_low / keep_high a category carries """
+    for key in ('drop_low', 'keep_high'):
+        _pop_from(data, ('category', key), cat)
 
 
 def set_late(data, cat, late_dict=None):
@@ -410,6 +415,7 @@ ACTION_DICT = {
     'set_weight': set_weight,
     'set_drop_low': set_drop_low,
     'set_keep_high': set_keep_high,
+    'clear_rule': clear_rule,
     'set_late': set_late,
     'set_excuse_offset': set_excuse_offset,
     'set_waive': set_waive,
