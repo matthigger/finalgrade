@@ -24,22 +24,27 @@ save.
 - **Category weights** — homework 50%, exams 50%. Assignments match categories
   by substring, so `hw1`…`hw9` land in `hw` without listing them.
 - **Drop lowest** — the *n* worst scores in a category, never the extra credit.
+- **Keep highest** — only the *n* best count, however many were attempted: six
+  puzzles where any two count, and a student short of two averaged over zeros.
+  One rule or the other per category, never both.
 - **Late penalties** — a rate per day, a bank of excused days per student, and
   a grace period so nobody emails you about 90 seconds. Per-student
-  adjustments for DRC accommodations.
+  adjustments for DRC accommodations. Only the scores that count charge late
+  days — work that isn't in the grade can't be late.
 - **Waivers** — click a score to waive the assignment, click a late submission
   to forgive just the penalty. Computed as if the work was never assigned.
 - **Extra credit** — points that count towards what a student earned but not
   towards what was available.
-- **Best of two** — drag one score onto another for the makeup only one
-  student sat, without inventing a course-wide rule for it.
+- **Makeups and retakes** — drag one score onto another to take the better of
+  the two, for the makeup only one student sat, without inventing a
+  course-wide rule for it.
 - **Work you haven't set yet** — write a whole term's policy in one sitting;
   planned assignments count for nobody until the real column arrives.
 - **Letter grades** — editable cutoffs, sensible defaults.
 - **Per-student breakdowns** — a csv per student that ends with *how* the
-  grade was reached: what was waived, what was late and what it cost, which
-  scores were dropped, how the categories combined. It's the attachment for
-  the email asking why a grade is what it is.
+  grade was reached: what was waived, which scores counted and which didn't,
+  what was late and what that cost, how the categories combined. It's the
+  attachment for the email asking why a grade is what it is.
 - **Notes** — free text on a student, stored beside the waiver it explains, so
   the reason outlives the email thread.
 - **Inspect** — the distribution of any category or assignment, before and
