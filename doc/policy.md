@@ -54,7 +54,7 @@ Only each student's 2 highest puzzle scores count, however many they attempted. 
 
 `drop_low` and `keep_high` are mutually exclusive — a category takes one rule or the other, and a policy that sets both on one category is refused. Which of a student's scores count is one question with one answer.
 
-Three things follow:
+Four things follow:
 
 - **`waive` cannot lower the number required.** A student excused from one puzzle still needs their best 2, out of the five left. (Which is usually what you want: being let off one of six changes nothing when only two count.)
 - **A late puzzle that isn't counted costs nothing**, which is the point of attempting freely — but a late day on one of the 2 that *are* counted is charged over those 2, so it costs more here than the same rate would in a category of six.
