@@ -132,9 +132,13 @@ class TestCategory:
 
         assert cfg(out).cat_weight_dict == {}
 
-    def test_drop_low_zero_removes_the_entry(self):
+    def test_drop_low_zero_is_kept_and_clear_rule_removes_it(self):
+        """ a 0 is written rather than taken as "remove", so that a form can
+        show the rule before the number is typed """
         out = edit.apply(YAML_FULL, 'set_drop_low', dict(cat='hw', n=0))
+        assert cfg(out).cat_drop_dict == {'hw': 0}
 
+        out = edit.apply(out, 'clear_rule', dict(cat='hw'))
         assert cfg(out).cat_drop_dict == {}
 
 
