@@ -13,7 +13,7 @@ import warnings
 from dataclasses import dataclass, field
 
 from .errors import FinalgradeError
-from .gradebook import Gradebook
+from .gradebook import Gradebook, match_set, rule_warn_list
 
 
 @dataclass
@@ -178,22 +178,13 @@ def _add_problem(report, policy, gradebook):
             f'category matches no assignment: {", ".join(empty_list)} '
             f'(assignments are: {", ".join(a.name for a in report.ass_list)})')
 
+    # word for word what average() would warn, so that a page showing both
+    # can tell they are the same complaint
+    extra_set = match_set(gradebook.ass_list, policy.extra_list)
     for cat in report.cat_list:
-        if cat.ass_list and (cat.keep_high or 0) > len(cat.ass_list):
-            report.warn_list.append(
-                f'keep_high is {cat.keep_high} where {cat.name} has '
-                f'{len(cat.ass_list)} assignments to count, so every one of '
-                f'them does')
-
-        # a rule set to nothing is the quietest way this policy fails: it
-        # reads as a decision and grades as though it were never written
-        for name, n, did in (('drop_low', cat.drop_low, 'drops nothing'),
-                             ('keep_high', cat.keep_high,
-                              'counts every score')):
-            if n == 0:
-                report.warn_list.append(
-                    f'{name} is 0 for {cat.name}: it {did}, which is the '
-                    f'same as no rule at all')
+        report.warn_list += rule_warn_list(
+            cat.name, cat.ass_list, [a in extra_set for a in cat.ass_list],
+            drop_n=cat.drop_low, keep_n=cat.keep_high)
 
     if policy.cat_late_dict and not gradebook.has_lateness:
         report.error_list.append(
