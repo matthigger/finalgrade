@@ -187,12 +187,13 @@ def _add_problem(report, policy, gradebook):
 
         # a rule set to nothing is the quietest way this policy fails: it
         # reads as a decision and grades as though it were never written
-        for name, n in (('drop_low', cat.drop_low),
-                        ('keep_high', cat.keep_high)):
+        for name, n, did in (('drop_low', cat.drop_low, 'drops nothing'),
+                             ('keep_high', cat.keep_high,
+                              'counts every score')):
             if n == 0:
                 report.warn_list.append(
-                    f'{name} is 0 for {cat.name}, so no rule is in force and '
-                    f'every score counts -- say how many, or remove it')
+                    f'{name} is 0 for {cat.name}: it {did}, which is the '
+                    f'same as no rule at all')
 
     if policy.cat_late_dict and not gradebook.has_lateness:
         report.error_list.append(

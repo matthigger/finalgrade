@@ -431,6 +431,7 @@ function drawCategories(form) {
     // one control for the two exclusive rules: which one, and how many
     const rule = ruleOf(c);
     const n = rule === 'keep' ? c.keep_high : c.drop_low;
+    const nAss = catches(c.name).length;
 
     return `<div class="cat-card" data-cat="${escapeHtml(c.name)}">
       <div class="cat-head">
@@ -441,14 +442,9 @@ function drawCategories(form) {
         <span class="cat-share">${c.weight_frac === null ? ''
           : (c.weight_frac * 100).toFixed(1) + '%'}</span>
         <span class="f"><select data-act="rule" aria-label="score rule">
-          <option value=""${rule ? '' : ' selected'}>no rule</option>
-          <option value="drop"${rule === 'drop' ? ' selected' : ''}>drop
-            lowest</option>
-          <option value="keep"${rule === 'keep' ? ' selected' : ''}>keep
-            highest</option>
-          </select>${rule ? `
-          <input type="number" data-act="rule-n" min="0" step="1"
-            value="${n}" aria-label="how many">` : ''}</span>
+          ${ruleOptions(rule)}</select>${rule ? `
+          <select data-act="rule-n" aria-label="how many">
+            ${countOptions(rule, n, nAss)}</select>` : ''}</span>
         <button type="button" class="x" data-act="remove"
           title="remove ${escapeHtml(c.name)}">&times;</button>
       </div>
@@ -471,6 +467,35 @@ function drawCategories(form) {
   }).join('');
 }
 
+/* the two exclusive rules and the absence of either, so that every state
+ * the file can be in is one the control can show */
+function ruleOptions(rule) {
+  return [['', 'no rule'], ['drop', 'drop lowest'],
+          ['keep', 'keep highest']].map(
+    ([v, label]) => `<option value="${v}"${v === rule ? ' selected' : ''}>`
+      + `${label}</option>`).join('');
+}
+
+/* how many, as a list rather than a number box: 0 is the interesting value
+ * and it does not read as one.  "all" and "none" say what it does, and the
+ * choices stop at the assignments the category actually has.
+ *
+ * Whatever the file says is always among them, even out of range -- an
+ * option list that omitted the current value would show the first one
+ * instead, and the next click would write it. */
+function countOptions(rule, n, nAss) {
+  const max = rule === 'keep' ? nAss : Math.max(nAss - 1, 0);
+  const valList = [0];
+  for (let i = 1; i <= max; i++) valList.push(i);
+  if (!valList.includes(n)) valList.push(n);
+
+  return valList.map((v) => {
+    const label = v === 0 ? (rule === 'keep' ? 'all' : 'none') : String(v);
+    return `<option value="${escapeHtml(v)}"${v === n ? ' selected' : ''}>`
+      + `${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
 /* which rule the file gives this category, or '' for neither.  a 0 is a
  * rule: the user picked it and has not said how many yet, and a control that
  * throws that away reads as a page which is not responding */
@@ -486,9 +511,10 @@ function ruleOf(c) {
 function ruleHint(c, nAss) {
   const rule = ruleOf(c);
   if (rule && !(rule === 'keep' ? c.keep_high : c.drop_low)) {
-    // it grades as no rule at all, which is not what typing one means
-    return `<div class="cat-rule"><span class="tag warn">0 counts
-      nothing</span> every score counts until you say how many</div>`;
+    // legible, but still an entry that does nothing -- "no rule" removes it
+    return `<div class="cat-rule">${rule === 'keep'
+      ? 'every score counts, the same as no rule at all'
+      : 'nothing is dropped, the same as no rule at all'}</div>`;
   }
   if (c.keep_high) {
     const short = c.keep_high > nAss
