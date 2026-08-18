@@ -63,6 +63,8 @@ Four things follow:
 
 If the category holds fewer assignments than the number to keep, all of them count and a warning says so. By default every score counts.
 
+Writing `keep_high: 0` (or `drop_low: 0`) is allowed and grades as no rule at all — every score counts — but it is warned about, because a rule set to nothing reads like a decision and acts like an omission. The browser writes it the moment you pick a rule from the dropdown, before you have said how many, so that the choice sticks and the warning tells you to finish it. Pick "no rule" to take it back out.
+
 ### Late penalty
 
 ```yaml
@@ -266,3 +268,4 @@ These are also handled quietly but visibly, with a warning:
 - an assignment that falls into no weighted category, or into more than one
 - a `keep_high` larger than the number of assignments in its category, which
   leaves nothing to make the number up with, so every one of them counts
+- a `drop_low` or `keep_high` of 0, which reads as a rule and grades as none
