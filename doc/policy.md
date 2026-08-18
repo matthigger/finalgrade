@@ -63,7 +63,7 @@ Four things follow:
 
 If the category holds fewer assignments than the number to keep, all of them count and a warning says so. By default every score counts.
 
-Writing `keep_high: 0` (or `drop_low: 0`) is allowed and grades as no rule at all — every score counts — but it is warned about, because a rule set to nothing reads like a decision and acts like an omission. The browser writes it the moment you pick a rule from the dropdown, before you have said how many, so that the choice sticks and the warning tells you to finish it. Pick "no rule" to take it back out.
+Writing `keep_high: 0` (or `drop_low: 0`) is allowed and grades as no rule at all — every score counts, nothing is dropped — but it is warned about, because a rule set to nothing reads like a decision and acts like an omission. The browser writes it the moment you pick a rule, before you have said how many, so that the choice sticks; it shows that 0 as **all** (for keep highest) or **none** (for drop lowest) rather than as a number. Pick "no rule" to take the setting back out of the file.
 
 ### Late penalty
 
