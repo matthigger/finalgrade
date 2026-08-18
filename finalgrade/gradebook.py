@@ -204,6 +204,43 @@ def finalize(df_score, points, df_meta, df_late_minutes=None,
                 cat_hint_list=list(cat_hint_list or []))
 
 
+def rule_warn_list(cat, ass_cat_list, extra_cat, drop_n=None, keep_n=None):
+    """ what a category's drop_low / keep_high says but does not do
+
+    Shared with check, which exists to report what average() would say
+    without running it.  A browser shows both, where two spellings of one
+    complaint read as two complaints.
+
+    Args:
+        cat (str): the category
+        ass_cat_list (list): assignments it catches
+        extra_cat (list): bool, True where one of them is extra credit
+        drop_n (int): its drop_low, None where it has none
+        keep_n (int): its keep_high, None where it has none
+
+    Returns:
+        warn_list (list): messages, one per problem
+    """
+    out = []
+
+    # nothing is left to count a missing score against, so keep_high quietly
+    # becomes the ordinary mean of everything
+    n_keepable = sum(not x for x in extra_cat)
+    if ass_cat_list and (keep_n or 0) > n_keepable:
+        out.append(f'keep_high is {keep_n} where {cat} has {n_keepable} '
+                   f'assignments to count, so every one of them does')
+
+    # a rule set to nothing grades as though it were never written, which is
+    # not what anyone who typed it meant
+    for name, n, did in (('drop_low', drop_n, 'drops nothing'),
+                         ('keep_high', keep_n, 'counts every score')):
+        if n == 0:
+            out.append(f'{name} is 0 for {cat}: it {did}, which is the same '
+                       f'as no rule at all')
+
+    return out
+
+
 class Gradebook:
     """ a grade for every student-assignment pair & manipulations
 
@@ -836,24 +873,14 @@ class Gradebook:
             perc_cat = self.df_perc.loc[:, ass_cat_list].values
             point_cat = self.points.loc[ass_cat_list].values
             extra_cat = [ass in extra_set for ass in ass_cat_list]
-            drop_n = cat_drop_dict.get(cat, 0)
-            keep_n = cat_keep_dict.get(cat, 0)
-
-            # a rule set to nothing grades as though it were never
-            # written, which is not what anyone who typed it meant
-            for name, d, did in (('drop_low', cat_drop_dict, 'drops nothing'),
-                                 ('keep_high', cat_keep_dict,
-                                  'counts every score')):
-                if d.get(cat) == 0:
-                    warn(f'{name} is 0 for {cat}: it {did}, which is the '
-                         f'same as no rule at all')
-
-            # nothing is left to count a missing score against, so keep_high
-            # quietly becomes the ordinary mean of everything
-            n_keepable = sum(not x for x in extra_cat)
-            if keep_n > n_keepable:
-                warn(f'keep_high is {keep_n} where {cat} has {n_keepable} '
-                     f'assignments to count, so every one of them does')
+            # None, not 0: a rule set to nothing is a thing to warn about
+            # and an absent one is not
+            drop_n = cat_drop_dict.get(cat)
+            keep_n = cat_keep_dict.get(cat)
+            for text in rule_warn_list(cat, ass_cat_list, extra_cat,
+                                       drop_n=drop_n, keep_n=keep_n):
+                warn(text)
+            drop_n, keep_n = drop_n or 0, keep_n or 0
 
             # extra credit raises the mean of the category it sits in.  a
             # category with nothing else in it has no mean to raise, so the

@@ -1321,7 +1321,12 @@ function runGrades() {
   }
 
   state.grades = res;
-  $('messages').innerHTML += msgList(res.warn_list, 'warn');
+  // the check already showed whatever the report said, and the report exists
+  // to say what grading would -- so the overlap is by design, and showing it
+  // twice reads as two problems
+  const shownSet = new Set(((state.report || {}).warn_list) || []);
+  $('messages').innerHTML += msgList(
+    (res.warn_list || []).filter((s) => !shownSet.has(s)), 'warn');
   drawWeightTable();
   drawInspector();
   if (pickedStudent()) drawStudent(state.form);

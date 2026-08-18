@@ -210,6 +210,29 @@ class TestReport:
         assert any('keep_high' in s for s in report.warn_list)
         assert report.ok
 
+    def test_check_and_grading_word_it_identically(self, tmp_path):
+        """ the page shows the report's warnings and grading's, so any
+        difference in wording reads as a second, separate problem.  extra
+        credit is what used to split them: it is not one of the assignments
+        keep_high can count, and only one of the two knew that
+        """
+        f = write_scope(tmp_path / 'scope.csv',
+                        {'Puzzle1': 10, 'Puzzle2': 10, 'Puzzle3': 10},
+                        [{'email': 'a@u.edu', 'scores': {'Puzzle1': 10}}])
+        policy = Policy(cat_weight_dict={'puzzle': 1},
+                        cat_keep_dict={'puzzle': 3},
+                        extra_list=['puzzle3'])
+
+        with pytest.warns(UserWarning) as record:
+            policy(f)
+        said_list = [str(w.message) for w in record]
+
+        rule_list = [s for s in build_report(policy, str(f)).warn_list
+                     if 'keep_high' in s]
+        assert rule_list
+        for text in rule_list:
+            assert text in said_list
+
     def test_a_rule_set_to_zero_is_warned_about(self, f_scope_puz):
         """ and shown as "keep 0" rather than as no rule, so that the report
         and the file say the same thing """
