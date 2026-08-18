@@ -18,7 +18,7 @@ new code.
   of time — and it shouldn't count as if it were fine."*
   This is the case with no answer today. It is per-assignment, it is
   occasional, and the instructor already knows roughly what they want ("add
-  8 points", "square-root it").
+  8 points", "give back a third of what they lost").
 
 Everything below is for the second case only. Curving a category mean or
 the final grade is out of scope: it lands on top of `grade_thresh`, which
@@ -43,9 +43,10 @@ section the file already has.
 
 Rules:
 
-- values are fractions, both sides, and outside 0-1 is an error naming the
-  fix (`8` where `.08` was meant) — the same error `grade_thresh` and
-  `penalty_per_day` already give
+- fractions, both sides. x stays within 0-1; y above 1 is how "allow above
+  100%" is written (§6), and y above 2 is refused as the typo it is (`0: 8`
+  is `.08` misspelled, not an 800% score) — the same error `grade_thresh`
+  and `penalty_per_day` already give
 - implicit anchors at (0, 0) and (1, 1), so the two-point example above is
   the whole curve and a one-point curve is legal
 - strictly increasing in x, non-decreasing in y. A curve that ranks two
@@ -62,8 +63,8 @@ The alternative is `exam2: {kind: sqrt, k: .4}` — more readable in the
 file, and it round-trips into a slider position perfectly. It was rejected:
 every named family is another python code path, another validator and
 another check message, and the list of families instructors want has no end
-to it. Control points are one code path forever, and every preset in §6 is
-piecewise-linear by construction, so nothing has to be sampled.
+to it. Control points are one code path forever, and both curves in §6 are
+straight lines, so nothing has to be sampled.
 
 Sampling is worth ruling out explicitly, because it looks like it would
 work. A faithful square root is expensive to approximate: five points miss
@@ -71,18 +72,18 @@ the true curve by 11 grade points at worst, and even sixteen points
 weighted toward the bend still miss by 1.6. Getting under half a point
 needs upward of thirty pairs, which turns the section into a wall of
 numbers nobody can read or hand-edit. That is an argument against offering
-a power curve at all rather than an argument for sampling one — the shape
-instructors want from it is "concave, lifts the middle", and §6 gets that
-from three pairs.
+a power curve at all rather than an argument for sampling one. What
+instructors ask for turns out to be two straight lines (§6), which is two
+pairs each.
 
 The important consequence: because storage is the general thing, the
 expensive UI (§5, tier 2) stays optional *forever*. A policy written by the
 cheap UI is exactly the policy the drag-handle editor would produce, so
 adding handles later invalidates nothing.
 
-The UI should write a comment above the entry saying which preset produced
-it (`# +8 points, tapering to nothing at 100%`). Comments survive the
-round-trip loader (that is what `edit.py` is for), so the file stays
+The UI should write a comment above the entry saying which option produced
+it (`# percentage: 32.6% of the points lost, given back`). Comments survive
+the round-trip loader (that is what `edit.py` is for), so the file stays
 legible without the policy carrying a second representation of the curve.
 
 ## 2. Where in the pipeline it applies
@@ -130,14 +131,14 @@ before/after comparison that already exists.
 
 | file | what | lines |
 |------|------|-------|
-| `finalgrade/curve.py` (new) | point list, `apply`, validation, a one-line description of a curve for check and audit, the three presets of §6 and the target-mean solve | ~100 |
+| `finalgrade/curve.py` (new) | point list, `apply`, validation, a one-line description of a curve for check and audit, the two curves of §6 and the mean conversion | ~100 |
 | `policy.py` | `curve_dict` in `YAML_KEY_DICT`, the key tree, the dataclass, `_normalize`, `_validate_curve`, `average_kwargs` | ~45 |
 | `gradebook.py` | `average(..., curve_dict)`, resolve names to columns once, apply per column | ~20 |
 | `check.py` | the curve on `AssignmentRow`, and a line per curved assignment: the points, and the class mean before to after | ~35 |
 | `audit.py` | one event per student per curved assignment that moved: "exam2 curved from 72% to 79%" | ~25 |
 | `inspect.py` | the raw side of the pair for a curved assignment, and a flag so the UI can label it | ~10 |
 | `edit.py` | `set_curve` (an empty mapping removes it) + `ACTION_DICT` | ~25 |
-| `web.py` | `curve_list` in `form_state`; `curve_preset` (a preset name and a knob, or a target mean, in — control points and before/after stats out); `bin_curve` for the preview (§5) | ~50 |
+| `web.py` | `curve_list` in `form_state`; `curve_points` (an option, a parameter or a target mean, and the ceiling toggle in — control points and stats out); `bin_curve` for the preview (§5) | ~50 |
 | `policy.yaml`, `doc/policy.md`, `README.md` | an example block, a reference section, a bullet | ~40 |
 | `test/test_curve.py` | interp math, nan passthrough, each refusal, the drop-lowest interaction, the raw override, an `edit` round trip, one end-to-end | ~150 |
 
@@ -171,28 +172,30 @@ use the page. `check` explains it, the inspector already draws before and
 after, the command line has the feature. This tier alone is defensible to
 ship.
 
-### Tier 1 — presets in the weight table (~180 lines JS, ~60 CSS)
+### Tier 1 — the curve editor in the weight table (~180 lines JS, ~60 CSS)
 
 A `curve` cell on the assignment's row in the weight table: `—`, or the
 shorthand (`+8 pts`). Clicking opens a small inline editor, the same shape
 as the other row editors:
 
-- a preset select — *none / flat shift / taper to 100% / peak at the
-  median* (§6), which is where the kink sits
-- one number for that preset's knob, capped where the curve would stop
-  being monotone
-- a readout: class mean and standard deviation before to after, how many
-  students' letters moved, and how many end at exactly 100%
+- a choice of two curves, *percentage* or *flat* (§6)
+- **two number boxes that are the same setting seen twice**: the curve's
+  own parameter, and the class mean it produces. Typing in either fills in
+  the other, so an instructor who thinks "give back a third of what they
+  lost" and one who thinks "this exam should have averaged 87" both get to
+  say it the way they think it
+- an *allow above 100%* toggle
+- a readout: standard deviation before and after, how many students' letters
+  moved, and how many end at exactly 100%
 - a 60x60 static sparkline of the mapping, so the shape is visible. A
   polyline, ~15 lines, no interaction
-- a *target mean* box, solved by bisection on the preset's one knob
 
-The browser holds none of that arithmetic. Choosing a knob from a target
-mean reads the class's scores, and the median-peak preset needs the class
-median, so both are grading decisions and both live in `curve.py` behind
-`web.curve_preset` — the page sends a preset name and a number and receives
-control points. The command line gets the same presets for free, and there
-is no second implementation to disagree with the first.
+The browser holds none of that arithmetic. Turning a target mean into a
+parameter reads the class's scores, so it is a grading decision and it
+lives in `curve.py` behind `web.curve_points` — the page sends an option, a
+number and the toggle, and receives control points plus the stats. The
+command line gets the same two curves for free, and there is no second
+implementation to disagree with the first.
 
 The editor then writes those points through `edit_policy('set_curve', …)`
 and the page redraws from the yaml like every other widget. No SVG
@@ -204,84 +207,55 @@ Tier 1 is the whole feature for almost every use.
 
 ### Why the standard deviation is a readout, not a box
 
-Not a cost argument — an arithmetic one. A curve that only lifts scores,
-into a range capped at 100%, must compress the spread as it raises the
-mean. There is no shape that avoids it.
+Not a cost argument — an arithmetic one. Two boxes already say everything
+there is to say: pick an option and a mean, and the spread is no longer
+free, it is whatever that option implies. On the shipped example, landing
+`Exam1` (mean 80.7%, sd 15.7%) on a mean of 87% gives sd 10.6 by
+percentage, 14.4 by flat, and 15.7 by flat with the ceiling off. Nothing is
+left to type.
 
-Measured on the shipped example (`Exam1`, mean 80.7%, sd 15.7%): asking for
-a mean of 87% pins the resulting sd into roughly 12.4-15.3% no matter where
-the kink goes. Typing 16% is unreachable, and so is 10%. So a std box would
-spend most of its life refusing what was typed and explaining why — which
-is a worse widget than a readout that simply says what the spread became.
-
-If both are genuinely wanted later, they belong to one two-parameter
-family, `y = clamp(a·x + b)`, whose two knobs *are* the two boxes; solving
-needs nested bisection because the clamp breaks the closed form, and the
-"closest reachable" message becomes the main feature rather than an edge
-case. ~60 lines, and worth it only if the readout turns out to be the thing
-people argue with.
+A third box would therefore have to change the *shape* of the curve to
+honour it, and most of what could be typed is unreachable anyway: a lift
+into a range capped at 100% cannot widen a spread. A readout that says what
+the spread became is the whole of what a std box could honestly offer.
 
 ### Tier 2 — handles on the graph
 
-Two very different versions hide behind "make the curve draggable".
+Both options in §6 are straight lines, so a graph would be dragging the
+line's two ends: two degrees of freedom, the same two the boxes already
+have, and a nicer way to feel the trade-off. ~120 lines, and additive
+whenever it is wanted.
 
-**One draggable kink** (~120 lines JS). The presets of §6 are one shape
-with the pivot in three places, so exposing the pivot as a single handle is
-the presets with the constraint removed. Two degrees of freedom, no add or
-remove, no monotone bookkeeping beyond clamping the point inside the
-triangle its neighbours make, and the sparkline becomes the editor. If any
-graph gets built, it is this one — and note it can reach mean/sd pairs that
-the presets cannot, which is the honest use for it.
+The many-handle version is the one to refuse. Pointer events, hit testing,
+add on click, remove on drag-off, keyboard equivalents, touch — the most
+stateful code in the page by a wide margin — and a curve with N handles has
+N degrees of freedom against two boxes, so typing a mean rewrites the shape
+just dragged. No grading question has yet needed a curve that bends more
+than once.
 
-**N handles** (~500-700 lines JS). Pointer events, hit testing, add on
-click, remove on drag-off, keyboard equivalents for accessibility, touch;
-the most stateful code in the page by a wide margin. And the dimensionality
-problem: a curve with N handles has N degrees of freedom, a mean box and a
-std box have two, and two editors of different dimensionality over one
-object cannot both be live — typing a mean rewrites the whole curve and
-destroys the handles just dragged, while dragging a handle leaves the
-family the boxes describe. There is no known grading need for a shape with
-more than one kink.
+Either way the live preview is the same, and worth building: the
+after-histogram cannot be computed in javascript, because applying a curve
+to scores *is* grading and app.js's whole premise is that no grading
+decision lives there. `bin_curve(value_json, name_json, point_json)` takes
+the score array the page already holds and returns the binned result, so a
+drag costs one small pyodide call rather than a re-read of the csv —
+debounced, with the real re-grade on release.
 
-Both versions need the same live preview, which is worth building either
-way: the after-histogram cannot be computed in javascript, because applying
-a curve to scores *is* grading and app.js's whole premise is that no
-grading decision lives there. `bin_curve(value_json, name_json,
-point_json)` takes the score array the page already holds and returns the
-binned result, so a drag costs one small pyodide call rather than a re-read
-of the csv — debounced, with the real re-grade on release.
+## 6. The two curves
 
-## 6. The presets, concretely
+Both are straight lines. **Percentage** gives back a share of the points
+each student lost; **flat** gives every student the same points. That is
+the entire vocabulary.
 
-The three presets are **one shape with the kink in a different place**: a
-line from the bottom of the range to a single interior point, and a line
-from there to (1, 1). One implementation, three sensible defaults, and a
-sparkline that makes the difference obvious without reading anything.
+The numbers below are the shipped example, `web/ex_gradescope.csv`, whose
+`Exam1` has 98 scores, a mean of 80.7%, a standard deviation of 15.7% and 9
+students already at 100%. Both curves are set to land the class mean on
+**87%**, so the columns are comparable: the same mean, bought two ways.
 
-Each has one knob, and each moves the class mean monotonically in that
-knob, which is what lets a target mean be solved by bisection.
+### Percentage (the default)
 
-The worked numbers below are the shipped example, `web/ex_gradescope.csv`,
-whose `Exam1` has 98 scores, a mean of 80.7%, a standard deviation of
-15.7%, a median of 81.6% and 9 students at exactly 100%. Every preset is
-set to land the class mean on **87%**, so the columns are comparable: the
-same mean, bought three different ways.
-
-**Flat shift** — the kink is at the top. Everyone gains the same `p`, and
-the top of the class runs into the ceiling.
-
-```yaml
-curve:
-  exam1:
-    0: .075
-    .925: 1
-```
-
-`y = min(x + p, 1)`. Knob: points added to everybody, 7.5 here.
-
-**Taper to 100%** — the kink is at the bottom, which is to say there is no
-kink: one straight line from `(0, p)` to `(1, 1)`. The gain shrinks
-steadily to nothing at the top.
+Hand back `p` of what each student missed: `y = x + p(1 - x)`. A student at
+60% missed 40 points; at `p` = a third, they get 13 of them back.
 
 ```yaml
 curve:
@@ -290,59 +264,70 @@ curve:
     1: 1
 ```
 
-`y = x + p(1 - x)`. Knob: points added at zero — 32.6 here, which is why
-the box needs the median gain (+6.0) printed beside it. Nobody reads "add
-32 points" and means "the typical student gains 6".
+Nobody can pass 100%, because a student at 100% lost nothing to give back —
+so the ceiling toggle does not arise. The parameter and the mean convert
+with one line of algebra each way:
 
-**Peak at the median** — the kink sits on the class median, so the ends
-are pinned and the middle is lifted.
+    mean_after = mean + p(1 - mean)      p = (target - mean) / (1 - mean)
+
+### Flat
+
+Give everybody the same `p`: `y = x + p`.
 
 ```yaml
 curve:
   exam1:
-    0: 0
-    .816: .916
-    1: 1
+    0: .075
+    .925: 1
 ```
 
-Knob: points added to the median student, 10.0 here, capped at `1 - median`
-(18.4 points) because the median cannot be lifted past 100%.
+That is the capped form — the second point is where the line reaches 100%,
+and it stays there. With *allow above 100%* on, the ceiling is gone and the
+line simply continues:
 
-### What the same +6.3 to the mean costs, three ways
+```yaml
+curve:
+  exam1:
+    0: .063
+    1: 1.063
+```
 
-| | flat shift | taper to 100% | peak at median |
+Uncapped, `p` *is* the change in the mean, so the two boxes are the same
+number. Capped, the clamp eats part of it and the conversion needs a
+bisection — about ten lines, and the only place in the feature that isn't
+closed-form algebra.
+
+### The same +6.3 to the mean, three ways
+
+| | percentage | flat | flat, above 100% |
 |---|---|---|---|
-| a blank exam, 0 | **33** | 8 | **0** |
-| 10th percentile, 61 | 69 | 74 | 69 |
-| median, 82 | 89 | 88 | **92** |
-| 90th percentile, 98 | **100** | 99 | 99 |
-| already at 100 | 100 | 100 | 100 |
-| standard deviation, from 15.7 | 14.4 | **10.6** | 14.4 |
-| students at exactly 100% | **26** | 9 | 9 |
+| parameter | 32.6% of points lost | +7.5 | +6.3 |
+| a blank exam, 0 | **33** | 7.5 | 6.3 |
+| 10th percentile, 61 | 74 | 69 | 68 |
+| median, 82 | 88 | 89 | 88 |
+| 90th percentile, 98 | 99 | **100** | **105** |
+| standard deviation, from 15.7 | 10.6 | 14.4 | 15.7 |
+| students at exactly 100% | 9 | **26** | 9 |
+| students above 100% | 0 | 0 | **22** |
 
-The three differ in exactly three things a reader can be shown: what a
-blank exam earns, whether the top of the class ties up, and how much spread
-survives. Flat shift moves 17 more students onto 100%, erasing the order
-among the best work. Taper hands 33 points to someone who wrote nothing and
-compresses the spread by a third. Peak-at-the-median does neither, and its
-knob is the only one that reads as what an instructor means.
+What a reader should take from it: percentage helps the bottom of the class
+most and squeezes the spread; flat treats everyone alike but pins 17 more
+students onto exactly 100%, erasing the order among the best work; allowing
+above 100% removes that ceiling and leaves the spread untouched, at the
+cost of scores that read oddly on a transcript.
 
-**So: peak at the median is the default preset.** The others exist because
-sometimes the flat "+8 for everybody, I announced it in class" is the
-policy, and sometimes the bottom of the class really is who the broken exam
-hurt.
+Percentage is the default because "here is some of what you lost back" is
+the thing most instructors mean, and because it cannot produce either
+oddity by construction.
 
 ## 7. Decisions still open
 
-- **cap at 100%?** Recommended yes: a control point above 1 is refused,
-  matching every other fraction in the file. Costs one comparison to
-  reverse if "everyone gets 5 points, the top student gets 105%" turns out
-  to be wanted
 - **scores already above 100%** (a gradescope score over max points). With
-  the implicit (1, 1) anchor, `np.interp` leaves them at 1, which *lowers*
-  them. Either extend the curve beyond 1 in parallel (`f(1) + (x-1)`) or
-  refuse to curve an assignment where any score exceeds its max points.
-  Parallel extension is three lines and never lowers anybody
+  the implicit (1, 1) anchor, `np.interp` would leave them at 1, which
+  *lowers* them. Decided: continue the curve past 1 in parallel, three
+  lines, which never lowers anybody. Under percentage that means a student
+  above 100% is left where they are, which is right — they lost nothing to
+  give back
 - **extra credit**: a curve on an extra-credit column is just a column, so
   it works. Probably fine unremarked
 - **"before policy" changes meaning.** It currently means before drops and
@@ -352,22 +337,17 @@ hurt.
 
 ## 8. Recommendation
 
-Build tier 0 and tier 1. Show the curve as a static sparkline, let the
-presets be the editor, make the target mean editable and the standard
-deviation a readout. That is roughly 250 lines of python, 150 of test and
-200 of browser, all of it in the shape the codebase already has.
+Build tier 0 and tier 1: two curves, two linked boxes, a ceiling toggle, a
+static sparkline, and the before/after histogram that already exists.
+Roughly 250 lines of python, 150 of test and 200 of browser, all of it in
+the shape the codebase already has.
 
-Do not build the many-handle graph, and do not put a std box on a free-form
-curve. The instinct that the sketch is unwieldy is right, and there are two
-separate reasons. The std box is refused by arithmetic: a lift into a capped
-range compresses the spread, so once the mean is set the spread is nearly
-determined and the box would mostly reject what was typed. The many-handle
-graph is refused by dimensionality: N handles and two boxes are two editors
-of different sizes over one object, and they cannot both be live.
+Leave out the many-handle graph and the third box for the spread. Neither
+is a cost dodge: the spread stops being free the moment the option and the
+mean are chosen, and N handles against two boxes are two editors of
+different sizes over one object, which cannot both be live.
 
-What is left open, cheaply, is the single draggable kink — the presets with
-the pivot free, two degrees of freedom, ~120 lines. Because the file stores
-control points, it can be added in a later term without invalidating a
-single saved policy. There is no cost to leaving it out now, and whether
-the three presets are already enough is worth learning from a term of use
-rather than guessing at.
+Dragging the line's two ends stays available whenever it is wanted, ~120
+lines, and because the file stores control points it invalidates no saved
+policy. Whether the two curves are already enough is worth learning from a
+term of use rather than guessing at.
