@@ -670,7 +670,15 @@ button.link {
   font-family: var(--mono);
 }
 
-label.f {
+/* the same line, in prose rather than assignment names */
+.cat-rule {
+  margin-top: .4rem;
+  font-size: .8rem;
+  color: var(--ink-faint);
+}
+
+/* one field: its caption and its control, or a group that acts as one */
+.f {
   display: inline-flex;
   align-items: center;
   gap: .3rem;
@@ -678,7 +686,7 @@ label.f {
   color: var(--ink-soft);
 }
 
-label.f input[type="number"] {
+.f input[type="number"] {
   width: 4.2rem;
   font: inherit;
   font-size: .85rem;
@@ -1012,7 +1020,7 @@ tr.flag-error td { background: var(--bad-soft); }
   white-space: nowrap;
 }
 
-.tag.none, .tag.many { background: var(--warn); color: #fff; }
+.tag.none, .tag.many, .tag.warn { background: var(--warn); color: #fff; }
 .tag.error { background: var(--bad); color: #fff; }
 
 .msg {

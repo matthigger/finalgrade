@@ -8,6 +8,7 @@
 category:
   weight: null
   drop_low: null
+  keep_high: null
   late_penalty: null
 
 assignments:
@@ -52,6 +53,18 @@ email_list: null
 # each student's 2 lowest hw scores are dropped.
 # assignments are matched to categories by substring, so "HW 3" matches
 # "hw" and "Exam - Midterm1 version A" matches "exam"
+
+# category:
+#   weight:
+#     puzzle: 20
+#   keep_high:
+#     puzzle: 2
+
+# what this does:
+# each student's best 2 puzzle scores are the whole puzzle grade, however
+# many they attempted.  a student with fewer than 2 is averaged over zeros:
+# one puzzle at 90% and none else is 45%, not 90%.
+# drop_low and keep_high are exclusive -- a category takes one or the other.
 
 # category:
 #   late_penalty:

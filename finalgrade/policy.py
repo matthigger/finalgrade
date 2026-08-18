@@ -19,6 +19,7 @@ yaml = YAML(typ='safe')
 YAML_KEY_DICT = {
     'cat_weight_dict': ('category', 'weight'),
     'cat_drop_dict': ('category', 'drop_low'),
+    'cat_keep_dict': ('category', 'keep_high'),
     'cat_late_dict': ('category', 'late_penalty'),
     'remove_list': ('assignments', 'exclude'),
     'sub_dict': ('assignments', 'substitute'),
@@ -132,11 +133,11 @@ def check_key(d):
 # iterating a string gives its letters, so it excluded every assignment
 # whose name contains an h, a w or a 2
 SECTION_TYPE_DICT = {
-    'cat_weight_dict': dict, 'cat_drop_dict': dict, 'cat_late_dict': dict,
-    'sub_dict': dict, 'waive_dict': dict, 'late_waive_dict': dict,
-    'grade_thresh': dict, 'remove_list': list, 'email_list': list,
-    'plan_dict': dict, 'max_dict': dict, 'extra_list': list,
-    'note_dict': dict,
+    'cat_weight_dict': dict, 'cat_drop_dict': dict, 'cat_keep_dict': dict,
+    'cat_late_dict': dict, 'sub_dict': dict, 'waive_dict': dict,
+    'late_waive_dict': dict, 'grade_thresh': dict, 'remove_list': list,
+    'email_list': list, 'plan_dict': dict, 'max_dict': dict,
+    'extra_list': list, 'note_dict': dict,
 }
 
 SECTION_SHAPE_DICT = {
@@ -153,6 +154,7 @@ class Policy:
     """
     cat_weight_dict: dict = field(default_factory=dict)
     cat_drop_dict: dict = field(default_factory=dict)
+    cat_keep_dict: dict = field(default_factory=dict)
     remove_list: list = field(default_factory=list)
     sub_dict: dict = field(default_factory=dict)
     plan_dict: dict = field(default_factory=dict)
@@ -172,9 +174,9 @@ class Policy:
 
     # yaml gives None for an empty section; normalize that to an empty
     # container so that every attribute has a predictable type
-    EMPTY_DICT_TUP = ('cat_weight_dict', 'cat_drop_dict', 'sub_dict',
-                      'waive_dict', 'cat_late_dict', 'late_waive_dict',
-                      'plan_dict', 'max_dict', 'note_dict')
+    EMPTY_DICT_TUP = ('cat_weight_dict', 'cat_drop_dict', 'cat_keep_dict',
+                      'sub_dict', 'waive_dict', 'cat_late_dict',
+                      'late_waive_dict', 'plan_dict', 'max_dict', 'note_dict')
     EMPTY_LIST_TUP = ('remove_list', 'email_list', 'extra_list')
 
     def __post_init__(self):
@@ -238,6 +240,9 @@ class Policy:
 
         self.cat_drop_dict = {normalize(c): d
                               for c, d in self.cat_drop_dict.items()}
+
+        self.cat_keep_dict = {normalize(c): k
+                              for c, k in self.cat_keep_dict.items()}
 
         self.remove_list = [normalize(a) for a in self.remove_list]
 
@@ -401,16 +406,29 @@ class Policy:
                     f'a planned assignment needs a positive max points, '
                     f'got {points!r} for "{ass}"')
 
-        # drop counts are non-negative integers
-        for cat, d in self.cat_drop_dict.items():
-            if not isinstance(d, int) or isinstance(d, bool) or d < 0:
-                raise PolicyError(
-                    f'drop_low must be a non-negative integer, '
-                    f'got {d!r} for "{cat}"')
+        # drop / keep counts are non-negative integers
+        for name in ('cat_drop_dict', 'cat_keep_dict'):
+            where = YAML_KEY_DICT[name][-1]
+            for cat, n in getattr(self, name).items():
+                if not isinstance(n, int) or isinstance(n, bool) or n < 0:
+                    raise PolicyError(
+                        f'{where} must be a non-negative integer, '
+                        f'got {n!r} for "{cat}"')
+
+        # which of a student's scores count is one question, and the two
+        # rules are different answers to it: a category set to both has no
+        # one mean left to compute
+        both_list = sorted(cat for cat, n in self.cat_keep_dict.items()
+                           if n and self.cat_drop_dict.get(cat))
+        if both_list:
+            raise PolicyError(
+                f'a category takes drop_low or keep_high, not both: '
+                f'{", ".join(both_list)}')
 
         # categories referenced elsewhere must be weighted, or they'd be
         # silently ignored
         self._check_category_keys(self.cat_drop_dict, 'drop_low')
+        self._check_category_keys(self.cat_keep_dict, 'keep_high')
         self._check_category_keys(self.cat_late_dict, 'late_penalty')
 
         # validate exclude_complete_thresh
@@ -606,6 +624,7 @@ class Policy:
         """
         kwargs = dict(cat_weight_dict=self.cat_weight_dict,
                       cat_drop_dict=self.cat_drop_dict,
+                      cat_keep_dict=self.cat_keep_dict,
                       cat_late_dict=self.cat_late_dict,
                       grade_thresh=self.grade_thresh,
                       late_waive_dict=self.late_waive_dict,

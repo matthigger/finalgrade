@@ -687,8 +687,8 @@ class Gradebook:
         return pd.concat((self.df_meta, df_grade, self.df_perc), axis=1)
 
     def average(self, cat_weight_dict=None, cat_drop_dict=None,
-                cat_late_dict=None, grade_thresh=None, late_waive_dict=None,
-                extra_list=None):
+                cat_keep_dict=None, cat_late_dict=None, grade_thresh=None,
+                late_waive_dict=None, extra_list=None):
         """ final grades, weighted by points (default) or category weights
 
         Args:
@@ -704,6 +704,12 @@ class Gradebook:
                  percentage assignments to drop in each category.  any category
                  without an entry in cat_drop_dict will not have any lowest
                  assignments dropped.  (default: no lowest assignments dropped)
+            cat_keep_dict (dict): keys are categories (matching some key in
+                cat_weight_dict).  values are ints, how many of the highest
+                percentage assignments count in that category -- a missing
+                score counting as a zero, so a student with two of six
+                puzzles where the best three count is averaged over three.
+                exclusive with cat_drop_dict, category by category
             cat_late_dict (dict): keys are assignment categories.  values are
                 dictionaries unpacked as arguments into
                 Gradebook.get_late_penalty()
@@ -721,14 +727,22 @@ class Gradebook:
         if cat_late_dict is None:
             cat_late_dict = dict()
 
-        if cat_drop_dict is None:
-            cat_drop_dict = dict()
-        else:
-            unknown_set = set(cat_drop_dict.keys()) - set(cat_weight_dict)
+        cat_drop_dict = cat_drop_dict or dict()
+        cat_keep_dict = cat_keep_dict or dict()
+        for name, d in (('drop_low', cat_drop_dict),
+                        ('keep_high', cat_keep_dict)):
+            unknown_set = set(d.keys()) - set(cat_weight_dict)
             if unknown_set:
                 raise PolicyError(
-                    f'drop_low category has no weight: '
+                    f'{name} category has no weight: '
                     f'{", ".join(sorted(unknown_set))}')
+
+        both_list = sorted(cat for cat, n in cat_keep_dict.items()
+                           if n and cat_drop_dict.get(cat))
+        if both_list:
+            raise PolicyError(
+                f'a category takes drop_low or keep_high, not both: '
+                f'{", ".join(both_list)}')
 
         extra_set = match_set(self.ass_list, extra_list)
 
@@ -766,6 +780,14 @@ class Gradebook:
             point_cat = self.points.loc[ass_cat_list].values
             extra_cat = [ass in extra_set for ass in ass_cat_list]
             drop_n = cat_drop_dict.get(cat, 0)
+            keep_n = cat_keep_dict.get(cat, 0)
+
+            # nothing is left to count a missing score against, so keep_high
+            # quietly becomes the ordinary mean of everything
+            n_keepable = sum(not x for x in extra_cat)
+            if keep_n > n_keepable:
+                warn(f'keep_high is {keep_n} where {cat} has {n_keepable} '
+                     f'assignments to count, so every one of them does')
 
             # extra credit raises the mean of the category it sits in.  a
             # category with nothing else in it has no mean to raise, so the
@@ -778,7 +800,8 @@ class Gradebook:
             s_mean = f'mean_{cat}'
             df_grade[s_mean] = pd.Series(
                 [get_mean_drop_low(perc=perc_cat[idx, :], weight=point_cat,
-                                   drop_n=drop_n, extra=extra_cat)
+                                   drop_n=drop_n, keep_n=keep_n,
+                                   extra=extra_cat)
                  for idx in range(perc_cat.shape[0])],
                 index=self.df_perc.index)
 

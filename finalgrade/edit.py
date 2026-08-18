@@ -168,17 +168,26 @@ def add_category(data, cat, rebalance=True):
         weight_dict[cat] = 1
 
 
+def _pop_from(data, key_tup, cat):
+    """ removes cat from the section at key_tup, without creating one
+
+    A section the file never had is a section the user never wanted: making
+    one here only to empty it again would write `keep_high:` into every
+    policy that touches a weight.
+    """
+    node = data
+    for key in key_tup[:-1]:
+        node = node.get(key) if isinstance(node, dict) else None
+    section = node.get(key_tup[-1]) if isinstance(node, dict) else None
+    if isinstance(section, dict):
+        section.pop(cat, None)
+    _clear_if_empty(data, *key_tup)
+
+
 def remove_category(data, cat):
     """ removes a category, and anything that only made sense with it """
-    for key_tup in (('category', 'weight'), ('category', 'drop_low'),
-                    ('category', 'late_penalty')):
-        node = data
-        for key in key_tup[:-1]:
-            node = node.get(key) if isinstance(node, dict) else None
-        section = node.get(key_tup[-1]) if isinstance(node, dict) else None
-        if isinstance(section, dict):
-            section.pop(cat, None)
-        _clear_if_empty(data, *key_tup)
+    for key in ('weight', 'drop_low', 'keep_high', 'late_penalty'):
+        _pop_from(data, ('category', key), cat)
 
 
 def set_weight(data, cat, weight):
@@ -186,14 +195,32 @@ def set_weight(data, cat, weight):
     _put(_section(data, 'category', 'weight'), cat, _num(weight))
 
 
+def _set_count(data, cat, key, n):
+    """ sets one of the two exclusive per-category counts (0 removes)
+
+    Setting either clears the other: a category takes drop_low or keep_high,
+    so a form that left the previous rule behind would write a policy that
+    Policy then refuses to read.
+    """
+    other = 'keep_high' if key == 'drop_low' else 'drop_low'
+
+    if n:
+        _put(_section(data, 'category', key), cat, int(n))
+        _clear_if_empty(data, 'category', key)
+    else:
+        _pop_from(data, ('category', key), cat)
+
+    _pop_from(data, ('category', other), cat)
+
+
 def set_drop_low(data, cat, n):
     """ sets how many of a category's lowest scores to drop (0 removes) """
-    if not n:
-        section = _section(data, 'category', 'drop_low')
-        section.pop(cat, None)
-    else:
-        _put(_section(data, 'category', 'drop_low'), cat, int(n))
-    _clear_if_empty(data, 'category', 'drop_low')
+    _set_count(data, cat, 'drop_low', n)
+
+
+def set_keep_high(data, cat, n):
+    """ sets how many of a category's highest scores count (0 removes) """
+    _set_count(data, cat, 'keep_high', n)
 
 
 def set_late(data, cat, late_dict=None):
@@ -382,6 +409,7 @@ ACTION_DICT = {
     'remove_category': remove_category,
     'set_weight': set_weight,
     'set_drop_low': set_drop_low,
+    'set_keep_high': set_keep_high,
     'set_late': set_late,
     'set_excuse_offset': set_excuse_offset,
     'set_waive': set_waive,

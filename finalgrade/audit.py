@@ -6,14 +6,14 @@ August about a course you taught in April -- is always the same: how.
 
 So every step that moved this student's number says so, in order: what stood
 in for what, what was waived, what was late and what that cost, which of
-their scores was dropped, and how the categories combined.  The pipeline
+their scores counted, and how the categories combined.  The pipeline
 reports the first two itself (only it knows what it did); everything after
 is reconstructed here from the same numbers grading used.
 """
 import pandas as pd
 
 from .errors import FinalgradeError
-from .get_mean_drop_low import get_drop_idx
+from .get_mean_drop_low import get_drop_idx, get_keep_idx
 from .gradebook import MINUTES_PER_DAY, match_set
 
 
@@ -135,6 +135,7 @@ def build_log(gradebook, policy, df_grade, log=None, late_dict=None):
     # one above it: the penalty acts on a mean the drop has already changed
     _add_late(gradebook, policy, out)
     _add_drop(gradebook, policy, out)
+    _add_keep(gradebook, policy, out)
     _add_penalty(out, late_dict or {}, df_grade)
     _add_mean(policy, df_grade, out)
 
@@ -240,20 +241,31 @@ def _is(n):
     return 'is' if n == 1 else 'are'
 
 
+def _cat_arr(gradebook, policy, cat):
+    """ a category's assignments, their points and which are extra credit
+
+    Returns:
+        cat_ass_list (list): assignment names the category catches
+        point_arr (np.array): their max points
+        extra_arr (list): bool, True where one is extra credit
+    """
+    cat_ass_list = [a for a in gradebook.ass_list if cat in a]
+    if not cat_ass_list:
+        return None
+
+    extra_set = match_set(gradebook.ass_list, policy.extra_list)
+    return (cat_ass_list,
+            gradebook.points.loc[cat_ass_list].values,
+            [a in extra_set for a in cat_ass_list])
+
+
 def _add_drop(gradebook, policy, out):
     """ which of this student's scores drop_low actually discarded """
-    ass_list = list(gradebook.ass_list)
-
     for cat, drop_n in policy.cat_drop_dict.items():
-        if not drop_n:
+        arr_tup = _cat_arr(gradebook, policy, cat) if drop_n else None
+        if arr_tup is None:
             continue
-        cat_ass_list = [a for a in ass_list if cat in a]
-        if not cat_ass_list:
-            continue
-
-        point_arr = gradebook.points.loc[cat_ass_list].values
-        extra_set = match_set(gradebook.ass_list, policy.extra_list)
-        extra_arr = [a in extra_set for a in cat_ass_list]
+        cat_ass_list, point_arr, extra_arr = arr_tup
 
         for email in out:
             if email not in gradebook.df_perc.index:
@@ -270,6 +282,45 @@ def _add_drop(gradebook, policy, out):
                 kind='drop',
                 text=f'{cat}: dropped {", ".join(name_list)}, '
                      f'the lowest of {len(cat_ass_list)}'))
+
+
+def _add_keep(gradebook, policy, out):
+    """ which of this student's scores keep_high counted
+
+    Including the ones it had to make up: a student short of the number
+    required is averaged over zeros, and that is the line they will write
+    about, so it says how many rather than leaving them the arithmetic.
+    """
+    for cat, keep_n in policy.cat_keep_dict.items():
+        arr_tup = _cat_arr(gradebook, policy, cat) if keep_n else None
+        if arr_tup is None:
+            continue
+        cat_ass_list, point_arr, extra_arr = arr_tup
+
+        for email in out:
+            if email not in gradebook.df_perc.index:
+                continue
+            perc_arr = gradebook.df_perc.loc[email, cat_ass_list].values
+            idx_list = get_keep_idx(perc_arr, point_arr, keep_n, extra_arr)
+            if not idx_list:
+                continue
+
+            name_list = [f'{cat_ass_list[i]} ({perc_arr[i]:.0%})'
+                         for i in idx_list if not pd.isna(perc_arr[i])]
+            n_zero = len(idx_list) - len(name_list)
+
+            if not name_list:
+                text = (f'{cat}: no score at all, counted as '
+                        f'{len(idx_list)} zeros')
+            else:
+                text = f'{cat}: counted {", ".join(name_list)}'
+                if n_zero:
+                    text += (f' and {n_zero} zero'
+                             f'{"" if n_zero == 1 else "s"} for want of a '
+                             f'score')
+                text += f', the best {len(idx_list)} of {len(cat_ass_list)}'
+
+            out[email].append(dict(kind='keep', text=text))
 
 
 def _add_mean(policy, df_grade, out):

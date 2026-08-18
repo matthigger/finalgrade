@@ -148,8 +148,8 @@ def grade(csv_text, yaml_text, name='scope.csv'):
     One call does both, because the second is only ever wanted alongside the
     first and the expensive half (reading the csv, running the pipeline) is
     shared.  The raw series come from averaging the same prepared gradebook
-    a second time with the drops and late penalties taken out, so the two
-    differ by exactly the policy and nothing else.
+    a second time with the score rules and late penalties taken out, so the
+    two differ by exactly the policy and nothing else.
 
     Args:
         csv_text (str): contents of a gradescope or canvas export
@@ -354,12 +354,14 @@ def _grade_twice(policy, f_csv):
     log = dict()
     policy.prepare(gradebook, log=log)
 
-    def average(cat_drop_dict, cat_late_dict):
-        return gradebook.average_full(**policy.average_kwargs(
-            cat_drop_dict=cat_drop_dict, cat_late_dict=cat_late_dict))
+    def average(**override):
+        return gradebook.average_full(**policy.average_kwargs(**override))
 
-    df_grade = average(policy.cat_drop_dict, policy.cat_late_dict)
-    df_raw = average(dict(), dict())
+    df_grade = average()
+    # raw is the same gradebook with every rule that moves a score switched
+    # off, so the two differ by the policy and nothing else
+    df_raw = average(cat_drop_dict=dict(), cat_keep_dict=dict(),
+                     cat_late_dict=dict())
     return gradebook, df_grade, df_raw, log
 
 
@@ -488,6 +490,7 @@ def form_state(yaml_text):
     cat_dict = data.get('category') or {}
     weight_dict = cat_dict.get('weight') or {}
     drop_dict = cat_dict.get('drop_low') or {}
+    keep_dict = cat_dict.get('keep_high') or {}
     late_dict = cat_dict.get('late_penalty') or {}
     ass_dict = data.get('assignments') or {}
 
@@ -501,6 +504,7 @@ def form_state(yaml_text):
                        weight=weight,
                        weight_frac=_share(weight, total),
                        drop_low=drop_dict.get(cat) or 0,
+                       keep_high=keep_dict.get(cat) or 0,
                        late=late_dict.get(cat))
                   for cat, weight in weight_dict.items()],
         waive_list=_waive_list(data.get('waive')),
