@@ -103,10 +103,17 @@ class TestBanner:
         idx = header_list.index('Student ID')
 
         for row in list(ws.iter_rows(min_row=2)):
-            value = row[idx].value
+            cell = row[idx]
+            value = cell.value
             assert isinstance(value, str)
             assert value.isdigit()
             assert len(value) >= 9
+            # a spreadsheet shows a leading apostrophe against a text cell
+            # holding digits, which is its own display and not in the file.
+            # quotePrefix would put a real one there, and banner reads the
+            # file
+            assert not cell.quotePrefix
+            assert not value.startswith("'")
 
         # scope.csv's first student is 0123456789S: the trailing S goes, the
         # leading zero stays, and zfill only pads ids shorter than 9
