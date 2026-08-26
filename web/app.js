@@ -92,17 +92,20 @@ const SOLO_HINT = 'Your own scores, worked out by your course\'s grading ' +
   'blank is not counted at all, so this is a grade over what you have ' +
   'entered; type 0 for anything you did not hand in. An estimate is not a ' +
   'grade, and it is only as good as what you typed. Nothing is kept between ' +
-  'visits — download both files below to pick this up again.';
+  'visits, so save you.csv from the files at the top of the page — dropping ' +
+  'it back in next time brings your scores with it.';
 
 const NEED_POLICY = 'This is one student\'s row, so it is being read as ' +
   'your own grade. It needs the policy.yaml your instructor gave you as ' +
   'well — without it there is no course policy to apply, and the default ' +
   'one is not yours.';
 
-/* What a sheet made from a policy is called, everywhere a filename shows.
- * It is not a file anybody downloaded, and saying so beats naming it
- * something that looks like one. */
-const SHEET_NAME = 'your_scores.csv';
+/* What a student's own two files are called.  The sheet is the one that can
+ * be read back -- it is a gradebook of one student -- so it takes the plain
+ * name, and the breakdown says in its own that it explains rather than
+ * records.  Sharing a name is how a reader comes to upload the wrong one. */
+const SHEET_NAME = 'you.csv';
+const BREAKDOWN_NAME = 'your_grade_explained.csv';
 
 /* ------------------------------------------------------------------ boot */
 
@@ -1002,7 +1005,8 @@ function drawStudent(form) {
         }</span>
         <span class="stud-email">${escapeHtml(stud.email)}</span>
         ${graded ? `<button type="button" class="link stud-file"
-          id="stud-csv">${escapeHtml(studentFile(stud))}</button>` : ''}
+          id="stud-csv">${state.solo ? 'how this grade was reached'
+    : escapeHtml(studentFile(stud))}</button>` : ''}
         ${graded
           ? `<span class="stud-grade">${delta(stud, graded)}${pct(graded.mean)}
               <span class="stud-letter">${escapeHtml(graded.letter)}</span>
@@ -1542,7 +1546,7 @@ function downloadStudentCsv() {
   const res = toJs(state.api.student_csv(gradedCsv(), state.yaml, stud.email,
                                          state.name));
   if (!res.ok) return;
-  download(res.csv, res.filename, 'text/csv');
+  download(res.csv, state.solo ? BREAKDOWN_NAME : res.filename, 'text/csv');
 }
 
 /* The file to post for the class: this policy with every student taken out
@@ -1953,27 +1957,43 @@ function fileOf(key) {
   return null;
 }
 
+/* Every file the page is holding, one per line, each saying what saving it
+ * would be for.  On one line they read as a breadcrumb trail; the point of
+ * them is that they are the save buttons, and nothing is kept between
+ * visits. */
 function drawFiles() {
   if (!state.csv) return ($('files').innerHTML = '');
 
   const save = saveState();
   const part = [
-    '<span class="file-k">files</span>',
-    fileLink('csv', state.name, state.facts),
+    '<span class="file-k">your files</span>',
+    // a student's scores live in this csv and nowhere else, so what it is
+    // good for is worth saying rather than left to be inferred from a name
+    fileRow('csv', state.name, state.solo
+      ? 'your scores — save this to pick up where you left off'
+      : state.facts),
   ];
 
   // there is no policy to save when there is no policy: a student waiting on
   // the file their instructor sent is not somebody with unsaved work
   if (state.yaml) {
-    part.push(fileLink('yaml', state.policyName, SAVE_NOTE[save],
-                       `save-state is-${save}`));
+    part.push(fileRow('yaml', state.policyName, state.solo
+      ? `the policy you were given, and any adjustments you added — ${
+        SAVE_NOTE[save]}`
+      : SAVE_NOTE[save], `save-state is-${save}`));
   }
 
   if (state.canvasText && !state.sourceIsCanvas) {
-    part.push(fileLink('canvas', state.canvasName, 'canvas template'));
+    part.push(fileRow('canvas', state.canvasName,
+                      'your canvas gradebook, to merge grades back into'));
   }
 
-  $('files').innerHTML = part.join('<span class="file-sep">·</span>');
+  $('files').innerHTML = part.join('');
+}
+
+function fileRow(key, name, note, noteClass) {
+  return `<span class="file-row">${
+    fileLink(key, name, note, noteClass)}</span>`;
 }
 
 /* The canvas template is the gradebook canvas exported: grades are merged
@@ -2031,6 +2051,15 @@ function setCanvasTemplate(name, text) {
   drawExport();
 }
 
+/* One downloadable file: the button that writes it, and what it is for. */
+function exportRow(id, label, note, off) {
+  return `<div class="export-line">
+    <button type="button" id="${id}" class="${off ? 'secondary' : ''}"${
+    off ? ' disabled' : ''}>${escapeHtml(label)}</button>
+    <span class="export-note">${escapeHtml(note)}</span>
+  </div>`;
+}
+
 function drawExport() {
   drawCanvasDrop();
 
@@ -2043,23 +2072,25 @@ function drawExport() {
   }
 
   const canCanvas = !!state.canvasText;
-  $('export-row').innerHTML =
-    '<button type="button" id="dl-grades">download grade_full.csv</button>' +
-    `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
-      ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
-    '<button type="button" id="dl-banner">export for banner…</button>' +
-    '<button type="button" id="dl-policy" class="secondary">' +
-    'policy_PUBLIC.yaml</button>';
+  // one file per line, each saying what it is for.  in a row they are four
+  // buttons a reader has to open to tell apart
+  $('export-row').innerHTML = [
+    exportRow('dl-grades', 'grade_full.csv',
+              'every student, every category mean and the final grade — the '
+              + 'spreadsheet this run produced.'),
+    exportRow('dl-canvas', 'canvas upload csv', canCanvas
+      ? 'merged into your canvas gradebook by SIS user id, scaled to 100 so '
+        + 'canvas does not round them.'
+      : 'drop your canvas gradebook below to enable this — canvas matches '
+        + 'students by an id only that file carries.',
+              !canCanvas),
+    exportRow('dl-banner', 'banner xlsx…',
+              'needs a term code and CRNs, which a gradebook cannot know.'),
+    exportRow('dl-policy', 'policy_PUBLIC.yaml',
+              'the file to post for the class — see below.'),
+  ].join('');
 
-  $('export-hint').textContent = (canCanvas
-    ? 'The canvas export merges these grades into your canvas gradebook by ' +
-      'SIS user id, scaled to 100 so canvas does not round them.'
-    : 'Set a canvas template below to enable the canvas export.')
-    + ' policy_PUBLIC.yaml is your policy with every student taken out of '
-    + 'it and the term\'s work written into it — the one file to post for '
-    + 'the class, and the only one a student needs. The policy you are '
-    + 'editing is PRIVATE: it names students, so it is not the one to hand '
-    + 'out.';
+  $('export-hint').textContent = '';
 
   $('dl-grades').addEventListener('click', () =>
     download(state.grades.csv, 'grade_full.csv', 'text/csv'));
@@ -2082,9 +2113,6 @@ function drawExport() {
   $('dl-policy').addEventListener('click', downloadStudentPolicy);
 }
 
-/* One csv per student, plus the policy to post beside them.  A student's own
- * scores are the half of this that cannot be posted anywhere, and a course
- * has a hundred of them, so they are written in one go. */
 /* Banner will only match a row when its CRN, term code and student id all
  * line up, so it needs the two that a gradebook cannot know. */
 function runBanner() {

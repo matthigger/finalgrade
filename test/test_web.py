@@ -563,6 +563,36 @@ class TestStudentSheet:
         policy = web.student_policy(csv_text, YAML_STUDENT)['yaml']
         assert is_plain(web.student_sheet(policy))
 
+    def test_the_scores_come_back_with_the_sheet(self, csv_text):
+        """ the whole point of saving it: the typing is in the file """
+        policy = web.student_policy(csv_text, YAML_PLAIN)['yaml']
+        saved = filled_sheet(policy, ALICE_SCORE)
+
+        graded = web.grade(saved, policy)['student_list'][0]
+        got = {a['name']: a['perc'] for a in graded['ass_list']
+               if a['perc'] is not None}
+
+        assert sorted(got) == sorted(ALICE_SCORE)
+
+    def test_a_breakdown_says_which_file_was_wanted(self, csv_text):
+        """ a student is offered two csvs and only one can be read back
+
+        The reader's own complaint would be about a missing Email column,
+        which reads as a broken file rather than as the wrong one.
+        """
+        policy = web.student_policy(csv_text, YAML_PLAIN)['yaml']
+        saved = filled_sheet(policy, ALICE_SCORE)
+        breakdown = web.student_csv(saved, policy, 'you')
+
+        assert breakdown['ok'], breakdown.get('error')
+        res = web.load_csv(breakdown['csv'], 'your_grade_explained.csv')
+
+        assert not res['ok']
+        assert 'breakdown' in res['error']
+
+    def test_a_real_export_is_not_mistaken_for_one(self, csv_text):
+        assert web.load_csv(csv_text)['ok']
+
     def test_a_filled_sheet_dropped_back_in_grades_the_same(self, csv_text):
         """ how a term's typing survives, since nothing is kept between visits
 

@@ -117,9 +117,23 @@ Their page has the same controls yours does, doing the same things:
 - **extra late days** per category
 
 Each writes the same yaml section your own copy would, so a policy annotated
-this way is one the command line reads too. They can save it from the
-`policy.yaml` link and drop it back in next time — which is also how they
-keep a term's worth of typing.
+this way is one the command line reads too.
+
+## Keeping a term's worth of typing
+
+Nothing is kept between visits, so the page offers a student two files and
+they are not interchangeable:
+
+- **`you.csv`** — their scores. It is a gradebook of one student, so dropping
+  it back in alongside the policy is read as their own grade and their typing
+  comes back with it. This is the one to save.
+- **`your_grade_explained.csv`** — the breakdown behind the number: every
+  category mean, what was late and what it cost, what was waived. It explains
+  a grade rather than recording the scores behind one, so it cannot be read
+  back in. Upload it by mistake and the page says which file was wanted.
+
+Their adjustments live in the policy rather than the sheet, so a student who
+added a waiver saves the `policy.yaml` too.
 
 An **adjustments for you** block lists everything the estimate is assuming
 about them in particular. It is worth showing even when it is empty — an
