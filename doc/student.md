@@ -5,41 +5,48 @@ provokes is *what would it take*. Both are arithmetic you have already
 written down. This is how to hand a student the arithmetic instead of
 answering it one email at a time.
 
-Each student gets two files:
+Two files make a student's estimate:
 
-- **their own row** of the export — nobody else's grades
-- **a `policy.yaml`** — your policy with everybody else taken out of it
+- **one `policy.yaml`, posted once** — your policy with every student taken
+  out of it. It is the same file for the whole class, so it goes on the
+  course website and stays there.
+- **their own grades csv** — one student's scores, which is the half that
+  cannot be posted anywhere.
 
 They drop both on
-[matthigger.github.io/finalgrade](https://matthigger.github.io/finalgrade),
-the page recognises a gradebook with one student in it as somebody looking at
-their own grade, and shows it: every score, what was late and what it cost,
-which scores were dropped, how the categories combined, and the log of how the
-number was arrived at. Then they can type a score into work that has not been
-graded yet and watch the grade move.
+[matthigger.github.io/finalgrade](https://matthigger.github.io/finalgrade).
+The page recognises a gradebook with one student in it as somebody looking at
+their own grade, and swaps to showing it: every score, what was late and what
+it cost, which scores were dropped, how the categories combined, and the log
+of how the number was arrived at. Then they can type a score into work that
+has not been graded yet and watch the grade move.
 
 Nothing is uploaded anywhere. The page runs Python in the browser tab, on
 their computer, the same as it does for you.
 
 ## Writing the files
 
-In the browser, under **export**: **files for students…** writes a zip with a
-folder per student, each holding `policy.yaml` and `grades.csv`. On the
-command line:
+In the browser, under **export**:
+
+- **policy for students** — the one file to post.
+- **grades, one csv per student…** — a zip holding that same
+  `policy_student.yaml` and a `grades/` folder with one csv per student.
+
+On the command line:
 
 ```bash
 finalgrade student scope.csv --policy policy.yaml
 ```
 
-which writes `student/<last>_<first>/{policy.yaml,grades.csv}` beside the csv,
-one folder per student. `--email` writes one student's folder, `-o` puts them
-somewhere else.
+which writes `student/policy_student.yaml` and `student/grades/<last>_<first>.csv`
+beside the csv. `--email` writes one student's csv, `-o` puts them somewhere
+else.
 
-Either way the class is graded first: files that describe a policy which would
-not grade your class have nothing to agree with, so they are refused rather
+Either way the class is graded first: a policy that would not grade your class
+has nothing for a student's copy of it to agree with, so it is refused rather
 than written.
 
-## What a student's policy holds, and what it does not
+## What the posted policy holds, and what it does not
 
 The point of a subset rather than a second document is that a second document
 can disagree. The file is rebuilt from your policy section by section, so
@@ -48,22 +55,16 @@ what a section could not.
 
 **Kept, because it is the same for everyone:** category weights, drop lowest,
 keep highest, the late penalty rate, excused days and grace period, excluded
-assignments, substitutions, extra credit, planned assignments, letter
-cutoffs.
+assignments, substitutions, extra credit, planned assignments, letter cutoffs.
 
-**Kept, because it moves that one student's grade:** their own waivers, their
-own forgiven late penalties, their own best-of arrangements, their own
-adjustment to the excused-day count. An estimate without these would be
-wrong, and they are already facts that student knows about themselves.
+**Left out, because it is keyed by a student:** `waive`, `waive_late`, `max`,
+and `excuse_day_offset`. Also `note` (your own words about why a grade was
+adjusted; it moves no grade, so an estimate has no use for it) and
+`email_list` (a roster is a list of the class's email addresses).
 
-**Never handed over:**
-
-| | why |
-|---|---|
-| anybody else's waivers, accommodations or adjustments | not their business |
-| `note` | your own words about why a grade was adjusted. it moves no grade, so an estimate has no use for it |
-| `email_list` | a roster is a list of the class's email addresses |
-| `exclude_complete_thresh` | see below |
+The line is not privacy so much as arithmetic: one file is posted once, for
+everybody, so it can only hold what is true of everybody. A file that is
+right for one student is wrong for the other ninety nine.
 
 **`exclude_complete_thresh` is resolved rather than copied.** A completion
 rate over a class of one is 100% or 0%, so the threshold as written would drop
@@ -73,35 +74,52 @@ assignments it actually removed are written into `assignments/exclude` by
 name. The student's file therefore excludes what your run excluded, for the
 reason your run excluded it.
 
-## The grade they see is the grade they have
+## The students you singled out
 
-Not "approximately", and not "recomputed by a second implementation" — the
-page grades their row with their policy using the same code that graded your
-class. The test suite asserts it: every one of the hundred students in the
-example gradebook gets, from their own two files, the mean and the letter
-your run gave them, with waivers, late-day accommodations, best-of
-arrangements and dropped scores in play.
+For everybody the policy singles out for nothing — which is nearly all of
+them — the estimate is exactly their grade. Not "approximately", and not
+"recomputed by a second implementation": the page grades their row with the
+posted policy using the same code that graded your class. The test suite
+asserts it over the hundred students of the example gradebook.
 
-That is the whole reason to hand out a subset of your file rather than a
-description of your policy. A student quoting a number back at you is
-quoting your own arithmetic.
+For the handful you did single out, the posted file is **wrong for them until
+they say so**, and the tests pin that down too, so that nobody has to
+discover it. They were emailed about the waiver or the extra late days, so
+they know; the page gives them somewhere to put it.
 
-## What they can change, and what they cannot
+Their own page has an **adjustments for you** block, listing everything the
+estimate is assuming about them in particular, with controls to add:
 
-A student's page has no controls that edit the policy. They can type a score
-into an assignment — which is a supposition, marked as one, and applied by
-rewriting their csv rather than their policy, so there is no second way for
-the arithmetic to come out. Everything else reads.
+- **waive** an assignment
+- **forgive a late penalty** on one (or click its chip in the late row)
+- **extra late days** in a category
+
+Each writes the same yaml section your own copy would, keyed to the email in
+their csv, so a policy annotated this way is one the command line reads too.
+They can save it from the `policy.yaml` link and drop it back in next time.
+
+The block is worth showing even when it is empty — an empty list is the fact
+that nothing special is being assumed, and a student who expected an entry in
+it has just learned something worth an email.
+
+If they would rather edit the file by hand, the header of the posted policy
+shows the three sections and how to write them.
+
+## What else they can change
+
+They can type a score into any assignment. That is a supposition, marked as
+one, and applied by rewriting their csv rather than their policy, so there is
+no second way for the arithmetic to come out. Clearing it puts the real score
+back, because the page rebuilds from the file as it arrived every time rather
+than editing it.
 
 A supposed score does not forgive lateness: what a score would have been is a
 question about the score, and quietly taking the late penalty off with it
-would flatter the estimate. Clearing a supposition puts the real score back,
-because the page rebuilds from the file as it arrived every time rather than
-editing it.
+would flatter the estimate.
 
 Planned assignments (`assignments/planned`) are the row that matters here.
-Write the whole term's policy in one sitting and a student in week six can
-ask what the final is worth to them, because you have already said.
+Write the whole term's policy in one sitting and a student in week six can ask
+what the final is worth to them, because you have already said.
 
 ## Should you?
 
@@ -110,11 +128,10 @@ also asked whether it is a good idea — whether this helps students or hands
 them a tool for torturing themselves, and whether it teaches them to expect a
 precision that grading does not really have.
 
-It is worth noticing that nothing here happens unless you send the files. The
+It is worth noticing that nothing here happens unless you post the file. The
 page has no student mode to stumble into: it reads one student's row as one
-student's grade, and the only way a student gets one student's row is from
-you. So this is a thing you can do for a course where it helps, and not do
-for one where it doesn't, which is roughly where a judgement call of this
-kind belongs.
+student's grade. So this is a thing you can do for a course where it helps,
+and not do for one where it doesn't, which is roughly where a judgement call
+of this kind belongs.
 
 The page says, next to the number, that an estimate is not a grade.

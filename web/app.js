@@ -322,7 +322,10 @@ function useCsv(name, text) {
 
   drawRoster();
 
-  if (keep) {
+  if (keep && state.solo) {
+    state.notice = 'Your policy was kept — these grades replaced the last ' +
+      'ones, and the policy you loaded still applies to them.';
+  } else if (keep) {
     state.notice = 'Your policy was kept — this gradebook replaced the last ' +
       'one, not your grading. Anything new in it is unweighted until you ' +
       'place it.';
@@ -944,9 +947,6 @@ function drawStudent(form) {
         <span class="stud-email">${escapeHtml(stud.email)}</span>
         ${graded ? `<button type="button" class="link stud-file"
           id="stud-csv">${escapeHtml(studentFile(stud))}</button>` : ''}
-        ${graded && !state.solo ? `<button type="button"
-          class="link stud-file" id="stud-yaml" title="${escapeHtml(
-    YAML_FILE_HINT)}">their policy.yaml</button>` : ''}
         ${graded
           ? `<span class="stud-grade">${delta(stud, graded)}${pct(graded.mean)}
               <span class="stud-letter">${escapeHtml(graded.letter)}</span>
@@ -956,7 +956,7 @@ function drawStudent(form) {
       ${graded ? catRow(graded) : ''}
       ${graded ? scoreBlock(graded, stud) : ''}
       ${graded ? lateGrid(graded) : ''}
-      ${state.solo ? '' : excuseRow(form, stud)}
+      ${state.solo ? adjustBlock(form, stud, graded) : excuseRow(form, stud)}
       ${state.solo ? '' : noteBox(form, stud)}
       ${graded ? auditLog(graded) : ''}
       ${state.solo && graded ? threshRow(graded) : ''}
@@ -985,9 +985,6 @@ function catRow(graded) {
   const cat = Object.entries(graded.cat_dict).map(cell).join('');
   return cat ? `<div class="mini-row cat-means">${cat}</div>` : '';
 }
-
-const YAML_FILE_HINT = 'this policy with everybody else taken out, for ' +
-  'them to work their own grade out with';
 
 /* The same scores, as a control for whoever is reading them: an instructor
  * waives one, a student supposes one. */
@@ -1077,6 +1074,104 @@ function whatIfBox(a) {
       placeholder="—" aria-label="${escapeHtml(a.name)} score">
       <span class="of">/ ${escapeHtml(String(points))}</span></span>
   </label>`;
+}
+
+/* Everything this estimate is assuming about the reader in particular.
+ *
+ * The policy they were given is the class's, so it holds none of it -- and a
+ * student who was emailed about a waiver has to say so here or read a number
+ * that is not theirs.  Which makes this list the answer to "what is this
+ * working from", and that is worth showing even when it is empty: an empty
+ * list is the fact that nothing special is being assumed, and a student who
+ * expected an entry in it has just learned something.
+ *
+ * Everything here writes the same yaml sections an instructor's copy would,
+ * so a policy annotated this way is one the command line reads too. */
+function adjustBlock(form, stud, graded) {
+  const waived = new Set(waiveList(form, 'waive'));
+  const forgiven = new Set(waiveList(form, 'waive_late'));
+  const offList = excuseOffsets(form, stud);
+
+  const row = [
+    ...[...waived].map((ass) => adjustChip('waive', ass, 'waived')),
+    ...[...forgiven].map((ass) =>
+      adjustChip('waive_late', ass, 'late penalty forgiven')),
+    ...offList.map((c) => adjustChip(
+      'excuse', c.name, `${c.days > 0 ? '+' : ''}${c.days} late `
+      + `${plural(Math.abs(c.days), 'day')}`)),
+  ].join('');
+
+  const assList = ((graded || {}).ass_list || []).map((a) => a.name);
+
+  return `<div class="waive-row block adjust">
+    <span class="field-k">adjustments for you
+      <span class="sub">what this is assuming about you in particular —
+      nothing here is in the policy you were given, so if you were told
+      something applies to you, say so</span></span>
+    <div class="grid">
+      <div class="chips">${row
+    || '<span class="empty">nothing — you are being graded by the class '
+      + 'policy exactly as written</span>'}</div>
+      ${adjustAdd(form, stud, assList, waived, forgiven)}
+    </div>
+  </div>`;
+}
+
+/* every assignment named in one of the two waive sections, for this reader */
+function waiveList(form, kind) {
+  const cur = (waiveOf(form, kind) || [])
+    .find((w) => w.email === (state.solo || ''))
+    || (waiveOf(form, kind) || [])[0];
+  return (cur || {}).ass_list || [];
+}
+
+function excuseOffsets(form, stud) {
+  return (form.cat_list || []).filter((c) => c.late).map((c) => ({
+    name: c.name,
+    days: ((c.late || {}).excuse_day_offset || {})[stud.email] || 0,
+  })).filter((c) => c.days);
+}
+
+function adjustChip(kind, ass, said) {
+  return `<span class="chip is-adjust">
+    <span class="chip-k">${escapeHtml(ass)}</span>
+    <span class="chip-v">${escapeHtml(said)}</span>
+    <button type="button" data-unadjust="${escapeHtml(kind)}"
+      data-ass="${escapeHtml(ass)}" title="take this back out">&times;</button>
+  </span>`;
+}
+
+/* Two selects rather than a control on each of fifteen score chips: those
+ * chips are boxes to type a score into now, so a click on one cannot also
+ * mean something else. */
+function adjustAdd(form, stud, assList, waived, forgiven) {
+  const options = (skip) => assList.filter((n) => !skip.has(n))
+    .map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+    .join('');
+
+  const pick = (kind, label, skip) => {
+    const opt = assList.length ? options(skip) : '';
+    if (!opt) return '';
+    return `<label class="f">${label}
+      <select data-adjust="${kind}">
+        <option value="">choose an assignment…</option>${opt}</select>
+    </label>`;
+  };
+
+  // the extra late days belong in the same row: three ways of saying the
+  // same kind of thing, and a heading of its own made it read as a
+  // different subject
+  const dayList = (form.cat_list || []).filter((c) => c.late).map((c) => {
+    const off = ((c.late || {}).excuse_day_offset || {})[stud.email] || 0;
+    return `<label class="f">extra late days, ${escapeHtml(c.name)}
+      <input type="number" data-excuse="${escapeHtml(c.name)}" step="1"
+        value="${off}"></label>`;
+  }).join('');
+
+  const inner = pick('waive', 'waive', waived)
+    + pick('waive_late', 'forgive a late penalty on', forgiven) + dayList;
+
+  return inner ? `<div class="checks adjust-add">${inner}</div>` : '';
 }
 
 /* Where the letters fall, because the question a grade provokes is how far
@@ -1193,8 +1288,8 @@ function lateGrid(graded) {
     </span>`).join('');
 
   return `<div class="waive-row block">
-    <span class="field-k">late <span class="sub">${state.solo
-    ? 'what it was, and what it cost' : 'click to forgive'}</span></span>
+    <span class="field-k">late <span class="sub">what it was, and what it
+      cost — click to forgive one you were told was excused</span></span>
     <div class="grid">
       ${summary ? `<div class="mini-row">${summary}</div>` : ''}
       <div class="chips">${list.map(lateChip).join('')}</div>
@@ -1224,21 +1319,6 @@ function lateChip(a) {
       : a.late_minutes ? `0d${exact}` : 'on time';
 
   const inGrace = a.late_minutes && !a.late_days;
-
-  // nothing here is a control for a student: their late days are a fact
-  // about what happened, and forgiving one is their instructor's to do
-  if (state.solo) {
-    const said = a.late_waived
-      ? 'the late penalty on this was forgiven'
-      : inGrace ? `${hhmm(a.late_minutes)} late, inside the grace period`
-        : a.late_days
-          ? `${a.late_days} ${plural(a.late_days, 'late day')} counted`
-          : 'handed in on time';
-
-    return `<span class="chip ${cls}" title="${escapeHtml(said)}">` +
-      `<span class="chip-k">${escapeHtml(a.name)}</span>` +
-      `<span class="chip-v">${escapeHtml(value)}</span></span>`;
-  }
 
   const why = a.late_waived
     ? 'late penalty forgiven — click to count it again'
@@ -1354,16 +1434,15 @@ function downloadStudentCsv() {
   download(res.csv, res.filename, 'text/csv');
 }
 
-/* The two files one student needs to work their own grade out: their row of
- * the export, and the course policy with everybody else taken out of it. */
+/* The file to post for the class: this policy with every student taken out
+ * of it, so it is the same file for all of them.  A student who was told
+ * something applies to them alone adds that line themselves -- which the
+ * file's own header explains -- because a file that is right for one student
+ * is wrong for the other ninety nine. */
 function downloadStudentPolicy() {
-  const stud = pickedStudent();
-  if (!stud) return;
-
-  const res = toJs(state.api.student_policy(state.csv, state.yaml, stud.email,
+  const res = toJs(state.api.student_policy(state.csv, state.yaml,
                                             state.name));
-  if (!res.ok) return ($('messages').innerHTML += msgList([res.error],
-                                                          'error'));
+  if (!res.ok) return ($('export-hint').textContent = res.error);
   download(res.yaml, res.filename, 'text/yaml');
 }
 
@@ -1853,8 +1932,10 @@ function drawExport() {
     `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
       ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
     '<button type="button" id="dl-banner">export for banner…</button>' +
-    '<button type="button" id="dl-pack" class="secondary">files for ' +
-    'students…</button>';
+    '<button type="button" id="dl-policy" class="secondary">policy for ' +
+    'students</button>' +
+    '<button type="button" id="dl-pack" class="secondary">grades, one csv ' +
+    'per student…</button>';
 
   $('export-hint').textContent = canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by ' +
@@ -1879,13 +1960,13 @@ function drawExport() {
     if (!form.hidden) $('term-code').focus();
   });
 
+  $('dl-policy').addEventListener('click', downloadStudentPolicy);
   $('dl-pack').addEventListener('click', runPack);
 }
 
-/* A folder per student, holding the two files they need to work their own
- * grade out on this page: their own row of the export, and this policy with
- * everybody else taken out of it.  One click, because a course has a hundred
- * students and nobody is doing this one at a time. */
+/* One csv per student, plus the policy to post beside them.  A student's own
+ * scores are the half of this that cannot be posted anywhere, and a course
+ * has a hundred of them, so they are written in one go. */
 function runPack() {
   // synchronous, so nothing said here would paint before it returned
   const res = toJs(state.api.student_pack(state.csv, state.yaml, state.name));
@@ -1894,9 +1975,9 @@ function runPack() {
   downloadBytes(res.zip_b64, stamped('student_files', 'zip'),
                 'application/zip');
   $('export-hint').textContent =
-    `${res.n_student} folders, each holding one student's own row and a ` +
-    'policy.yaml with nobody else in it. Send a student their folder and ' +
-    'they can drop both files on this page.';
+    `policy_student.yaml to post once, and ${res.n_student} csvs in grades/, ` +
+    'one per student. Send a student their csv and they can drop it here ' +
+    'with the policy to see where they stand.';
 }
 
 /* Banner will only match a row when its CRN, term code and student id all
@@ -2255,12 +2336,31 @@ $('stud-card').addEventListener('change', (e) => {
                      { email: stud.email, note: e.target.value });
   }
 
+  // a student adding what they were told applies to them.  the same edit
+  // an instructor would make, in the same section, because it is the same
+  // file -- theirs is just the copy that was posted for the class
+  const adjust = e.target.getAttribute('data-adjust');
+  if (stud && adjust !== null) {
+    const ass = e.target.value;
+    if (!ass) return;
+    return addAdjust(stud, adjust, ass);
+  }
+
   const cat = e.target.getAttribute('data-excuse');
   if (stud && cat !== null) {
     applyEdit('set_excuse_offset',
               { cat, email: stud.email, days: Number(e.target.value) });
   }
 });
+
+/* One assignment into one of the two waive sections, keeping whatever is
+ * already there.  set_waive replaces the list, so it is read first. */
+function addAdjust(stud, field, ass) {
+  const set = new Set(waiveList(state.form, field));
+  set.add(ass);
+  applyEdit('set_waive',
+            { email: stud.email, ass_list: [...set], field });
+}
 
 /* A redraw builds the card again from scratch, which throws away the element
  * the keyboard was about to move to -- so tab out of a score and focus lands
@@ -2434,10 +2534,25 @@ $('stud-card').addEventListener('click', (e) => {
     return refresh();
   }
 
-  // nothing on a student's own page edits the policy: it is a handout, and
-  // the grade it produces is only worth reading because it is not theirs to
-  // change
-  if (state.solo) return;
+  // an adjustment the reader is taking back out of their own copy
+  const unadjust = e.target.getAttribute('data-unadjust');
+  if (unadjust !== null) {
+    const ass = e.target.getAttribute('data-ass');
+    if (unadjust === 'excuse') {
+      return applyEdit('set_excuse_offset',
+                       { cat: ass, email: stud.email, days: 0 });
+    }
+    const set = new Set(waiveList(state.form, unadjust));
+    set.delete(ass);
+    return applyEdit('set_waive',
+                     { email: stud.email, ass_list: [...set],
+                       field: unadjust });
+  }
+
+  // a student edits only what is about them: forgiving a late penalty they
+  // were told was excused is theirs to record, waiving a whole assignment
+  // for somebody else is not
+  if (state.solo && !e.target.closest('[data-late]')) return;
 
   const undo = e.target.getAttribute('data-unmax');
   if (undo !== null) {
@@ -2485,7 +2600,6 @@ $('email-clear').addEventListener('click', () => {
 
 $('stud-card').addEventListener('click', (e) => {
   if (e.target.id === 'stud-csv') downloadStudentCsv();
-  if (e.target.id === 'stud-yaml') downloadStudentPolicy();
 });
 
 $('files').addEventListener('click', (e) => {

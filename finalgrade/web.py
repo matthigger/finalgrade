@@ -283,20 +283,20 @@ def student_csv(csv_text, yaml_text, email, name='scope.csv'):
                 filename=_student_stem(row, email) + '.csv')
 
 
-def student_policy(csv_text, yaml_text, email='', name='scope.csv'):
-    """ the policy to hand a student, with everyone else taken out
+def student_policy(csv_text, yaml_text, name='scope.csv'):
+    """ the policy to post for the class, with every student taken out
 
     An instructor's file names students -- who is waived from what, whose
     late day bank is larger, and why.  This is the rest of it: the weights,
-    the rules and the thresholds, which are the same for the whole class,
-    plus (when an email is given) the rows about that one student, each of
-    which moves their grade and none of which is anybody else's business.
+    the score rules, the late rate and the letter cutoffs, which are what is
+    true of everybody.  One file, posted once.
+
+    A student who was told something applies to them alone adds that line
+    themselves; the file's header says how.
 
     Args:
         csv_text (str): the grade source
         yaml_text (str): contents of the instructor's policy.yaml
-        email (str): the student it is for.  empty for one file for the whole
-            class, which mentions nobody at all
         name (str): the source csv's filename
 
     Returns:
@@ -308,42 +308,28 @@ def student_policy(csv_text, yaml_text, email='', name='scope.csv'):
 
     with _Csv(csv_text, name) as f_csv:
         try:
-            (text, stem), _ = _warn_list(
-                lambda: _student_policy(policy, f_csv, email))
+            text, _ = _warn_list(lambda: _student_policy(policy, f_csv))
         except FinalgradeError as e:
             return dict(ok=False, error=str(e))
 
     return dict(ok=True, error=None, yaml=text,
-                filename=f'{stem}.yaml' if stem else 'policy_student.yaml')
+                filename='policy_student.yaml')
 
 
-def _student_policy(policy, f_csv, email):
-    """ (the yaml text, a filename stem for it) """
+def _student_policy(policy, f_csv):
+    """ the yaml text to post for the class """
     # graded first: a policy that will not grade the class has no answer for
-    # a student's own copy of it to agree with, which is all it is for
-    _, df_grade = policy(f_csv)
-    policy = student_mod.resolve_thresh(policy, f_csv)
-
-    if not email:
-        return student_mod.policy_text(policy), None
-
-    prefix = str(email).split('@')[0].lower()
-    theirs = next((idx for idx in df_grade.index
-                   if str(idx).split('@')[0].lower() == prefix), None)
-    if theirs is None:
-        raise FinalgradeError(
-            f'{email} is not among the students being graded')
-
-    return (student_mod.policy_text(policy, email=str(theirs)),
-            _student_stem(df_grade.loc[theirs], theirs))
+    # the class's copy of it to agree with, which is all it is for
+    policy(f_csv)
+    return student_mod.policy_text(student_mod.resolve_thresh(policy, f_csv))
 
 
 def student_pack(csv_text, yaml_text, name='scope.csv'):
-    """ a folder per student, holding the two files their estimate needs
+    """ the policy to post, and a csv per student to send
 
-    One student needs their own row of the export and their own policy, and a
-    course has a hundred of them, so the pair is written once per student
-    into a zip rather than clicked for one at a time.
+    The policy is one file for the whole class, so there is one of it in
+    here.  The rows are one per student, because a student's own scores are
+    the half of this that cannot be posted anywhere.
 
     Args:
         csv_text (str): the grade source
@@ -375,13 +361,11 @@ def student_pack(csv_text, yaml_text, name='scope.csv'):
 
         stem_dict = _stem_dict(df_grade)
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('policy_student.yaml',
+                             student_mod.policy_text(share))
             for email in df_grade.index:
-                stem = stem_dict[email]
                 archive.writestr(
-                    f'{stem}/policy.yaml',
-                    student_mod.policy_text(share, email=str(email)))
-                archive.writestr(
-                    f'{stem}/grades.csv',
+                    f'grades/{stem_dict[email]}.csv',
                     student_mod.one_row_csv(csv_text, str(email)))
 
     return dict(ok=True, error=None, warn_list=warn_list,
