@@ -22,7 +22,7 @@ from . import edit
 from .audit import (build_log, count_frame_dict, counted_set, late_detail,
                     student_frame)
 from .check import build_report, render
-from .policy import F_POLICY_DEFAULT, Policy
+from .policy import F_POLICY_DEFAULT, NAME_PUBLIC, Policy
 from .errors import FinalgradeError
 from .gradebook import Gradebook
 from .inspect import build_table, build_view, histogram
@@ -312,8 +312,7 @@ def student_policy(csv_text, yaml_text, name='scope.csv'):
         except FinalgradeError as e:
             return dict(ok=False, error=str(e))
 
-    return dict(ok=True, error=None, yaml=text,
-                filename='policy_student.yaml')
+    return dict(ok=True, error=None, yaml=text, filename=NAME_PUBLIC)
 
 
 def _student_policy(policy, f_csv):
@@ -361,7 +360,7 @@ def student_pack(csv_text, yaml_text, name='scope.csv'):
 
         stem_dict = _stem_dict(df_grade)
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr('policy_student.yaml',
+            archive.writestr(NAME_PUBLIC,
                              student_mod.policy_text(share))
             for email in df_grade.index:
                 archive.writestr(

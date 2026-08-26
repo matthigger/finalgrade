@@ -41,7 +41,10 @@ const state = {
   notice: null,
   csv: null,
   name: null,
-  policyName: 'policy.yaml',
+  // PRIVATE because it names students.  the page writes this name, so it
+  // is the page's job to make handing the wrong file out hard to do by
+  // accident: policy_PUBLIC.yaml is the one for the class
+  policyName: 'policy_PRIVATE.yaml',
   // a canvas gradebook kept aside to merge grades back into, when the file
   // being graded isn't itself one
   canvasText: null,
@@ -956,7 +959,8 @@ function drawStudent(form) {
       ${graded ? catRow(graded) : ''}
       ${graded ? scoreBlock(graded, stud) : ''}
       ${graded ? lateGrid(graded) : ''}
-      ${state.solo ? adjustBlock(form, stud, graded) : excuseRow(form, stud)}
+      ${excuseRow(form, stud)}
+      ${state.solo ? adjustBlock(form, stud) : ''}
       ${state.solo ? '' : noteBox(form, stud)}
       ${graded ? auditLog(graded) : ''}
       ${state.solo && graded ? threshRow(graded) : ''}
@@ -989,7 +993,7 @@ function catRow(graded) {
 /* The same scores, as a control for whoever is reading them: an instructor
  * waives one, a student supposes one. */
 function scoreBlock(graded, stud) {
-  return state.solo ? whatIfGrid(graded) : scoreGrid(graded, stud);
+  return state.solo ? whatIfGrid(graded, stud) : scoreGrid(graded, stud);
 }
 
 /* Scores grouped by the categories the policy already defines, because
@@ -1027,53 +1031,59 @@ function scoreGrid(graded, stud) {
  *
  * A box left as it was is not an answer, and nothing is written into the file
  * for it.  Only what was typed is supposed. */
-function whatIfGrid(graded) {
+function whatIfGrid(graded, stud) {
   const block = scoreRows(graded, whatIfBox);
   const n = Object.keys(state.whatIf).length;
 
   return `<div class="waive-row block">
     <span class="field-k">scores <span class="sub">type a score into work
-      that has not been graded yet${n
+      that has not been graded yet, click one to waive it, drag one onto
+      another to take the best of both${n
     ? ' — <button type="button" class="link" id="whatif-clear">clear the '
       + `${n} you have supposed</button>` : ''}</span></span>
-    <div class="grid">${block}</div>
+    <div class="grid">${block}${maxGroup(stud)}</div>
   </div>`;
 }
 
-/* One score, as it stands or as it has been supposed. */
+/* One score: the chip an instructor sees, with the value as a box.
+ *
+ * data-score is on it, so the click and the drag do here exactly what they do
+ * on an instructor's copy -- waive this, or take the best of it and another.
+ * A span rather than a label: a label would hand a click on the assignment
+ * name to the input, and that click means "waive".
+ *
+ * The input is the only tab stop on it, because typing a term's worth of
+ * scores is the frequent thing and a second stop per chip would double the
+ * tabbing.  Waiving by keyboard is the gap that leaves; the file's own header
+ * says how to write a waiver by hand. */
 function whatIfBox(a) {
   const supposed = Object.prototype.hasOwnProperty.call(state.whatIf, a.name);
 
-  // a waived assignment was never assigned, so there is nothing to suppose
-  // about it, and an answer would be read as a score the policy has already
-  // said not to count
-  if (a.waived) {
-    return `<span class="chip score is-waived"
-      title="${escapeHtml(a.name)} was waived for you, so it is not counted">
-      <span class="chip-k">${escapeHtml(a.name)}</span>
-      <span class="chip-v">waived</span></span>`;
-  }
+  // waived is the same fact for either reader, and the same chip: nothing to
+  // suppose about work that was never assigned, and clicking counts it again
+  if (a.waived) return scoreChip(a);
 
   const points = a.points === null || a.points === undefined ? '' : a.points;
   const earned = a.perc === null || a.perc === undefined || !a.submitted
     ? '' : Math.round(a.perc * points * 100) / 100;
   const value = supposed ? state.whatIf[a.name] : earned;
 
-  const why = a.planned ? 'not assigned yet — suppose a score'
+  const said = a.planned ? 'not assigned yet — suppose a score'
     : !a.submitted ? 'nothing handed in, so it counts as zero'
-      : 'what you were given — put something else here to see what it '
-        + 'would do';
+      : 'what you were given';
+  const why = `${said}. click to waive it, drag onto another to take the `
+    + 'best of both, or type a different score';
 
-  return `<label class="chip score whatif${supposed ? ' is-supposed' : ''}${
+  return `<span class="chip score whatif${supposed ? ' is-supposed' : ''}${
     a.planned ? ' is-planned' : ''}${
     !supposed && !a.submitted ? ' is-missing' : ''}"
-    title="${escapeHtml(why)}">
+    data-score="${escapeHtml(a.name)}" title="${escapeHtml(why)}">
     <span class="chip-k">${escapeHtml(a.name)}</span>
     <span class="chip-v"><input type="number" step="any" min="0"
       data-whatif="${escapeHtml(a.name)}" value="${value}"
       placeholder="—" aria-label="${escapeHtml(a.name)} score">
       <span class="of">/ ${escapeHtml(String(points))}</span></span>
-  </label>`;
+  </span>`;
 }
 
 /* Everything this estimate is assuming about the reader in particular.
@@ -1087,32 +1097,33 @@ function whatIfBox(a) {
  *
  * Everything here writes the same yaml sections an instructor's copy would,
  * so a policy annotated this way is one the command line reads too. */
-function adjustBlock(form, stud, graded) {
-  const waived = new Set(waiveList(form, 'waive'));
-  const forgiven = new Set(waiveList(form, 'waive_late'));
+function adjustBlock(form, stud) {
+  const waived = waiveList(form, 'waive');
+  const forgiven = waiveList(form, 'waive_late');
   const offList = excuseOffsets(form, stud);
 
   const row = [
-    ...[...waived].map((ass) => adjustChip('waive', ass, 'waived')),
-    ...[...forgiven].map((ass) =>
+    ...waived.map((ass) => adjustChip('waive', ass, 'waived')),
+    ...forgiven.map((ass) =>
       adjustChip('waive_late', ass, 'late penalty forgiven')),
+    // a best-of-both is an assumption like any other, and this list saying
+    // "nothing" while one was in force would be the list being wrong
+    ...maxTargets(stud).map(([target, fromList]) => adjustChip(
+      'max', target, `best of ${[target, ...fromList].join(', ')}`)),
     ...offList.map((c) => adjustChip(
       'excuse', c.name, `${c.days > 0 ? '+' : ''}${c.days} late `
       + `${plural(Math.abs(c.days), 'day')}`)),
   ].join('');
 
-  const assList = ((graded || {}).ass_list || []).map((a) => a.name);
-
   return `<div class="waive-row block adjust">
     <span class="field-k">adjustments for you
       <span class="sub">what this is assuming about you in particular —
       nothing here is in the policy you were given, so if you were told
-      something applies to you, say so</span></span>
+      something applies to you, set it above</span></span>
     <div class="grid">
       <div class="chips">${row
     || '<span class="empty">nothing — you are being graded by the class '
       + 'policy exactly as written</span>'}</div>
-      ${adjustAdd(form, stud, assList, waived, forgiven)}
     </div>
   </div>`;
 }
@@ -1124,6 +1135,13 @@ function waiveList(form, kind) {
     || (waiveOf(form, kind) || [])[0];
   return (cur || {}).ass_list || [];
 }
+
+function maxTargets(stud) {
+  const cur = ((state.form || {}).max_list || [])
+    .find((s) => s.email === stud.email);
+  return Object.entries((cur || {}).target_dict || {});
+}
+
 
 function excuseOffsets(form, stud) {
   return (form.cat_list || []).filter((c) => c.late).map((c) => ({
@@ -1139,39 +1157,6 @@ function adjustChip(kind, ass, said) {
     <button type="button" data-unadjust="${escapeHtml(kind)}"
       data-ass="${escapeHtml(ass)}" title="take this back out">&times;</button>
   </span>`;
-}
-
-/* Two selects rather than a control on each of fifteen score chips: those
- * chips are boxes to type a score into now, so a click on one cannot also
- * mean something else. */
-function adjustAdd(form, stud, assList, waived, forgiven) {
-  const options = (skip) => assList.filter((n) => !skip.has(n))
-    .map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
-    .join('');
-
-  const pick = (kind, label, skip) => {
-    const opt = assList.length ? options(skip) : '';
-    if (!opt) return '';
-    return `<label class="f">${label}
-      <select data-adjust="${kind}">
-        <option value="">choose an assignment…</option>${opt}</select>
-    </label>`;
-  };
-
-  // the extra late days belong in the same row: three ways of saying the
-  // same kind of thing, and a heading of its own made it read as a
-  // different subject
-  const dayList = (form.cat_list || []).filter((c) => c.late).map((c) => {
-    const off = ((c.late || {}).excuse_day_offset || {})[stud.email] || 0;
-    return `<label class="f">extra late days, ${escapeHtml(c.name)}
-      <input type="number" data-excuse="${escapeHtml(c.name)}" step="1"
-        value="${off}"></label>`;
-  }).join('');
-
-  const inner = pick('waive', 'waive', waived)
-    + pick('waive_late', 'forgive a late penalty on', forgiven) + dayList;
-
-  return inner ? `<div class="checks adjust-add">${inner}</div>` : '';
 }
 
 /* Where the letters fall, because the question a grade provokes is how far
@@ -1932,15 +1917,18 @@ function drawExport() {
     `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
       ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
     '<button type="button" id="dl-banner">export for banner…</button>' +
-    '<button type="button" id="dl-policy" class="secondary">policy for ' +
-    'students</button>' +
+    '<button type="button" id="dl-policy" class="secondary">' +
+    'policy_PUBLIC.yaml</button>' +
     '<button type="button" id="dl-pack" class="secondary">grades, one csv ' +
     'per student…</button>';
 
-  $('export-hint').textContent = canCanvas
+  $('export-hint').textContent = (canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by ' +
       'SIS user id, scaled to 100 so canvas does not round them.'
-    : 'Set a canvas template below to enable the canvas export.';
+    : 'Set a canvas template below to enable the canvas export.')
+    + ' policy_PUBLIC.yaml is your policy with every student taken out of '
+    + 'it — the one file to post for the class. The policy you are editing '
+    + 'is PRIVATE: it names students, so it is not the one to hand out.';
 
   $('dl-grades').addEventListener('click', () =>
     download(state.grades.csv, 'grade_full.csv', 'text/csv'));
@@ -1975,7 +1963,7 @@ function runPack() {
   downloadBytes(res.zip_b64, stamped('student_files', 'zip'),
                 'application/zip');
   $('export-hint').textContent =
-    `policy_student.yaml to post once, and ${res.n_student} csvs in grades/, ` +
+    `policy_PUBLIC.yaml to post once, and ${res.n_student} csvs in grades/, ` +
     'one per student. Send a student their csv and they can drop it here ' +
     'with the policy to see where they stand.';
 }
@@ -2362,6 +2350,14 @@ function addAdjust(stud, field, ass) {
             { email: stud.email, ass_list: [...set], field });
 }
 
+/* Clicking a score box selects what is in it, so that typing replaces the
+ * score rather than appending to it.  The gesture is "what if this were
+ * something else", and the something else is almost never the old number
+ * with a digit stuck on the front of it. */
+$('stud-card').addEventListener('focusin', (e) => {
+  if (e.target.matches && e.target.matches('[data-whatif]')) e.target.select();
+});
+
 /* A redraw builds the card again from scratch, which throws away the element
  * the keyboard was about to move to -- so tab out of a score and focus lands
  * on the document, where the next tab starts again from the top of the page.
@@ -2460,12 +2456,21 @@ $('stud-card').addEventListener('pointerdown', (e) => {
   const chip = e.target.closest('[data-score]');
   if (!chip) return;
 
+  // The middle of a student's chip is the box its score is typed into, which
+  // is also where anybody dragging it will take hold.  So a press there is
+  // both things at once, and which one it was is not known until the pointer
+  // either moves or doesn't: the box keeps the press, and the drag stays a
+  // candidate until the slop is passed.
+  const inBox = !!e.target.closest('input');
+
   drag = { from: chip.getAttribute('data-score'), chip,
-           x: e.clientX, y: e.clientY, moved: false };
+           x: e.clientX, y: e.clientY, moved: false, inBox };
 
   // capture, so a pointer that outruns the chip still reports back to it.
   // it is an optimisation, not a requirement -- the drop is worked out from
-  // the coordinates -- so a browser that refuses must not stop the drag
+  // the coordinates -- so a browser that refuses must not stop the drag.
+  // not taken over a box, where it would cost the caret the press was for
+  if (inBox) return;
   try {
     chip.setPointerCapture(e.pointerId);
   } catch (err) { /* carry on without it */ }
@@ -2478,6 +2483,15 @@ $('stud-card').addEventListener('pointermove', (e) => {
     // a few pixels of slop, so a click with a shaky hand stays a click
     if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
     drag.moved = true;
+
+    // it was a drag after all: hand the press back from the score box, or
+    // the gesture drags a selection of digits around instead of a chip
+    if (drag.inBox) {
+      if (document.activeElement) document.activeElement.blur();
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+    }
+
     drag.chip.classList.add('dragging');
 
     const ghost = document.createElement('div');
@@ -2518,6 +2532,9 @@ $('stud-card').addEventListener('pointercancel', () => {
 /* one click, one waiver: the chip is the control */
 $('stud-card').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
+  // a student's chip holds a score box: those keys belong to whoever is
+  // typing in it, not to the chip around it
+  if (e.target.closest('input')) return;
   const chip = e.target.closest('[data-score]');
   if (!chip) return;
   e.preventDefault();
@@ -2542,6 +2559,10 @@ $('stud-card').addEventListener('click', (e) => {
       return applyEdit('set_excuse_offset',
                        { cat: ass, email: stud.email, days: 0 });
     }
+    if (unadjust === 'max') {
+      return applyEdit('set_max',
+                       { email: stud.email, target: ass, ass_list: [] });
+    }
     const set = new Set(waiveList(state.form, unadjust));
     set.delete(ass);
     return applyEdit('set_waive',
@@ -2549,10 +2570,9 @@ $('stud-card').addEventListener('click', (e) => {
                        field: unadjust });
   }
 
-  // a student edits only what is about them: forgiving a late penalty they
-  // were told was excused is theirs to record, waiving a whole assignment
-  // for somebody else is not
-  if (state.solo && !e.target.closest('[data-late]')) return;
+  // a click that landed in a score box is somebody about to type, not
+  // somebody waiving the assignment they are typing into
+  if (e.target.closest('input')) return;
 
   const undo = e.target.getAttribute('data-unmax');
   if (undo !== null) {

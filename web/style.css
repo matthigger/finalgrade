@@ -1257,17 +1257,3 @@ body.solo .solo-only { display: revert; }
 
 .chip.is-adjust button:hover { color: var(--bad); }
 
-.adjust-add {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .5rem 1rem;
-  align-items: baseline;
-}
-
-.adjust-add select {
-  font-family: var(--mono);
-  font-size: .8rem;
-  max-width: 14rem;
-}
-
-.adjust-add input[type="number"] { width: 4rem; }

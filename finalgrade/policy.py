@@ -10,6 +10,17 @@ from .errors import PolicyError
 from .gradebook import Gradebook
 
 F_POLICY_DEFAULT = (pathlib.Path(__file__).parent / 'policy.yaml').resolve()
+
+# what a new policy is called where the user will see it.  PRIVATE because it
+# names students -- who is waived from what, whose late day bank is larger,
+# and why -- so it is the one file here that must not be handed out.  its
+# public half is written by `finalgrade student`, as policy_PUBLIC.yaml
+NAME_PRIVATE = 'policy_PRIVATE.yaml'
+NAME_PUBLIC = 'policy_PUBLIC.yaml'
+
+# what earlier versions seeded.  still read when it is there, so that a course
+# part way through a term is not asked to rename anything
+NAME_LEGACY = 'policy.yaml'
 yaml = YAML(typ='safe')
 
 # each attribute below corresponds to one section of the yaml file.  keeping
@@ -679,14 +690,16 @@ class Policy:
 
     @classmethod
     def resolve_policy(cls, folder, f_grade=None, force_new=False):
-        """Resolve policy: use existing policy.yaml or write a new one.
+        """Resolve policy: use the existing one or write a new one.
 
         Non-interactive replacement for the old cli_copy_policy. When no
         --policy is specified:
-          - If policy.yaml exists in *folder* and force_new is False, use it.
-          - Otherwise write a new policy.yaml into *folder* and use that.
-          - If force_new and policy.yaml already exists, it is timestamped to
-            avoid overwriting.
+          - If policy_PRIVATE.yaml (or a policy.yaml an earlier version
+            seeded) exists in *folder* and force_new is False, use it.
+          - Otherwise write a new policy_PRIVATE.yaml into *folder* and use
+            that.
+          - If force_new and one already exists, it is timestamped to avoid
+            overwriting.
 
         Args:
             folder (pathlib.Path): directory to look for / place policy
@@ -698,11 +711,19 @@ class Policy:
         import logging
         logger = logging.getLogger('finalgrade')
 
-        f_policy = pathlib.Path(folder) / F_POLICY_DEFAULT.name
+        folder = pathlib.Path(folder)
 
-        if f_policy.exists() and not force_new:
-            logger.info(f'using existing policy: {f_policy.resolve()}')
-            return cls.from_file(f_policy)
+        # an existing file wins under either name: a course that already has
+        # a policy.yaml keeps using it rather than being handed a fresh one
+        # and quietly graded by it
+        if not force_new:
+            for name in (NAME_PRIVATE, NAME_LEGACY):
+                f_found = folder / name
+                if f_found.exists():
+                    logger.info(f'using existing policy: {f_found.resolve()}')
+                    return cls.from_file(f_found)
+
+        f_policy = folder / NAME_PRIVATE
 
         # need to create a new policy
         if f_policy.exists():
@@ -720,7 +741,9 @@ class Policy:
         logger.info(
             f'created default policy — edit as needed, see '
             f'https://github.com/matthigger/finalgrade#policy'
-            f' for details:\n  {f_policy}')
+            f' for details:\n  {f_policy}\n'
+            f'  PRIVATE because it names students.  "finalgrade student" '
+            f'writes the public half of it, for the class to see')
 
         return cls.from_file(f_policy)
 

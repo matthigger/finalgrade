@@ -9,7 +9,7 @@ import warnings
 
 import pytest
 
-from finalgrade.policy import F_POLICY_DEFAULT, Policy
+from finalgrade.policy import F_POLICY_DEFAULT, NAME_PRIVATE, Policy
 from finalgrade.gradebook import Gradebook
 from finalgrade.seed import guess_cat_list, seed_text
 
@@ -129,13 +129,33 @@ class TestResolveConfig:
     def test_new_config_is_seeded(self, f_scope_std):
         Policy.resolve_policy(f_scope_std.parent, f_grade=str(f_scope_std))
 
-        text = (f_scope_std.parent / 'policy.yaml').read_text()
+        text = (f_scope_std.parent / NAME_PRIVATE).read_text()
         assert 'quiz1' in text
+
+    def test_a_new_one_is_named_private(self, f_scope_std):
+        """ it names students, so the name is the warning not to hand it out
+        """
+        Policy.resolve_policy(f_scope_std.parent, f_grade=str(f_scope_std))
+
+        assert (f_scope_std.parent / NAME_PRIVATE).exists()
+        assert not (f_scope_std.parent / 'policy.yaml').exists()
+
+    def test_a_policy_yaml_already_there_is_still_read(self, f_scope_std):
+        """ a course part way through a term is not asked to rename anything
+        """
+        f_legacy = f_scope_std.parent / 'policy.yaml'
+        f_legacy.write_text('category:\n  weight:\n    quiz: 100\n')
+
+        policy = Policy.resolve_policy(f_scope_std.parent,
+                                       f_grade=str(f_scope_std))
+
+        assert policy.cat_weight_dict == {'quiz': 100}
+        assert not (f_scope_std.parent / NAME_PRIVATE).exists()
 
     def test_without_a_csv_the_packaged_default_is_copied(self, tmp_path):
         Policy.resolve_policy(tmp_path)
 
-        assert (tmp_path / 'policy.yaml').read_text() == \
+        assert (tmp_path / NAME_PRIVATE).read_text() == \
             F_POLICY_DEFAULT.read_text()
 
     def test_unreadable_csv_still_yields_a_config(self, tmp_path):
@@ -145,7 +165,7 @@ class TestResolveConfig:
 
         Policy.resolve_policy(tmp_path, f_grade=str(f_csv))
 
-        assert (tmp_path / 'policy.yaml').read_text() == \
+        assert (tmp_path / NAME_PRIVATE).read_text() == \
             F_POLICY_DEFAULT.read_text()
 
     def test_existing_config_is_left_alone(self, f_scope_std, write_policy):

@@ -80,25 +80,33 @@ LATE_MINE = 'excuse_day_offset'
 # the file's own explanation of itself, since it arrives as an attachment
 # with no covering note and is the only thing a student has to go on
 HEADER = """\
-# your grading policy, and how to use it
-#
-# this is your course's grading policy: the weights, the rules and the letter
-# cutoffs, which are the same for the whole class.
-#
-# drop this file and your own grades csv together on
-#   https://matthigger.github.io/finalgrade
-# to see where you stand, and type a score into work that has not been
-# graded yet to see what it would do.
-#
-# nothing you do there is sent anywhere: the page runs on your computer.
-# and an estimate is not a grade -- only your instructor's run is that.
-#
 # ---------------------------------------------------------------------------
-# if you were told that something applies to you alone
+# YOUR GRADE, WORKED OUT BY YOU -- start here
 #
-# an assignment waived, a late penalty forgiven, extra late days -- it is not
-# in this file, because this is the one file the whole class gets.  add it
-# yourself, at the bottom, with your own email address:
+#   1. get your grades as a csv: the one your instructor sent you, or your
+#      own download from gradescope or canvas
+#   2. go to  https://matthigger.github.io/finalgrade
+#   3. drop this file and that csv on the page, together
+#
+# the page then works your grade out the same way your instructor's run does,
+# and shows you how: every score, what was late and what it cost, which
+# scores were dropped, and how the categories combined.  you can type a score
+# into work that has not been graded yet to see what it would do.
+#
+# nothing you do there is sent anywhere -- the page downloads a python
+# interpreter and runs it in the tab, on your computer.  and an estimate is
+# not a grade: only your instructor's run is that.
+# ---------------------------------------------------------------------------
+#
+# PUBLIC: this file is the same one the whole class has, so it holds only what
+# is true of everybody -- the weights, the score rules, the late rate and the
+# letter cutoffs.  it says nothing about you, and nothing about anybody else.
+#
+# so if you were told that something applies to you alone -- an assignment
+# waived, a late penalty forgiven, extra late days -- it is not in here, and
+# your estimate is wrong until you add it.  the page has a control for each of
+# them under "adjustments for you", which is the easy way.  by hand, it looks
+# like this, with your own email address:
 #
 #   waive:
 #     you@uni.edu: hw3
@@ -112,9 +120,8 @@ HEADER = """\
 #       excuse_day_offset:
 #         you@uni.edu: 3
 #
-# every one of these is documented at
+# every setting in this file is documented at
 #   https://github.com/matthigger/finalgrade/blob/main/doc/policy.md
-# ---------------------------------------------------------------------------
 """
 
 
