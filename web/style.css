@@ -182,20 +182,6 @@ h2 .sub {
   margin-left: .3rem;
 }
 
-/* Saved is the ordinary state, so it is the quiet one -- there is no green
-   here to congratulate anybody with, and none is wanted.  Only work that
-   exists nowhere but this tab gets a colour, and amber is the one that
-   means look at this. */
-.save-state.is-dirty {
-  color: var(--warn);
-  font-weight: 600;
-}
-
-.save-state.is-dirty::before {
-  content: "●";
-  margin-right: .25rem;
-}
-
 /* the first thing to do on the page, and it is a target: bigger is easier
    to hit with a file, and easier to find when you don't know what to do */
 .drop {
