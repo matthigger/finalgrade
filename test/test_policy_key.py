@@ -83,14 +83,9 @@ class TestUserNamesAreNotKeys:
         Policy.from_file(F_POLICY_DEFAULT)
 
     def test_seeded_config_passes(self, f_scope_std, tmp_path):
-        from finalgrade.gradebook import Gradebook
-        from finalgrade.policy import F_POLICY_DEFAULT
-        from finalgrade.seed import seed_text
-
+        from finalgrade import web
         f_seed = tmp_path / 'seeded.yaml'
-        f_seed.write_text(seed_text(Gradebook.from_file(str(f_scope_std)),
-                                    'scope.csv',
-                                    F_POLICY_DEFAULT.read_text()))
+        f_seed.write_text(web.seed_policy(f_scope_std.read_text()))
         Policy.from_file(f_seed)
 
     def test_the_pages_config_passes(self, tmp_path):

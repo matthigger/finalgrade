@@ -9,7 +9,13 @@ Writing the real names into the file removes the guessing.  The suggested
 category split is written commented out on purpose: uncommenting is one
 keystroke, whereas a plausible looking weight nobody asked for is a wrong
 grade, and this package's whole posture is that those are worse than errors.
+
+The block opens with when it was written.  Nothing else in the file does,
+and a browser saving the third of these calls it policy (2).yaml -- which
+tells you which came last and nothing about which gradebook, or which
+afternoon's thinking, it holds.
 """
+import datetime
 import re
 
 from .assign_list import normalize
@@ -126,21 +132,26 @@ def _category_block(gradebook):
     return line_list
 
 
-def seed_text(gradebook, f_grade, text_default):
+def seed_text(gradebook, f_grade, text_default, now=None):
     """ the packaged policy, with this course's assignments written in
 
     Args:
         gradebook (Gradebook): as read, before any policy is applied
         f_grade (str): the csv it was read from, named in the comment
         text_default (str): contents of the packaged policy.yaml
+        now (datetime.datetime): when this is being written, to tell one of
+            these apart from the last one.  defaults to the current time;
+            a test passes its own
 
     Returns:
         text (str): contents for a new policy.yaml
     """
     import pathlib
 
+    stamp = (now or datetime.datetime.now()).strftime('%Y-%m-%d %H:%M:%S')
+
     line_list = ['=' * 69,
-                 f'written for {pathlib.Path(f_grade).name}', '']
+                 f'written {stamp} for {pathlib.Path(f_grade).name}', '']
     line_list += _assignment_block(gradebook)
     line_list += _category_block(gradebook)
     line_list += ['', '=' * 69]

@@ -51,6 +51,25 @@ class TestGuess:
 
 
 class TestSeedText:
+    def test_says_when_it_was_written(self, f_scope_std):
+        """ opening the block, so two of these can be told apart
+
+        Which is the top of the file the page writes, and sits under the
+        packaged title in the one the command line writes.
+        """
+        import datetime
+
+        gradebook = Gradebook.from_file(str(f_scope_std))
+        text = seed_text(gradebook, str(f_scope_std),
+                         F_POLICY_DEFAULT.read_text(),
+                         now=datetime.datetime(2026, 8, 26, 14, 32, 7))
+
+        line_list = text.splitlines()
+        idx = line_list.index('# ' + '=' * 69)
+
+        assert line_list[idx + 1] == \
+            '# written 2026-08-26 14:32:07 for scope.csv'
+
     def test_names_every_assignment(self, text_seed):
         for ass in ('hw1', 'hw2', 'hw3', 'quiz1'):
             assert ass in text_seed

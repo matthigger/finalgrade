@@ -297,14 +297,11 @@ function useCsv(name, text) {
   refresh();
 }
 
-/* The empty policy the editor starts from, and the one document the page is
- * allowed to write without being asked.  It arrives without comments: what
- * they explain -- how to spell an assignment, which categories these
- * assignments suggest -- is on screen already, and nobody reading this page
- * is editing yaml by hand.  Recorded as the seed so the exit guard can tell
- * it apart from work: nobody has lost anything yet. */
+/* A policy that knows this course's assignments, and the one document the
+ * page is allowed to write without being asked.  Recorded as the seed so the
+ * exit guard can tell it apart from work: nobody has lost anything yet. */
 function seedPolicy() {
-  setYaml(state.api.default_yaml());
+  setYaml(state.api.seed_policy(state.csv, state.name));
   state.seedYaml = state.yaml;
   state.savedYaml = null;
   state.notice = null;

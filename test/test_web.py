@@ -177,11 +177,11 @@ class TestGrade:
 
 
 class TestDefault:
-    """ the policy the page starts the editor with """
+    """ the packaged policy, with the manual taken out """
 
     def test_carries_no_comments(self):
-        """ nobody reading the page edits yaml by hand, so none is written
-        for them to read: every section here has a widget
+        """ nobody reading the page edits yaml by hand, so the lesson in how
+        to is ninety lines around the thirty that grade
         """
         text = web.default_yaml()
 
@@ -202,6 +202,53 @@ class TestDefault:
     def test_checks_clean(self, csv_text):
         """ what the page puts in the editor must not start out broken """
         rep = web.check_policy(csv_text, web.default_yaml())
+
+        assert rep['ok']
+
+
+class TestSeed:
+    """ that default, with what this course's csv says written on top """
+
+    def test_seeds_from_the_csv(self, csv_text):
+        text = web.seed_policy(csv_text, 'scope.csv')
+
+        assert 'quiz1' in text
+        assert 'scope.csv' in text
+
+    def test_keeps_what_the_block_says_about_this_course(self, csv_text):
+        """ the assignment names and the category guess are not the manual:
+        they are the one thing in the file that knows which csv this is
+        """
+        text = web.seed_policy(csv_text, 'scope.csv')
+
+        assert 'the 4 assignments found' in text
+        assert '# a guess at your categories' in text
+
+    def test_drops_the_packaged_examples(self, csv_text):
+        text = web.seed_policy(csv_text, 'scope.csv')
+
+        assert 'examples \u2014 uncomment' not in text
+        assert 'student@uni.edu' not in text
+
+    def test_says_when_it_was_written(self, csv_text):
+        """ a browser calls the third of these policy (2).yaml, which says
+        which came last and nothing about what is in it
+        """
+        import re
+
+        line = web.seed_policy(csv_text, 'scope.csv').splitlines()[1]
+
+        assert re.fullmatch(
+            r'# written \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} '
+            r'for scope\.csv', line), line
+
+    def test_bad_csv_still_yields_an_editable_config(self):
+        text = web.seed_policy('not,a,gradebook\n1,2,3\n')
+
+        assert text == web.default_yaml()
+
+    def test_seeded_config_checks_clean(self, csv_text):
+        rep = web.check_policy(csv_text, web.seed_policy(csv_text))
 
         assert rep['ok']
 
@@ -254,7 +301,7 @@ class TestFormState:
         assert state['waive_list'][0]['ass_list'] == ['hw1', 'hw2']
 
     def test_is_plain_data(self, csv_text):
-        assert is_plain(web.form_state(web.default_yaml()))
+        assert is_plain(web.form_state(web.seed_policy(csv_text)))
 
     def test_half_typed_yaml_says_so_rather_than_raising(self):
         state = web.form_state('category:\n\tweight: 1\n')
@@ -296,7 +343,7 @@ class TestEditConfig:
 
     def test_a_policy_built_only_by_edits_grades(self, csv_text, f_scope_std):
         """ end to end: what the widgets produce is what grading reads """
-        yaml_text = web.default_yaml()
+        yaml_text = web.seed_policy(csv_text)
         for action, args in (
                 ('add_category', '{"cat": "hw"}'),
                 ('add_category', '{"cat": "quiz"}'),
@@ -442,7 +489,7 @@ class TestNoStrayFiles:
         web.load_csv(csv_text)
         web.check_policy(csv_text, YAML_STD)
         web.grade(csv_text, YAML_STD)
-        web.default_yaml()
+        web.seed_policy(csv_text)
 
         assert set(pathlib.Path(tmp_path).iterdir()) == before_set
 

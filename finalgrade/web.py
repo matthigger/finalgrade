@@ -26,8 +26,9 @@ from .policy import F_POLICY_DEFAULT, Policy
 from .errors import FinalgradeError
 from .gradebook import Gradebook
 from .inspect import build_table, build_view, histogram
+from .seed import seed_text
 
-__all__ = ['load_csv', 'check_policy', 'grade', 'default_yaml',
+__all__ = ['load_csv', 'check_policy', 'grade', 'seed_policy', 'default_yaml',
            'form_state', 'edit_policy', 'bin_values', 'canvas_export',
            'banner_export', 'student_csv']
 
@@ -61,19 +62,18 @@ def _warn_list(fn):
 
 
 def default_yaml():
-    """ the policy this page starts from, with the comments taken out
+    """ the packaged policy, with the manual taken out
 
-    The packaged file is mostly comment: how to indent, and a worked example
-    of every section.  That is written for somebody editing yaml by hand,
-    which is the one thing a reader of this page is not doing -- every
-    section here has a widget, and the assignment names and category guesses
-    those comments would spell out are already on screen.  Left in, they are
-    a hundred lines of instruction buried around the three that grade, in a
-    file this page writes and the reader only ever saves.  So the page takes
-    the policy and the command line keeps the lesson.
+    Ninety of its hundred-odd lines are a lesson in yaml: how to indent, and
+    a worked example of every section.  That is written for somebody editing
+    the file by hand, which is not what happens here -- every section has a
+    widget, and the reader of this page saves the file rather than reads it.
+    Left in, they bury the thirty lines that actually grade.
 
-    A policy the reader brings with them is untouched: those comments are
-    theirs, and every widget edit is built to preserve them.
+    What the seeded block says survives, because that part is about this
+    course rather than about yaml: see seed_policy.  So does every comment
+    in a policy the reader brings with them -- those are theirs, and the
+    widget edits are built to preserve them.
     """
     return _strip_comment(F_POLICY_DEFAULT.read_text())
 
@@ -493,6 +493,20 @@ def _resolve_waive(gradebook, waive_dict):
     for email, ass_list in (waive_dict or {}).items():
         out.setdefault(gradebook._resolve_email(email), []).extend(ass_list)
     return out
+
+
+def seed_policy(csv_text, name='scope.csv'):
+    """ a policy.yaml written for this csv's assignments
+
+    Returns the packaged default when the csv can't be read: an editable
+    file beats an error raised while trying to be helpful about one.
+    """
+    with _Csv(csv_text, name) as f_csv:
+        try:
+            gradebook, _ = _warn_list(lambda: Gradebook.from_file(f_csv))
+            return seed_text(gradebook, name, default_yaml())
+        except Exception:
+            return default_yaml()
 
 
 def form_state(yaml_text):
