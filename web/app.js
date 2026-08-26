@@ -29,7 +29,7 @@ const state = {
   seed: null,
   yaml: '',
   // the policy as it exists in a file the reader has -- set when one is
-  // loaded, and again when one is saved.  what "unsaved changes" is measured
+  // loaded, and again when one is saved.  what the exit guard measures
   // against, and null until there has been a file at all
   savedYaml: null,
   // the policy as this page first wrote it, before any editing.  an untouched
@@ -1926,44 +1926,39 @@ function trace(hist, name, color) {
  * page redraws -- which happens on every edit -- and a link clicked against a
  * revoked url downloads as a uuid with no extension, which is worse than not
  * offering it.  The content is always current for the same reason. */
-function fileLink(key, name, note, noteClass) {
+function fileLink(key, name, note) {
   return `<a href="#" data-file="${key}" download="${escapeHtml(name)}">` +
     `${escapeHtml(name)}</a>` +
-    (note ? `<span class="file-note ${noteClass || ''}">` +
-      `${escapeHtml(note)}</span>` : '');
+    (note ? `<span class="file-note">${escapeHtml(note)}</span>` : '');
 }
 
-/* Three answers to "is what I have done in a file yet", of which only the
- * last is a problem.  An untouched seed is told apart from work on purpose:
- * warning about a document the page wrote by itself, and that the reader has
- * not touched, is how an indicator teaches people to ignore it. */
-function saveState() {
+/* Whether there is work in the page that exists nowhere else.
+ *
+ * The files line says nothing about this any more -- whether a reader has put
+ * a copy somewhere is between them and their filesystem, and a page keeping
+ * score of it was answering a question nobody asked.  Two things still want
+ * the answer: the exit guard, and the student example, which is the one
+ * button that replaces the file being edited.
+ *
+ * A saved document is not at risk, and a seed the page wrote by itself and
+ * nobody has touched is not work -- warning about either is how a guard
+ * teaches people to click through it. */
+function isDirty() {
   // nothing written is nothing to lose: a student waiting on the policy file
   // their instructor sent has no work in the page to be warned about
-  if (!state.yaml) return 'clean';
-  if (state.yaml === state.savedYaml) return 'clean';
-  if (state.savedYaml === null && state.yaml === state.seedYaml) return 'fresh';
-  return 'dirty';
+  if (!state.yaml) return false;
+  if (state.yaml === state.savedYaml) return false;
+  if (state.savedYaml === null && state.yaml === state.seedYaml) return false;
+  return true;
 }
-
-/* the link is the save button, which the page had never said anywhere */
-const SAVE_NOTE = {
-  clean: 'saved',
-  // a policy the page seeded and nobody has touched says nothing at all: it
-  // is not saved, but there is no work in it to lose, and an indicator that
-  // speaks up when nothing has happened is one people learn to ignore
-  fresh: '',
-  dirty: 'unsaved changes — click to save',
-};
 
 /* An anchor download reports nothing back: not that it succeeded, and not
  * that the reader cancelled a save dialog.  So this is the page believing it
- * did what it was told.  Believing it is still the better bet -- browsers
- * save without asking by default, and an indicator that can never reach
- * 'saved' is one nobody reads by the second afternoon. */
+ * did what it was told, which is the better bet -- browsers save without
+ * asking by default, and a guard that can never be satisfied is one nobody
+ * gets past twice. */
 function markSaved(text) {
   state.savedYaml = text;
-  drawFiles();
 }
 
 function fileOf(key) {
@@ -2004,7 +1999,6 @@ function fileOf(key) {
 function drawFiles() {
   if (!state.csv) return ($('files').innerHTML = '');
 
-  const save = saveState();
   const part = [
     '<span class="file-k">your files</span>',
     // a student's scores live in this csv and nowhere else, so what it is
@@ -2014,15 +2008,12 @@ function drawFiles() {
       : state.facts),
   ];
 
-  // there is no policy to save when there is no policy: a student waiting on
-  // the file their instructor sent is not somebody with unsaved work
+  // no row for a file that does not exist yet: a student who has dropped
+  // their scores in and is waiting on the policy has nothing here to link
   if (state.yaml) {
-    const what = state.solo
+    part.push(fileRow('yaml', state.policyName, state.solo
       ? 'the policy you were given, and any adjustments you added'
-      : 'Contains the whole grading policy';
-    part.push(fileRow('yaml', state.policyName,
-                      [what, SAVE_NOTE[save]].filter(Boolean).join(' — '),
-                      `save-state is-${save}`));
+      : 'Contains the whole grading policy'));
   }
 
   // the same policy with every student taken out of it.  offered beside the
@@ -2044,9 +2035,8 @@ function drawFiles() {
   $('files').innerHTML = part.join('');
 }
 
-function fileRow(key, name, note, noteClass) {
-  return `<span class="file-row">${
-    fileLink(key, name, note, noteClass)}</span>`;
+function fileRow(key, name, note) {
+  return `<span class="file-row">${fileLink(key, name, note)}</span>`;
 }
 
 /* The canvas template is the gradebook canvas exported: grades are merged
@@ -2268,7 +2258,7 @@ async function useExample(name) {
  * makes this the one example that replaces the file being edited, so unsaved
  * work is refused rather than carried off. */
 async function useExamplePolicy(name) {
-  if (saveState() === 'dirty') {
+  if (isDirty()) {
     return showPickError('Your policy has unsaved changes, and the student '
       + 'example would replace it — save it from the files line first.');
   }
@@ -2927,7 +2917,7 @@ $('mode').addEventListener('click', (e) => {
  *
  * The browser picks the wording; nothing said here is shown. */
 window.addEventListener('beforeunload', (e) => {
-  if (!state.csv || saveState() !== 'dirty') return;
+  if (!state.csv || !isDirty()) return;
   e.preventDefault();
   // older browsers want the property set, and one of the two always lands
   e.returnValue = '';
