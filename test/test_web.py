@@ -505,6 +505,49 @@ def filled_sheet(yaml_text, score_dict, day_dict=None):
     return res['csv']
 
 
+class TestUnplacedAssignment:
+    """ work no category catches carries no weight, so grading says so
+
+    The notice about a kept policy used to warn about this in advance, for
+    every re-export whether or not there was anything to warn about.  It does
+    not need to: this names the assignments, and only appears when there are
+    some.
+    """
+
+    YAML_HW_ONLY = 'category:\n  weight:\n    hw: 100\n'
+
+    def test_it_warns_by_name(self, csv_text):
+        res = web.grade(csv_text, self.YAML_HW_ONLY)
+
+        assert res['ok'], res.get('error')
+        assert [w for w in res['warn_list']
+                if 'not in any category' in w and 'quiz1' in w], \
+            res['warn_list']
+
+    def test_it_carries_no_weight(self, csv_text):
+        res = web.grade(csv_text, self.YAML_HW_ONLY)
+        row_dict = {r['assignment']: r for r in res['row_list']}
+
+        assert row_dict['quiz1']['category'] is None
+        assert not row_dict['quiz1']['weight_total']
+
+    def test_and_moves_no_grade(self, csv_text):
+        """ carol is 0/10 on hw1 and 6/10 on quiz1; the quiz cannot help """
+        with_quiz = web.grade(csv_text, YAML_STD)['student_list']
+        without = web.grade(csv_text, self.YAML_HW_ONLY)['student_list']
+
+        mean = {s['email']: s['mean'] for s in without}
+        was = {s['email']: s['mean'] for s in with_quiz}
+
+        assert mean['carol@u.edu'] != was['carol@u.edu']
+        assert all(s['cat_dict'].get('quiz') is None for s in without)
+
+    def test_nothing_is_said_when_every_assignment_is_placed(self, csv_text):
+        res = web.grade(csv_text, YAML_STD)
+
+        assert not [w for w in res['warn_list'] if 'not in any category' in w]
+
+
 def _banner_frame(res):
     """ the workbook the page hands back, as a frame """
     import base64
