@@ -97,6 +97,10 @@ const NEED_POLICY = 'This is one student\'s row, so it is being read as ' +
  * recognise when they come to look for it. */
 const SHEET_NAME = 'you.csv';
 
+/* The name the package writes it under, so that the page and the command line
+ * hand a reader the same filename. */
+const NAME_PUBLIC = 'policy_PUBLIC.yaml';
+
 /* ------------------------------------------------------------------ boot */
 
 async function boot() {
@@ -1541,18 +1545,6 @@ function downloadStudentCsv() {
   download(res.csv, res.filename, 'text/csv');
 }
 
-/* The file to post for the class: this policy with every student taken out
- * of it, so it is the same file for all of them.  A student who was told
- * something applies to them alone adds that line themselves -- which the
- * file's own header explains -- because a file that is right for one student
- * is wrong for the other ninety nine. */
-function downloadStudentPolicy() {
-  const res = toJs(state.api.student_policy(state.csv, state.yaml,
-                                            state.name));
-  if (!res.ok) return ($('export-hint').textContent = res.error);
-  download(res.yaml, res.filename, 'text/yaml');
-}
-
 /* How much the last edit moved this student.  Waiving one homework out of
  * fifteen shifts a grade by about a point, which reads as nothing happening
  * unless the page says what happened. */
@@ -1945,6 +1937,19 @@ function fileOf(key) {
   if (key === 'yaml') {
     return [state.yaml, state.policyName, 'text/yaml'];
   }
+  // built on the spot rather than held: it is a view of the policy above it,
+  // and a stale copy of that would be worse than none.  A policy that will
+  // not grade the class has nothing for the class's copy to agree with, which
+  // is the whole of what it is for, so it is refused rather than written
+  if (key === 'public') {
+    const res = toJs(state.api.student_policy(state.csv, state.yaml,
+                                              state.name));
+    if (!res.ok) {
+      showPickError(res.error);
+      return null;
+    }
+    return [res.yaml, res.filename, 'text/yaml'];
+  }
   if (key === 'canvas') {
     return [state.canvasText, state.canvasName, 'text/csv'];
   }
@@ -1974,7 +1979,19 @@ function drawFiles() {
     part.push(fileRow('yaml', state.policyName, state.solo
       ? `the policy you were given, and any adjustments you added — ${
         SAVE_NOTE[save]}`
-      : SAVE_NOTE[save], `save-state is-${save}`));
+      : `Contains the whole grading policy — ${SAVE_NOTE[save]}`,
+    `save-state is-${save}`));
+  }
+
+  // the same policy with every student taken out of it.  offered beside the
+  // file it is made from rather than among the exports, because the choice a
+  // reader makes here is which of the two to hand out -- and built when asked
+  // for, since a copy kept around would go stale against the one above it
+  if (state.grades && !state.solo) {
+    part.push(fileRow('public', NAME_PUBLIC,
+                      'Contains the grading policy without any individual '
+                      + 'student adjustments, ready to share with '
+                      + 'everyone.'));
   }
 
   if (state.canvasText && !state.sourceIsCanvas) {
@@ -2045,15 +2062,6 @@ function setCanvasTemplate(name, text) {
   drawExport();
 }
 
-/* One downloadable file: the button that writes it, and what it is for. */
-function exportRow(id, label, note, off) {
-  return `<div class="export-line">
-    <button type="button" id="${id}" class="${off ? 'secondary' : ''}"${
-    off ? ' disabled' : ''}>${escapeHtml(label)}</button>
-    <span class="export-note">${escapeHtml(note)}</span>
-  </div>`;
-}
-
 function drawExport() {
   drawCanvasDrop();
 
@@ -2066,25 +2074,16 @@ function drawExport() {
   }
 
   const canCanvas = !!state.canvasText;
-  // one file per line, each saying what it is for.  in a row they are four
-  // buttons a reader has to open to tell apart
-  $('export-row').innerHTML = [
-    exportRow('dl-grades', 'grade_full.csv',
-              'every student, every category mean and the final grade — the '
-              + 'spreadsheet this run produced.'),
-    exportRow('dl-canvas', 'canvas upload csv', canCanvas
-      ? 'merged into your canvas gradebook by SIS user id, scaled to 100 so '
-        + 'canvas does not round them.'
-      : 'drop your canvas gradebook below to enable this — canvas matches '
-        + 'students by an id only that file carries.',
-              !canCanvas),
-    exportRow('dl-banner', 'banner xlsx…',
-              'needs a term code and CRNs, which a gradebook cannot know.'),
-    exportRow('dl-policy', 'policy_PUBLIC.yaml',
-              'the file to post for the class — see below.'),
-  ].join('');
+  $('export-row').innerHTML =
+    '<button type="button" id="dl-grades">download grade_full.csv</button>' +
+    `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
+      ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
+    '<button type="button" id="dl-banner">export for banner…</button>';
 
-  $('export-hint').textContent = '';
+  $('export-hint').textContent = canCanvas
+    ? 'The canvas export merges these grades into your canvas gradebook by '
+      + 'SIS user id, scaled to 100 so canvas does not round them.'
+    : 'Set a canvas template below to enable the canvas export.';
 
   $('dl-grades').addEventListener('click', () =>
     download(state.grades.csv, 'grade_full.csv', 'text/csv'));
@@ -2103,8 +2102,6 @@ function drawExport() {
     form.hidden = !form.hidden;
     if (!form.hidden) $('term-code').focus();
   });
-
-  $('dl-policy').addEventListener('click', downloadStudentPolicy);
 }
 
 /* Banner will only match a row when its CRN, term code and student id all
