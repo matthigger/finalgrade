@@ -104,7 +104,7 @@ class TestPlannedMeansTheGradebookLackedIt:
     A policy may plan work the export already has -- the posted student
     policy carries the whole term's roster, and dropping a real gradebook
     beside it is a normal thing to do.  Read off the policy, every assignment
-    in the course then reads "not set" while holding real scores.
+    in the course then reads "(planned)" while holding real scores.
     """
 
     ROSTER_YAML = """\

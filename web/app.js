@@ -911,7 +911,7 @@ function assChip(r, off) {
     escapeHtml(r.assignment)}" role="button" tabindex="0"
     title="${escapeHtml(why)}"><span class="chip-k">${
     escapeHtml(r.assignment)}</span>${r.planned
-      ? '<span class="chip-v">not set</span>' : ''}</span>`
+      ? '<span class="chip-v">(planned)</span>' : ''}</span>`
     + (r.planned ? `<button type="button" class="x" data-unplan="${
       escapeHtml(r.assignment)}" title="remove this assignment"
       >&times;</button>` : '');
@@ -1310,7 +1310,7 @@ function scoreChip(a) {
     text = 'waived';
   } else if (a.planned) {
     cls += ' is-planned';
-    text = 'not set';
+    text = '(planned)';
   } else if (!a.submitted) {
     // a blank and a zero are both 0 points and mean different things
     cls += ' is-missing';
