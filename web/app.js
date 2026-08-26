@@ -64,6 +64,8 @@ const state = {
   fold: { audit: true },
   view: 'total',
   mode: 'final',
+  // which export the panel is showing the inputs for
+  exportMode: 'grades',
   seq: 0,
   // the one student this page is about, when the gradebook holds one -- a
   // student looking at their own grade rather than a course looking at
@@ -434,8 +436,44 @@ function refresh() {
   if (check()) runGrades();
   else clearGrades();
   if (error) $('messages').innerHTML += msgList([error], 'error');
+  if (state.solo) {
+    $('messages').innerHTML += msgList(emptyCatWarnList(), 'warn');
+  }
   drawFiles();
   drawExport();
+}
+
+/* A category nothing has been entered into weighs on nothing, so a grade that
+ * looks finished is a grade over part of the course.  The instructor's page
+ * warns when a category matches no assignment; this is the same hole seen
+ * from the other side, where the assignments exist and the scores do not. */
+function emptyCatWarnList() {
+  const graded = soloGraded();
+  if (!graded) return [];
+
+  const scored = {};
+  for (const a of graded.ass_list || []) {
+    if (a.category && a.perc !== null && a.perc !== undefined) {
+      scored[a.category] = true;
+    }
+  }
+
+  // a sheet nobody has started is every category at once, which is not news
+  // to whoever just opened it.  the warning is for the category missed while
+  // filling the others in
+  if (!Object.keys(scored).length) return [];
+
+  return Object.keys(graded.cat_dict || {}).sort()
+    .filter((cat) => !scored[cat])
+    .map((cat) => `no scores entered for ${cat}, so it is not counted at `
+      + 'all — your grade so far is over the rest of the course');
+}
+
+/* the one student's graded row, when there is one */
+function soloGraded() {
+  if (!state.solo || !state.grades) return null;
+  return (state.grades.student_list || [])
+    .find((s) => s.email === state.solo) || null;
 }
 
 /* Half of what a student needs, and the page saying which half is missing.
@@ -1911,7 +1949,10 @@ function saveState() {
 /* the link is the save button, which the page had never said anywhere */
 const SAVE_NOTE = {
   clean: 'saved',
-  fresh: 'not saved yet — click to save',
+  // a policy the page seeded and nobody has touched says nothing at all: it
+  // is not saved, but there is no work in it to lose, and an indicator that
+  // speaks up when nothing has happened is one people learn to ignore
+  fresh: '',
   dirty: 'unsaved changes — click to save',
 };
 
@@ -1976,11 +2017,12 @@ function drawFiles() {
   // there is no policy to save when there is no policy: a student waiting on
   // the file their instructor sent is not somebody with unsaved work
   if (state.yaml) {
-    part.push(fileRow('yaml', state.policyName, state.solo
-      ? `the policy you were given, and any adjustments you added — ${
-        SAVE_NOTE[save]}`
-      : `Contains the whole grading policy — ${SAVE_NOTE[save]}`,
-    `save-state is-${save}`));
+    const what = state.solo
+      ? 'the policy you were given, and any adjustments you added'
+      : 'Contains the whole grading policy';
+    part.push(fileRow('yaml', state.policyName,
+                      [what, SAVE_NOTE[save]].filter(Boolean).join(' — '),
+                      `save-state is-${save}`));
   }
 
   // the same policy with every student taken out of it.  offered beside the
@@ -2043,15 +2085,15 @@ function drawCanvasDrop() {
 function takeCanvasFile(file) {
   readText(file)
     .then((text) => setCanvasTemplate(file.name, text))
-    .catch((err) => ($('export-hint').textContent = err.message));
+    .catch((err) => ($('canvas-hint').textContent = err.message));
 }
 
 function setCanvasTemplate(name, text) {
   const info = toJs(state.api.load_csv(text, name));
   if (!info.ok || info.source !== 'canvas') {
-    $('export-hint').textContent = info.ok
-      ? `${name} is not a canvas gradebook export — it has no SIS user id ` +
-        'column to match students by.'
+    $('canvas-hint').textContent = info.ok
+      ? `${name} is not a canvas gradebook export — it has no SIS user id `
+        + 'column to match students by.'
       : info.error;
     return;
   }
@@ -2062,46 +2104,47 @@ function setCanvasTemplate(name, text) {
   drawExport();
 }
 
+/* Each export wants different things of you -- a canvas gradebook to merge
+ * into, a term code and CRNs, or nothing at all -- and three sets of inputs
+ * on screen at once left it unclear which belonged to which.  So: pick the
+ * one you are doing, and see only what it asks for. */
+const EXPORT_MODE_TUP = ['grades', 'canvas', 'banner'];
+
 function drawExport() {
   drawCanvasDrop();
 
-  if (!state.grades) {
-    $('export-row').innerHTML = '';
+  const ready = !!state.grades;
+  $('export-mode').hidden = !ready;
+  EXPORT_MODE_TUP.forEach((mode) =>
+    ($(`export-pane-${mode}`).hidden = true));
+
+  if (!ready) {
+    $('export-hint').hidden = false;
     $('export-hint').textContent =
       'Exports appear once the policy grades cleanly.';
-    $('banner-form').hidden = true;
     return;
   }
+  $('export-hint').hidden = true;
 
+  Array.from($('export-mode').children).forEach((el) =>
+    el.classList.toggle('on', el.dataset.mode === state.exportMode));
+  $(`export-pane-${state.exportMode}`).hidden = false;
+
+  // the canvas tab stays reachable with no template set -- the drop zone
+  // that sets one lives inside it.  the export button is what waits
   const canCanvas = !!state.canvasText;
-  $('export-row').innerHTML =
-    '<button type="button" id="dl-grades">download grade_full.csv</button>' +
-    `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
-      ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
-    '<button type="button" id="dl-banner">export for banner…</button>';
-
-  $('export-hint').textContent = canCanvas
+  $('dl-canvas').disabled = !canCanvas;
+  $('dl-canvas').classList.toggle('secondary', !canCanvas);
+  $('canvas-hint').textContent = canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by '
       + 'SIS user id, scaled to 100 so canvas does not round them.'
-    : 'Set a canvas template below to enable the canvas export.';
+    : 'Drop the gradebook canvas exported to enable this.';
+}
 
-  $('dl-grades').addEventListener('click', () =>
-    download(state.grades.csv, 'grade_full.csv', 'text/csv'));
-
-  if (canCanvas) {
-    $('dl-canvas').addEventListener('click', () => {
-      const res = toJs(state.api.canvas_export(
-        state.csv, state.yaml, state.canvasText, state.name, true));
-      if (!res.ok) return ($('export-hint').textContent = res.error);
-      download(res.csv, stamped('canvas_upload', 'csv'), 'text/csv');
-    });
-  }
-
-  $('dl-banner').addEventListener('click', () => {
-    const form = $('banner-form');
-    form.hidden = !form.hidden;
-    if (!form.hidden) $('term-code').focus();
-  });
+function setExportMode(mode) {
+  state.exportMode = mode;
+  drawExport();
+  if (mode === 'banner') $('term-code').focus();
 }
 
 /* Banner will only match a row when its CRN, term code and student id all
@@ -2843,8 +2886,25 @@ $('canvas-file').addEventListener('change', (e) => {
   e.target.value = '';
 });
 
+/* the panes are in the page rather than rendered into it, so each of these
+ * is wired once -- and a CRN typed into one survives every redraw */
+$('export-mode').addEventListener('click', (e) => {
+  const mode = e.target.dataset && e.target.dataset.mode;
+  if (mode) setExportMode(mode);
+});
+
+$('dl-grades').addEventListener('click', () =>
+  download(state.grades.csv, 'grade_full.csv', 'text/csv'));
+
+$('dl-canvas').addEventListener('click', () => {
+  const res = toJs(state.api.canvas_export(
+    state.csv, state.yaml, state.canvasText, state.name, true));
+  if (!res.ok) return ($('canvas-hint').textContent = res.error);
+  download(res.csv, stamped('canvas_upload', 'csv'), 'text/csv');
+});
+
 $('banner-go').addEventListener('click', runBanner);
-$('banner-form').addEventListener('keydown', (e) => {
+$('export-pane-banner').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') runBanner();
 });
 
