@@ -51,7 +51,8 @@ save.
   after your policy, where hovering a bar names the students in it. Not "what
   is the shape of the class" but "who is sitting just under the A− line?"
 - **Exports** — `grade_full.csv`, a Canvas upload merged by SIS id, and a
-  Banner `.xlsx`.
+  Banner `.xlsx` that carries a CRN per section, so the whole course uploads
+  at once.
 
 **It refuses to guess.** Grades are hard to eyeball, so a policy that can't
 mean what you intended is an error rather than plausible-looking numbers: a
@@ -121,8 +122,12 @@ rather than guessing from names.
 
 ```bash
 finalgrade canvas grade_full.csv canvas.csv --scale100
-finalgrade banner grade_full.csv 202310 -c 12345 -c 67890
+finalgrade banner grade_full.csv 202310 -s sec-01=12345 -s sec-02=67890
 ```
+
+A CRN names one section, so Banner gets one per section — the gradebook
+already knows who is in which, and the browser puts a CRN box next to each
+one it finds. The whole course then uploads in a single import.
 
 See [doc/upload_canvas.md][canvas] and [doc/upload_banner.md][banner].
 
