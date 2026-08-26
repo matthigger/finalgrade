@@ -27,7 +27,8 @@ WEB = ROOT / 'web'
 ASSET_TUP = ('index.html', 'style.css', 'app.js', 'favicon.svg')
 
 # the same class as each platform exports it
-EXAMPLE_TUP = ('ex_gradescope.csv', 'ex_canvas.csv')
+EXAMPLE_TUP = ('ex_gradescope.csv', 'ex_canvas.csv',
+               'ex_policy_public.yaml')
 
 # pyodide ships pandas, numpy and ruamel.yaml, but not these, and the banner
 # export writes an xlsx.  fetched at build time rather than from pypi at run

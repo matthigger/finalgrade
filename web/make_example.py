@@ -13,6 +13,12 @@ them.  The pair is the point -- canvas' export carries no submission times,
 so a late penalty has nothing to act on there, and having both on hand makes
 that a thing you can see rather than a paragraph of documentation.
 
+A third, ex_policy_public.yaml, is what an instructor of this class would post
+for it: the same policy with the three students it singles out taken back out
+again, and the term's work written in.  It is what the page's student example
+loads, and it is built by the package so that it cannot drift from either the
+gradebook or the code that writes the real ones.
+
     python web/make_example.py
 
 Deterministic: the same files every time, so a rebuild is not a diff.
@@ -23,6 +29,54 @@ import random
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 F_SCOPE = ROOT / 'web' / 'ex_gradescope.csv'
 F_CANVAS = ROOT / 'web' / 'ex_canvas.csv'
+F_PUBLIC = ROOT / 'web' / 'ex_policy_public.yaml'
+
+# a plausible policy over the class above, written the way an instructor's own
+# file looks: it singles three of the hundred out, which is the whole reason
+# the posted copy has to be built rather than handed over.  the emails are
+# filled in from the cast below, so that dropping them is visible rather than
+# asserted
+YAML_INSTRUCTOR = """
+category:
+  weight:
+    hw: 40
+    quiz: 25
+    exam: 35
+  drop_low:
+    hw: 1
+  late_penalty:
+    hw:
+      penalty_per_day: .1
+      excuse_day: 2
+      grace_period_minutes: 60
+      excuse_day_offset:
+        {drc}: 5
+assignments:
+  substitute:
+    exam2a:
+      - exam2b
+  exclude:
+    - exam2b
+waive:
+  {waived}: hw3
+waive_late:
+  {forgiven}: hw1
+note:
+  {drc}: DRC accommodation, agreed in week two
+grade_thresh:
+  .93: A
+  .90: A-
+  .87: B+
+  .83: B
+  .80: B-
+  .77: C+
+  .73: C
+  .70: C-
+  .67: D+
+  .63: D
+  .60: D-
+  0: E
+"""
 
 # canvas names an assignment group per assignment; these are the groups an
 # instructor would have set up, and canvas writes a rollup column for each
@@ -349,14 +403,53 @@ def write_canvas(stud_list):
     F_CANVAS.write_text('\n'.join(line_list) + '\n')
 
 
+def write_public():
+    """ the policy_PUBLIC.yaml the page's student example loads
+
+    Built by the package rather than written out here, so the example is the
+    real output of the real code path -- including the assignment roster,
+    which a student's sheet is filled in from and which would otherwise have
+    to be kept in step with ASSIGN_DICT by hand.
+    """
+    import sys
+    import warnings
+
+    sys.path.insert(0, str(ROOT))
+    from finalgrade import student
+    from finalgrade.policy import Policy
+
+    text = YAML_INSTRUCTOR.format(
+        drc=email_of(*CAST_TUP[0][:2]),
+        waived=email_of(*CAST_TUP[1][:2]),
+        forgiven=email_of(*CAST_TUP[6][:2]))
+
+    f_private = ROOT / 'web' / '_ex_policy_private.yaml'
+    f_private.write_text(text)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            policy = Policy.from_file(f_private)
+            # graded first, the way the browser and the cli both do it: a
+            # policy that will not grade this class has no business being the
+            # example of one that does
+            policy(str(F_SCOPE))
+            F_PUBLIC.write_text(student.policy_text(policy, str(F_SCOPE)))
+    finally:
+        f_private.unlink()
+
+    for email in (email_of(*cast[:2]) for cast in CAST_TUP):
+        assert email not in F_PUBLIC.read_text(), email
+
+
 def main():
     rng = random.Random(SEED)
     stud_list = student_list_of(rng)
 
     write_scope(stud_list)
     write_canvas(stud_list)
+    write_public()
 
-    for f_out in (F_SCOPE, F_CANVAS):
+    for f_out in (F_SCOPE, F_CANVAS, F_PUBLIC):
         print(f'wrote {f_out}')
     print(f'  {N_STUDENT} students, {len(ASSIGN_DICT)} assignments, '
           f'{len(CAST_TUP)} of them named for what they do')

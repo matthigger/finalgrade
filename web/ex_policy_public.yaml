@@ -1,0 +1,100 @@
+# ---------------------------------------------------------------------------
+# YOUR GRADE, WORKED OUT BY YOU -- start here
+#
+#   1. go to  https://matthigger.github.io/finalgrade
+#   2. drop this file on the page
+#   3. type in your scores
+#
+# every assignment in the course is listed below, with what it is out of, so
+# the page can lay them all out for you to fill in.  work you leave blank is
+# not counted at all -- so the grade you see is over what you have entered,
+# and typing a score into work not handed back yet shows what it would do.
+#
+# the page works your grade out the same way your instructor's run does, and
+# shows you how: what was late and what it cost, which scores were dropped,
+# and how the categories combined.
+#
+# nothing you do there is sent anywhere -- the page downloads a python
+# interpreter and runs it in the tab, on your computer.  and an estimate is
+# not a grade: only your instructor's run is that.  it is only as good as
+# what you typed, too.
+# ---------------------------------------------------------------------------
+#
+# a blank is not a zero: work with no score entered is left out of the grade
+# entirely, the same as an assignment that was never set.  so if you did not
+# hand something in, type 0 -- leaving it empty makes the estimate better than
+# your grade is.
+#
+# PUBLIC: this file is the same one the whole class has, so it holds only what
+# is true of everybody -- the weights, the score rules, the late rate, the
+# letter cutoffs and the list of the work.  it says nothing about you, and
+# nothing about anybody else.
+#
+# so if you were told that something applies to you alone -- an assignment
+# waived, a late penalty forgiven, extra late days -- it is not in here, and
+# your estimate is wrong until you add it.  the page has a control for each of
+# them under "adjustments for you", which is the easy way.  by hand, it looks
+# like this ("you" is how the page names you on your own sheet):
+#
+#   waive:
+#     you: hw3
+#
+#   waive_late:
+#     you: hw5
+#
+# and extra late days go inside the late_penalty block for the category they
+# apply to, alongside excuse_day:
+#
+#       excuse_day_offset:
+#         you: 3
+#
+# every setting in this file is documented at
+#   https://github.com/matthigger/finalgrade/blob/main/doc/policy.md
+
+category:
+  weight:
+    hw: 40
+    quiz: 25
+    exam: 35
+  drop_low:
+    hw: 1
+  late_penalty:
+    hw:
+      penalty_per_day: 0.1
+      excuse_day: 2
+      grace_period_minutes: 60
+assignments:
+  exclude:
+  - exam2b
+  substitute:
+    exam2a:
+    - exam2b
+  planned:
+    exam1: 100.0
+    exam2a: 100.0
+    exam2b: 100.0
+    hw1: 10.0
+    hw2: 10.0
+    hw3: 10.0
+    hw4: 10.0
+    hw5: 10.0
+    hw6: 10.0
+    hw7: 10.0
+    hw8: 10.0
+    quiz1: 20.0
+    quiz2: 20.0
+    quiz3: 20.0
+    quiz4: 20.0
+grade_thresh:
+  0.93: A
+  0.9: A-
+  0.87: B+
+  0.83: B
+  0.8: B-
+  0.77: C+
+  0.73: C
+  0.7: C-
+  0.67: D+
+  0.63: D
+  0.6: D-
+  0: E

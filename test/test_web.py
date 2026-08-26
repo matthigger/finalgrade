@@ -593,6 +593,39 @@ class TestStudentSheet:
     def test_a_real_export_is_not_mistaken_for_one(self, csv_text):
         assert web.load_csv(csv_text)['ok']
 
+    def test_the_shipped_example_makes_a_sheet(self):
+        """ the page's "see it as a student" button loads this file
+
+        Also what keeps web/make_example.py in step: the example policy is
+        generated from the example gradebook, and a roster that drifted from
+        it would show up here rather than in the browser.
+        """
+        import pathlib
+
+        text = (pathlib.Path('web') / 'ex_policy_public.yaml').read_text()
+        res = web.student_sheet(text)
+
+        assert res['ok'], res.get('error')
+        assert res['n_ass'] == 15
+
+        graded = web.grade(
+            filled_sheet(text, {'hw1': 9, 'hw2': 8, 'exam1': 90}), text)
+
+        assert graded['ok'], graded.get('error')
+        assert graded['student_list'][0]['letter']
+
+    def test_the_shipped_example_names_nobody(self):
+        """ it is posted for a whole class in the demo as much as anywhere """
+        import pathlib
+
+        text = (pathlib.Path('web') / 'ex_policy_public.yaml').read_text()
+        info = web.load_csv(
+            (pathlib.Path('web') / 'ex_gradescope.csv').read_text())
+
+        for stud in info['student_list']:
+            assert stud['email'] not in text
+            assert stud['email'].split('@')[0] not in text
+
     def test_a_filled_sheet_dropped_back_in_grades_the_same(self, csv_text):
         """ how a term's typing survives, since nothing is kept between visits
 
