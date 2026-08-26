@@ -64,9 +64,10 @@ h1 {
   max-width: 60ch;
 }
 
-/* what to know before starting, as three points rather than three boxes:
-   colour here would compete with the messages below, where red, amber and
-   blue mean error, warning and information and nothing else */
+/* what to know before starting: who each half of the page is for, that
+   nothing leaves the computer, and that nothing survives leaving.  a list
+   rather than boxes -- colour here would compete with the messages below,
+   where red, amber and blue mean error, warning and information */
 .intro {
   margin: 1rem 0 0;
   padding-left: 1.1rem;
@@ -145,13 +146,21 @@ h2 .sub {
   .head-grid { grid-template-columns: 1fr; }
 }
 
+/* One file per line.  Side by side they read as a trail of what was loaded;
+   stacked, each one is a save button with a reason next to it, which is what
+   they are for on a page that keeps nothing between visits. */
 .files {
   margin: .9rem 0 0;
   font-size: .85rem;
   display: flex;
-  align-items: baseline;
-  gap: .45rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .2rem;
+}
+
+.file-row {
+  display: block;
+  line-height: 1.5;
 }
 
 .file-k {
@@ -165,8 +174,6 @@ h2 .sub {
   font-family: var(--mono);
   color: var(--accent);
 }
-
-.file-sep { color: var(--ink-faint); }
 
 .file-note {
   font-size: .74rem;
@@ -207,7 +214,7 @@ h2 .sub {
 .drop-main { margin: 0; font-size: 1.5rem; font-weight: 600; }
 .drop-sub { margin: .5rem 0 0; color: var(--ink-soft); font-size: .92rem; }
 
-/* where the two files come from.  left aligned even though the box is
+/* where a gradebook export comes from.  left aligned even though the box is
    centred: these are paths to follow, and a centred path is hard to scan */
 .drop-how {
   margin: .6rem auto 0;
@@ -580,6 +587,57 @@ textarea:focus-visible, button:focus-visible {
 /* ---- buttons ---- */
 
 .row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .7rem; }
+
+/* One export per line: the button, and what the file it writes is for.  The
+   buttons are the same width as each other so the reasons line up and can be
+   read down the page as a list. */
+#export-row { margin-top: .7rem; }
+
+.export-line {
+  display: flex;
+  align-items: baseline;
+  gap: .7rem;
+  margin-bottom: .5rem;
+}
+
+.export-line button { flex: 0 0 13rem; text-align: center; }
+
+.export-note {
+  font-size: .82rem;
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
+
+/* PUBLIC against PRIVATE.  Posting the wrong one hands a class its
+   classmates' accommodations, so the difference is spelled out rather than
+   left to the filenames. */
+.two-files {
+  margin: 1rem 0 0;
+  padding: .8rem .9rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: .85rem;
+}
+
+.two-files dt {
+  font-family: var(--mono);
+  font-size: .8rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.two-files dt:not(:first-child) { margin-top: .6rem; }
+
+.two-files dd {
+  margin: .15rem 0 0;
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+
+@media (max-width: 34rem) {
+  .export-line { flex-direction: column; gap: .2rem; }
+  .export-line button { flex: 0 0 auto; }
+}
 
 button {
   font: inherit;

@@ -68,6 +68,27 @@ def default_yaml():
     return F_POLICY_DEFAULT.read_text()
 
 
+def _is_breakdown(csv_text):
+    """ whether this is a per-student breakdown rather than a gradebook
+
+    The page hands a student two csvs -- the sheet their scores are in, and
+    the breakdown explaining the grade those scores came to -- and only the
+    first can be read back.  Told apart by shape rather than by filename: one
+    column of field names, with the grade among them.
+    """
+    try:
+        df = pd.read_csv(io.StringIO(csv_text), dtype=str,
+                         keep_default_na=False, nrows=40)
+    except Exception:
+        return False
+
+    if not len(df.columns):
+        return False
+
+    field_set = set(df[df.columns[0]].astype(str).str.strip().str.lower())
+    return {'mean', 'letter'} <= field_set
+
+
 def load_csv(csv_text, name='scope.csv'):
     """ what this csv is, before any policy is applied
 
@@ -78,6 +99,17 @@ def load_csv(csv_text, name='scope.csv'):
     Returns:
         info (dict): source, students, assignments and any complaint
     """
+    if _is_breakdown(csv_text):
+        # it holds a grade rather than the scores behind one, so reading it
+        # would be parsing this package's own report back in.  say which file
+        # was wanted instead, since the reader's own complaint would be about
+        # a missing column and sound like a bug in the file
+        return dict(ok=False, warn_list=[], error=(
+            f'{name} is a breakdown of a grade, not the scores it was worked '
+            'out from, so there is nothing in it to grade.  to pick up where '
+            'you left off, use the csv of your own scores instead -- the one '
+            'the files line offers you to save'))
+
     with _Csv(csv_text, name) as f_csv:
         from .canvas.read import is_canvas_export
 
