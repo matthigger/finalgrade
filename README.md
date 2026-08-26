@@ -47,6 +47,10 @@ save.
   attachment for the email asking why a grade is what it is.
 - **Notes** — free text on a student, stored beside the waiver it explains, so
   the reason outlives the email thread.
+- **A student's own copy** — two files per student, their row and your policy
+  with everybody else taken out, so they can see how their grade was reached
+  and try a score on work you haven't graded yet. Same page, same code, same
+  answer as your run. See [doc/student.md](doc/student.md).
 - **Inspect** — the distribution of any category or assignment, before and
   after your policy, where hovering a bar names the students in it. Not "what
   is the shape of the class" but "who is sitting just under the A− line?"
@@ -106,6 +110,15 @@ finalgrade guessed.
 Other flags: `-o` output path, `--late_csv` late days per student-assignment,
 `--per_student` a csv each, `--new-policy` a fresh one, `-q` quiet. Run
 `finalgrade grade --help` for the full list.
+
+`student` writes the two files each student needs to work their own grade out
+on the page — their row of the export, and your policy with everybody else
+taken out of it:
+
+    finalgrade student scope.csv --policy policy.yaml
+
+one folder per student, beside the csv. See
+[doc/student.md](doc/student.md).
 
 ### Grading from Canvas
 

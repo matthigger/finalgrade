@@ -31,7 +31,7 @@
           the page loads, you can disconnect from the internet and it'll
           still work.
         </li>
-        <li>
+        <li class="instructor-only">
           <strong>Bad news, your grades never leave this computer:</strong>
           The grading policy you build here is not stored, be sure to
           download the resulting <code>policy.yaml</code> file immediately
@@ -39,6 +39,23 @@
           starting from scratch.
         </li>
       </ul>
+      <ul class="intro solo-only">
+        <li>
+          <strong>This is your own grade, worked out on your computer.</strong>
+          Drop in the <code>policy.yaml</code> your instructor gave you and
+          your own grades <code>.csv</code>, and the page applies the
+          course's grading policy to them — the same code that produced your
+          real grade. Type a score into work that has not been graded yet to
+          see what it would do.
+        </li>
+        <li>
+          <strong>An estimate is not a grade.</strong> Only your
+          instructor's run is that, and anything you type here is a
+          supposition. Nothing you do on this page is sent anywhere or
+          recorded.
+        </li>
+      </ul>
+
       <p class="tagline">The same code can also be run on the command line,
         see <a href="https://github.com/matthigger/finalgrade">github</a>.</p>
     </div>
@@ -58,7 +75,9 @@
         <button type="button" id="demo" class="link">gradescope</button> or
         <button type="button" id="demo-canvas" class="link">canvas</button>
       </p>
-      <input type="file" id="file" accept=".csv,.yaml,.yml" hidden>
+      <!-- more than one, because the pair a student is given is two files
+           and the drop zone has always taken both at once -->
+      <input type="file" id="file" accept=".csv,.yaml,.yml" multiple hidden>
     </div>
   </div>
 
@@ -80,22 +99,24 @@
   <div id="verdict" class="verdict"></div>
   <div id="messages"></div>
 
-  <div class="panel">
+  <div class="panel instructor-only">
     <h2>categories <span class="sub">what counts, and how much</span></h2>
     <div id="cats"></div>
     <div id="quick" class="quick"></div>
     <p class="hint" id="cats-hint"></p>
   </div>
 
-  <div class="panel">
+  <div class="panel instructor-only">
     <h2>assignments <span class="sub">click an assignment name to waive it,
       drag onto another to take the best of both</span></h2>
     <div id="weight-table"></div>
   </div>
 
   <div class="panel">
-    <h2>students <span class="sub">grades, waivers, accommodations</span></h2>
-    <div class="waive-pick">
+    <h2 id="stud-h2">students <span class="sub" id="stud-sub">grades,
+      waivers, accommodations</span></h2>
+    <p class="hint solo-only" id="solo-hint"></p>
+    <div class="waive-pick instructor-only">
       <input id="stud" list="roster" placeholder="find a student by name…"
         autocomplete="off" aria-label="find a student">
       <datalist id="roster"></datalist>
@@ -104,14 +125,15 @@
     </div>
     <div id="stud-card"></div>
 
-    <details id="waive-all">
+    <details id="waive-all"
+      class="instructor-only">
       <summary>show all student-specific adjustments <span class="sub"
         id="waive-count"></span></summary>
       <div id="waive-list"></div>
     </details>
   </div>
 
-  <div class="cols">
+  <div class="cols instructor-only">
 
     <details class="panel">
       <summary>letter grades <span class="sub" id="letters-sub"></span></summary>
@@ -141,7 +163,7 @@
 
   </div>
 
-  <div class="panel" id="inspect-panel" hidden>
+  <div class="panel instructor-only" id="inspect-panel" hidden>
     <div class="grades-head">
       <h2>inspect</h2>
       <div class="inspect-controls">
@@ -158,7 +180,7 @@
     <div id="chart"></div>
   </div>
 
-  <div class="panel" id="export-panel">
+  <div class="panel instructor-only" id="export-panel">
     <h2>export</h2>
     <p class="hint">Spreadsheets ready to upload, with the ids each
       platform matches on.</p>
