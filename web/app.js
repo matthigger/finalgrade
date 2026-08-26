@@ -340,9 +340,9 @@ function useCsv(name, text, opt) {
   // set both ways round: a class loaded after a student's sheet has to take
   // the headings back, or the page keeps calling a course "your grade"
   if (state.solo) {
-    $('stud-h2').firstChild.nodeValue = 'your grade ';
-    $('stud-sub').textContent =
-      'Enter your assignment grades to compute your final grade';
+    $('stud-h2').firstChild.nodeValue = 'your grade';
+    // what to do is said over the boxes it is about, not over the total
+    $('stud-sub').textContent = '';
   } else {
     $('stud-h2').firstChild.nodeValue = 'students ';
     $('stud-sub').textContent = 'grades, waivers, accommodations';
@@ -1125,11 +1125,17 @@ function whatIfGrid(graded, stud) {
   const n = Object.keys(state.whatIf).length
     + Object.keys(state.whatIfDay).length;
 
+  // the em dash is the placeholder in an empty box, so the sentence names
+  // what a reader is actually looking at
+  const clear = n
+    ? ` — <button type="button" class="link" id="whatif-clear">clear all ${
+      n} you have entered</button>`
+    : '';
+
   return `<div class="waive-row block">
-    <span class="field-k">your scores${n
-    ? ' <span class="sub"><button type="button" class="link" '
-      + `id="whatif-clear">clear all ${n} you have entered</button></span>`
-    : ''}</span>
+    <span class="field-k">your scores <span class="sub">Enter your scores to
+      compute your final grade. Scores marked as "—" are
+      ignored.${clear}</span></span>
     <div class="grid">${block}${maxGroup(stud)}</div>
   </div>`;
 }
