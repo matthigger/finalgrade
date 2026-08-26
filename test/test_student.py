@@ -76,12 +76,60 @@ def graded(f_grade, policy):
 
 
 def student_grade(csv_text, yaml_text, tmp_path, name='mine.csv'):
-    """ what the student's own two files come to, the way the page does it """
+    """ what the student's own sheet comes to, the way the page does it """
     f_csv = tmp_path / name
     f_csv.write_text(csv_text)
     f_policy = tmp_path / 'student.yaml'
     f_policy.write_text(yaml_text)
     return graded(f_csv, Policy.from_file(f_policy))
+
+
+ME = student.EMAIL_YOU
+
+
+def own_sheet(f_grade, policy, email):
+    """ the sheet a student fills in, entering the scores they really got
+
+    Which is how the parity claim is made now that nobody is handed an
+    export: a student typing in what the gradebook already says about them
+    should reach the grade the instructor's run reached, because it is the
+    same arithmetic over the same numbers.
+
+    Every assignment is entered, zeros included -- work nobody handed in is a
+    zero in the instructor's run, so leaving it blank here would be answering
+    a different question (see TestBlankIsNotZero).
+
+    Args:
+        f_grade (Path): the class's export
+        policy (Policy): the instructor's own policy, for the grace periods
+            that decide how many days late each submission counts as
+        email (str): whose scores to enter
+
+    Returns:
+        csv_text (str): a sheet with that student's scores in it
+    """
+    import pandas as pd
+
+    from finalgrade.gradebook import Gradebook
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        gradebook = Gradebook.from_file(str(f_grade))
+        day_frame = gradebook.get_lateday(
+            cat_late_dict=policy.cat_late_dict)
+
+    perc = gradebook.df_perc.loc[email]
+    point_dict = {str(ass): float(pt) for ass, pt in gradebook.points.items()}
+
+    score_dict = {ass: perc[ass] * point_dict[ass]
+                  for ass in gradebook.ass_list}
+    day_dict = {ass: int(day_frame.at[email, ass])
+                for ass in score_dict
+                if pd.notna(day_frame.at[email, ass])
+                and day_frame.at[email, ass] > 0}
+
+    return student.add_scores(student.blank_csv(), score_dict,
+                              point_dict=point_dict, day_dict=day_dict)
 
 
 @pytest.fixture(scope='module')
@@ -161,13 +209,12 @@ class TestTheSameGrade:
         policy = Policy.from_file(write_policy(text_plain))
         want_dict = graded(f_scope_std, policy)
 
-        text = student.policy_text(policy)
+        text = student.policy_text(policy, f_scope_std)
 
         for email in EMAIL_TUP:
-            got = student_grade(
-                student.one_row_csv(f_scope_std.read_text(), email),
-                text, tmp_path)
-            assert got[email] == want_dict[email], email
+            got = student_grade(own_sheet(f_scope_std, policy, email),
+                                text, tmp_path)
+            assert got[ME] == want_dict[email], email
 
     def test_the_thresholds_come_along(self, policy_full):
         """ a letter needs the cutoffs that produced it """
@@ -218,48 +265,51 @@ class TestAnAdjustmentWrittenBackIn:
                                           tmp_path):
         """ alice is waived from her worst hw, and the file cannot say """
         want = graded(f_scope_std, policy_bites)['alice@u.edu']
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
+        mine = own_sheet(f_scope_std, policy_bites, 'alice@u.edu')
 
-        got = student_grade(mine, student.policy_text(policy_bites), tmp_path)
+        text = student.policy_text(policy_bites, f_scope_std)
+        got = student_grade(mine, text, tmp_path)
 
         assert want[0] == pytest.approx(.9)
-        assert got['alice@u.edu'][0] == pytest.approx(.8)
+        assert got[ME][0] == pytest.approx(.8)
 
     def test_a_waiver_written_back_in_is_right(self, f_scope_std,
                                                policy_bites, tmp_path):
         want = graded(f_scope_std, policy_bites)['alice@u.edu']
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
+        mine = own_sheet(f_scope_std, policy_bites, 'alice@u.edu')
 
-        # the line the header tells them to add
-        text = student.policy_text(policy_bites) \
-            + '\nwaive:\n  alice@u.edu: hw3\n'
+        # the line the header tells them to add, under their own name on
+        # their own sheet
+        text = student.policy_text(policy_bites, f_scope_std) \
+            + f'\nwaive:\n  {ME}: hw3\n'
         got = student_grade(mine, text, tmp_path)
 
-        assert got['alice@u.edu'] == want
+        assert got[ME] == want
 
     def test_extra_late_days_without_them_are_wrong(self, f_scope_std,
                                                     policy_bites, tmp_path):
         """ carol's three excused days are the only thing sparing her """
         want = graded(f_scope_std, policy_bites)['carol@u.edu']
-        mine = student.one_row_csv(f_scope_std.read_text(), 'carol@u.edu')
+        mine = own_sheet(f_scope_std, policy_bites, 'carol@u.edu')
 
-        got = student_grade(mine, student.policy_text(policy_bites), tmp_path)
+        text = student.policy_text(policy_bites, f_scope_std)
+        got = student_grade(mine, text, tmp_path)
 
-        assert got['carol@u.edu'][0] < want[0]
+        assert got[ME][0] < want[0]
 
     def test_extra_late_days_written_back_in(self, f_scope_std, policy_bites,
                                              tmp_path):
         """ the one that goes inside a block rather than at the bottom """
         want = graded(f_scope_std, policy_bites)['carol@u.edu']
-        mine = student.one_row_csv(f_scope_std.read_text(), 'carol@u.edu')
+        mine = own_sheet(f_scope_std, policy_bites, 'carol@u.edu')
 
-        text = student.policy_text(policy_bites).replace(
+        text = student.policy_text(policy_bites, f_scope_std).replace(
             '      excuse_day: 0\n',
             '      excuse_day: 0\n'
-            '      excuse_day_offset:\n        carol@u.edu: 3\n')
+            f'      excuse_day_offset:\n        {ME}: 3\n')
         got = student_grade(mine, text, tmp_path)
 
-        assert got['carol@u.edu'] == want
+        assert got[ME] == want
 
     def test_the_header_says_how(self, policy_full):
         """ the file arrives as an attachment with no covering note """
@@ -375,9 +425,9 @@ class TestCompletionThreshold:
 
         for email in EMAIL_TUP:
             got = student_grade(
-                student.one_row_csv(f_grade_thresh.read_text(), email), text,
+                own_sheet(f_grade_thresh, policy_thresh, email), text,
                 tmp_path)
-            assert got[email] == want_dict[email], email
+            assert got[ME] == want_dict[email], email
 
     def test_without_the_gradebook_it_is_refused(self, policy_thresh):
         """ handing it over meaning something else is the one bad option """
@@ -385,186 +435,241 @@ class TestCompletionThreshold:
             student.policy_text(policy_thresh)
 
 
-class TestOneRow:
-    def test_it_is_that_student_and_no_other(self, f_scope_std):
-        text = student.one_row_csv(f_scope_std.read_text(), 'bob@u.edu')
+class TestTheSheet:
+    """ the blank sheet a posted policy is enough to produce """
 
-        assert 'bob@u.edu' in text
-        assert 'alice' not in text
-        assert 'carol' not in text
+    def test_it_holds_one_student_and_no_scores(self):
+        text = student.blank_csv()
 
-    def test_it_is_still_a_gradebook(self, f_scope_std, tmp_path):
+        assert len(text.strip().split('\n')) == 2
+        assert student.EMAIL_YOU in text
+
+    def test_it_is_still_a_gradebook(self, tmp_path):
         from finalgrade.gradebook import Gradebook
 
         f_out = tmp_path / 'mine.csv'
-        f_out.write_text(student.one_row_csv(f_scope_std.read_text(),
-                                             'alice@u.edu'))
+        f_out.write_text(student.blank_csv())
         gradebook = Gradebook.from_file(str(f_out))
 
-        assert list(gradebook.df_perc.index) == ['alice@u.edu']
-        assert list(gradebook.ass_list) == ['hw1', 'hw2', 'hw3', 'quiz1']
+        assert list(gradebook.df_perc.index) == [student.EMAIL_YOU]
+        assert list(gradebook.ass_list) == []
 
-    def test_lateness_survives_the_cut(self, f_scope_std, tmp_path):
-        from finalgrade.gradebook import Gradebook
-
-        f_out = tmp_path / 'mine.csv'
-        f_out.write_text(student.one_row_csv(f_scope_std.read_text(),
-                                             'carol@u.edu'))
-        gradebook = Gradebook.from_file(str(f_out))
-
-        assert gradebook.df_late_minutes.at['carol@u.edu', 'hw1'] == 48 * 60
-
-    def test_an_unhanded_in_assignment_is_still_blank(self, tmp_path):
-        """ a blank cell and a submitted zero are different things """
-        from conftest import ASSIGN_STD, write_scope
-        from finalgrade.gradebook import Gradebook
-
-        f_grade = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, [
-            {'email': 'x@u.edu', 'first': 'x', 'last': 'y',
-             'scores': {'HW1': 5}}])
-        f_out = tmp_path / 'mine.csv'
-        f_out.write_text(student.one_row_csv(f_grade.read_text(), 'x@u.edu'))
-        gradebook = Gradebook.from_file(str(f_out))
-
-        assert not gradebook.df_submit.at['x@u.edu', 'hw2']
-
-    def test_matched_by_prefix_like_everything_else(self, f_scope_std):
-        text = student.one_row_csv(f_scope_std.read_text(),
-                                   'alice@husky.u.edu')
-
-        assert 'alice@u.edu' in text
-
-    def test_a_student_who_is_not_there(self, f_scope_std):
-        with pytest.raises(FinalgradeError, match='nobody@u.edu'):
-            student.one_row_csv(f_scope_std.read_text(), 'nobody@u.edu')
-
-    def test_a_csv_that_is_neither_kind(self):
-        with pytest.raises(FinalgradeError, match='gradescope'):
-            student.one_row_csv('a,b\n1,2\n', 'x@u.edu')
-
-
-class TestCanvas:
-    @pytest.fixture
-    def f_canvas(self):
-        import pathlib
-        return pathlib.Path('web/ex_canvas.csv')
-
-    def test_the_points_possible_row_comes_along(self, f_canvas, tmp_path):
-        """ without it no assignment has a maximum """
-        from finalgrade.gradebook import Gradebook
-
-        text = f_canvas.read_text()
-        email = 'dan.doesntdohw@uni.edu'
-        f_out = tmp_path / 'mine.csv'
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            f_out.write_text(student.one_row_csv(text, email))
-            gradebook = Gradebook.from_file(str(f_out))
-
-        assert list(gradebook.df_perc.index) == [email]
-        assert gradebook.points['exam1'] == 100
-
-    def test_one_row_and_the_header_over_it(self, f_canvas):
-        text = student.one_row_csv(f_canvas.read_text(),
-                                   'dan.doesntdohw@uni.edu')
-
-        assert len(text.strip().split('\n')) == 3
-
-
-class TestWhatIf:
-    def test_a_score_typed_in_moves_the_grade(self, f_scope_std, tmp_path,
-                                              write_policy):
-        policy = Policy.from_file(write_policy(
-            'category:\n  weight:\n    hw: 100\n'))
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
-
-        before = graded_one(mine, policy, tmp_path)
-        after = graded_one(student.add_scores(mine, {'hw3': 10}), policy,
-                           tmp_path)
-
-        assert before == pytest.approx(24 / 30)
-        assert after == pytest.approx(28 / 30)
-
-    def test_a_planned_assignment_gets_the_columns_it_never_had(
-            self, f_scope_std, tmp_path, write_policy):
+    def test_the_policy_is_where_the_assignments_come_from(
+            self, tmp_path, write_policy):
+        """ the sheet has no columns; the roster puts them there """
         policy = Policy.from_file(write_policy(
             'category:\n  weight:\n    hw: 100\n'
-            'assignments:\n  planned:\n    hw4: 10\n'))
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
+            'assignments:\n  planned:\n    hw1: 10\n    hw2: 10\n'))
+        f_out = tmp_path / 'mine.csv'
+        f_out.write_text(student.blank_csv())
 
-        # planned, so it counts for nobody and the mean is over three
-        assert graded_one(mine, policy, tmp_path) == pytest.approx(24 / 30)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            gradebook, _ = policy(str(f_out))
 
-        text = student.add_scores(mine, {'hw4': 10}, point_dict={'hw4': 10})
+        assert list(gradebook.ass_list) == ['hw1', 'hw2']
 
-        assert graded_one(text, policy, tmp_path) == pytest.approx(34 / 40)
+    def test_a_sheet_nobody_has_filled_in_grades_to_nothing(
+            self, tmp_path, write_policy):
+        """ every assignment is nan, which is what a waiver is """
+        policy = Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 100\n'
+            'assignments:\n  planned:\n    hw1: 10\n'))
 
-    def test_a_score_typed_in_is_not_late(self, f_scope_std, tmp_path,
-                                          write_policy):
-        """ without a lateness cell the reader takes it as never submitted """
+        got = student_grade(student.blank_csv(),
+                            student.policy_text(policy), tmp_path)
+
+        import pandas as pd
+        assert pd.isna(got[ME][0])
+
+    def test_a_policy_with_no_roster_has_nothing_to_grade(self, tmp_path,
+                                                          write_policy):
+        policy = Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 100\n'))
+        f_out = tmp_path / 'mine.csv'
+        f_out.write_text(student.blank_csv())
+
+        with pytest.raises(PolicyError, match='no assignments'):
+            policy(str(f_out))
+
+
+class TestBlankIsNotZero:
+    """ work left blank is not counted; work handed in late and badly is
+
+    The distinction the sheet turns on, and the one a student can get wrong:
+    an assignment with no score is treated as never assigned, so leaving a
+    missed assignment blank flatters the estimate.  Typing 0 is what says
+    "I did not hand this in".
+    """
+
+    @pytest.fixture
+    def policy(self, write_policy):
+        return Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 100\n'
+            'assignments:\n  planned:\n    hw1: 10\n    hw2: 10\n'))
+
+    def test_blank_is_not_counted_at_all(self, policy, tmp_path):
+        text = student.add_scores(student.blank_csv(), {'hw1': 8},
+                                  point_dict={'hw1': 10, 'hw2': 10})
+
+        assert graded_one(text, policy, tmp_path) == pytest.approx(.8)
+
+    def test_a_typed_zero_is(self, policy, tmp_path):
+        text = student.add_scores(student.blank_csv(),
+                                  {'hw1': 8, 'hw2': 0},
+                                  point_dict={'hw1': 10, 'hw2': 10})
+
+        assert graded_one(text, policy, tmp_path) == pytest.approx(.4)
+
+
+class TestTheRoster:
+    """ the term's work, which is a fact about the course and not about
+    anybody in it """
+
+    def test_every_assignment_travels_with_its_max_points(self, f_scope_std,
+                                                          write_policy):
+        policy = Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 50\n    quiz: 50\n'))
+
+        plan = yaml.load(student.policy_text(policy,
+                                             f_scope_std))['assignments'][
+                                                 'planned']
+
+        assert plan == {'hw1': 10., 'hw2': 10., 'hw3': 10., 'quiz1': 10.}
+
+    def test_the_instructors_own_plan_outranks_the_export(self, f_scope_std,
+                                                          write_policy):
+        """ theirs is the deliberate figure """
+        policy = Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 100\n'
+            'assignments:\n  planned:\n    hw1: 99\n'))
+
+        plan = yaml.load(student.policy_text(policy,
+                                             f_scope_std))['assignments'][
+                                                 'planned']
+
+        assert plan['hw1'] == 99
+
+    def test_without_the_gradebook_there_is_no_roster(self, write_policy):
+        policy = Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 100\n'))
+
+        assert 'planned' not in student.policy_text(policy)
+
+    def test_a_canvas_export_makes_one_too(self, tmp_path, write_policy):
+        """ the sheet is the same shape whatever the instructor exported """
+        import pathlib
+
+        f_canvas = pathlib.Path('web/ex_canvas.csv')
+        policy = Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 50\n    exam: 50\n'))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            text = student.policy_text(policy, f_canvas)
+
+        plan = yaml.load(text)['assignments']['planned']
+
+        assert plan['exam1'] == 100
+        assert 'hw1' in plan
+
+
+class TestWhatWasEntered:
+    """ scores typed onto a sheet, and the lateness that is its own answer """
+
+    POINT_DICT = {'hw1': 10, 'hw2': 10, 'hw3': 10}
+
+    @pytest.fixture
+    def policy(self, write_policy):
+        return Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 100\n'
+            'assignments:\n  planned:\n    hw1: 10\n    hw2: 10\n'
+            '    hw3: 10\n'))
+
+    @pytest.fixture
+    def policy_late(self, write_policy):
+        return Policy.from_file(write_policy(
+            'category:\n  weight:\n    hw: 100\n'
+            '  late_penalty:\n    hw:\n      penalty_per_day: 0.1\n'
+            '      excuse_day: 0\n'
+            'assignments:\n  planned:\n    hw1: 10\n    hw2: 10\n'
+            '    hw3: 10\n', 'late.yaml'))
+
+    def sheet(self, score_dict, day_dict=None):
+        return student.add_scores(student.blank_csv(), score_dict,
+                                  point_dict=self.POINT_DICT,
+                                  day_dict=day_dict)
+
+    def test_a_score_typed_in_moves_the_grade(self, policy, tmp_path):
+        one = self.sheet({'hw1': 6})
+        two = self.sheet({'hw1': 6, 'hw2': 10})
+
+        assert graded_one(one, policy, tmp_path) == pytest.approx(.6)
+        assert graded_one(two, policy, tmp_path) == pytest.approx(.8)
+
+    def test_a_planned_assignment_gets_the_columns_it_never_had(self, policy,
+                                                                tmp_path):
+        text = self.sheet({'hw1': 10})
+
+        assert 'hw1 - Max Points' in text
+        assert graded_one(text, policy, tmp_path) == pytest.approx(1.)
+
+    def test_an_unanswered_question_is_left_alone(self, policy, tmp_path):
+        """ blank is a zero nobody handed in, which is not "no answer yet" """
+        blank = student.blank_csv()
+
+        assert self.sheet({'hw1': None, 'hw2': None}) == blank
+
+    def test_taking_an_answer_back_out(self, policy, tmp_path):
+        """ asked again without it, from the sheet as it came """
+        self.sheet({'hw1': 10})
+        back = self.sheet({})
+
+        assert back == student.blank_csv()
+
+    def test_days_late_cost_what_the_policy_says(self, policy_late, tmp_path):
+        score = {'hw1': 10, 'hw2': 10}
+        on_time = self.sheet(score)
+        late = self.sheet(score, {'hw1': 3})
+
+        assert graded_one(on_time, policy_late, tmp_path) == pytest.approx(1.)
+        # three days at a tenth of an average hw, over the two that count
+        assert graded_one(late, policy_late, tmp_path) == \
+            pytest.approx(1 - .3 / 2)
+
+    def test_a_grace_period_still_applies_to_them(self, tmp_path,
+                                                  write_policy):
+        """ a day entered here is a day late, and the policy's grace then
+        acts on it exactly as it would on a real submission """
         policy = Policy.from_file(write_policy(
             'category:\n  weight:\n    hw: 100\n'
             '  late_penalty:\n    hw:\n      penalty_per_day: 0.5\n'
-            'assignments:\n  planned:\n    hw4: 10\n'))
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
-        text = student.add_scores(mine, {'hw4': 10}, point_dict={'hw4': 10})
+            '      excuse_day: 0\n'
+            '      grace_period_minutes: 2880\n'
+            'assignments:\n  planned:\n    hw1: 10\n', 'grace.yaml'))
+        text = student.add_scores(student.blank_csv(), {'hw1': 10},
+                                  point_dict={'hw1': 10}, day_dict={'hw1': 2})
 
-        assert graded_one(text, policy, tmp_path) == pytest.approx(34 / 40)
+        assert graded_one(text, policy, tmp_path) == pytest.approx(1.)
 
-    def test_an_unanswered_question_is_left_alone(self, f_scope_std,
-                                                  tmp_path, write_policy):
-        """ blank is a zero nobody handed in, which is not "no answer yet" """
-        policy = Policy.from_file(write_policy(
-            'category:\n  weight:\n    hw: 100\n'
-            'assignments:\n  planned:\n    hw4: 10\n'))
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
+    def test_a_score_says_nothing_about_when_it_arrived(self, policy_late,
+                                                        tmp_path):
+        """ answering a score by also forgiving lateness would flatter it """
+        text = self.sheet({'hw1': 10, 'hw2': 10}, {'hw1': 3})
+        more = student.add_scores(text, {'hw3': 10},
+                                  point_dict=self.POINT_DICT)
 
-        text = student.add_scores(mine, {'hw3': None, 'hw4': None},
-                                  point_dict={'hw4': 10})
+        # hw1 is still three days late, now over the three that count
+        assert graded_one(more, policy_late, tmp_path) == \
+            pytest.approx(1 - .3 / 3)
 
-        assert text == mine
-        assert graded_one(text, policy, tmp_path) == pytest.approx(24 / 30)
+    def test_days_against_work_with_no_score_are_ignored(self):
+        """ there is nothing yet to be late on """
+        assert self.sheet({}, {'hw1': 3}) == student.blank_csv()
 
-    def test_the_lateness_beside_it_is_left_alone(self, f_scope_std,
-                                                  tmp_path, write_policy):
-        """ what a score would have been is a question about the score
-
-        Answering it by also forgiving the days it was late would quietly
-        take a penalty off the estimate.
-        """
-        policy = Policy.from_file(write_policy(
-            'category:\n  weight:\n    hw: 100\n'
-            '  late_penalty:\n    hw:\n      penalty_per_day: 0.1\n'))
-        # bob is a day late on hw1, and has 30/30 before the penalty
-        mine = student.one_row_csv(f_scope_std.read_text(), 'bob@u.edu')
-
-        assert graded_one(mine, policy, tmp_path) == pytest.approx(1 - .1 / 3)
-
-        text = student.add_scores(mine, {'hw1': 5})
-
-        assert graded_one(text, policy, tmp_path) == \
-            pytest.approx(25 / 30 - .1 / 3)
-
-    def test_taking_an_answer_back_out(self, f_scope_std, tmp_path,
-                                       write_policy):
-        """ asked again without it, from the csv as it came """
-        policy = Policy.from_file(write_policy(
-            'category:\n  weight:\n    hw: 100\n'
-            'assignments:\n  planned:\n    hw4: 10\n'))
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
-        point_dict = {'hw4': 10}
-
-        was = graded_one(mine, policy, tmp_path)
-        student.add_scores(mine, {'hw4': 10}, point_dict=point_dict)
-        back = student.add_scores(mine, {}, point_dict=point_dict)
-
-        assert graded_one(back, policy, tmp_path) == pytest.approx(was)
-
-    def test_a_planned_assignment_with_no_max_points(self, f_scope_std):
-        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
-
-        with pytest.raises(FinalgradeError, match='hw4'):
-            student.add_scores(mine, {'hw4': 10})
+    def test_an_assignment_with_no_max_points(self):
+        with pytest.raises(FinalgradeError, match='hw9'):
+            student.add_scores(student.blank_csv(), {'hw9': 10})
 
     def test_a_class_needs_to_be_told_which_student(self, f_scope_std):
         with pytest.raises(FinalgradeError, match='3'):
@@ -589,6 +694,17 @@ class TestWhatIf:
 
         assert student.add_scores(text, {}) == text
 
+    def test_a_canvas_export_has_no_lateness_to_set(self):
+        """ canvas records none, so there is no column to put days into """
+        import pathlib
+
+        text = pathlib.Path('web/ex_canvas.csv').read_text()
+
+        with pytest.raises(FinalgradeError, match='no lateness'):
+            student.add_scores(text, {'HW1 (101000)': 9},
+                               email='dan.doesntdohw@uni.edu',
+                               day_dict={'HW1 (101000)': 2})
+
 
 class TestTheWholeExample:
     """ the hundred students behind the page's "try an example" button
@@ -604,8 +720,7 @@ class TestTheWholeExample:
             self, f_example, policy_example, email_list, adjusted_tup,
             tmp_path):
         want_dict = graded(f_example, policy_example)
-        csv_text = f_example.read_text()
-        text = student.policy_text(policy_example)
+        text = student.policy_text(policy_example, f_example)
 
         assert len(email_list) == 100
 
@@ -613,16 +728,17 @@ class TestTheWholeExample:
         for email in email_list:
             if email in adjusted_tup:
                 continue
-            got_dict = student_grade(student.one_row_csv(csv_text, email),
-                                     text, tmp_path)
-            assert got_dict[email] == want_dict[email], email
+            got_dict = student_grade(
+                own_sheet(f_example, policy_example, email), text, tmp_path)
+            assert got_dict[ME] == want_dict[email], email
             n += 1
 
         assert n == 97
 
-    def test_the_one_file_names_nobody(self, policy_example, email_list):
+    def test_the_one_file_names_nobody(self, policy_example, email_list,
+                                       f_example):
         """ a hundred students, and the file posted for them mentions none """
-        text = student.policy_text(policy_example)
+        text = student.policy_text(policy_example, f_example)
 
         for email in email_list:
             assert email not in text

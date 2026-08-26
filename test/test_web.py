@@ -449,20 +449,28 @@ class TestStudentPolicy:
             assert email not in res['yaml']
 
     def test_it_grades_an_unadjusted_student_the_same(self, csv_text):
-        """ the browser's claim, made once more for the student's own page """
-        from finalgrade import student
+        """ the browser's claim, made once more for the student's own page
 
+        A student types in what the export already says about them, and the
+        page reaches the grade the instructor's run reached.
+        """
         res = web.student_policy(csv_text, YAML_PLAIN)
 
         assert res['ok'], res.get('error')
-        mine = student.one_row_csv(csv_text, 'alice@u.edu')
         was = web.grade(csv_text, YAML_PLAIN)
-        now = web.grade(mine, res['yaml'])
+        now = web.grade(filled_sheet(res['yaml'], ALICE_SCORE), res['yaml'])
 
         assert now['ok'], now.get('error')
         assert [s['mean'] for s in now['student_list']] == \
             [s['mean'] for s in was['student_list']
              if s['email'] == 'alice@u.edu']
+
+    def test_the_term_s_work_travels_with_it(self, csv_text):
+        """ without the roster a student has nothing to fill in """
+        res = web.student_policy(csv_text, YAML_PLAIN)
+
+        for ass in ('hw1', 'hw2', 'hw3', 'quiz1'):
+            assert ass in res['yaml']
 
     def test_a_broken_policy_is_a_message(self, csv_text):
         res = web.student_policy(csv_text,
@@ -480,98 +488,110 @@ YAML_HW1 = 'category:\n  weight:\n    hw: 100\n'
 YAML_PLAIN = YAML_STD
 
 
-def unzip(res):
-    """ the pack's archive, as a name -> text dict """
-    import base64
-    import io
-    import zipfile
-
-    archive = zipfile.ZipFile(io.BytesIO(base64.b64decode(res['zip_b64'])))
-    return {name: archive.read(name).decode() for name in archive.namelist()}
+# what alice really got, on the standard three student csv
+ALICE_SCORE = {'hw1': 10, 'hw2': 8, 'hw3': 6, 'quiz1': 10}
 
 
-class TestStudentPack:
-    """ one policy to post, and one csv per student to send """
+def filled_sheet(yaml_text, score_dict, day_dict=None):
+    """ the sheet a posted policy makes, with those scores typed into it """
+    import json
 
-    def test_one_policy_and_a_csv_each(self, csv_text):
-        res = web.student_pack(csv_text, YAML_STUDENT)
+    sheet = web.student_sheet(yaml_text)
+    assert sheet['ok'], sheet.get('error')
+
+    res = web.what_if(sheet['csv'], yaml_text, json.dumps(score_dict),
+                      json.dumps(day_dict or {}))
+    assert res['ok'], res.get('error')
+    return res['csv']
+
+
+class TestStudentSheet:
+    """ the blank sheet a posted policy is enough to fill in """
+
+    def test_it_holds_one_student(self, csv_text):
+        policy = web.student_policy(csv_text, YAML_STUDENT)['yaml']
+        res = web.student_sheet(policy)
 
         assert res['ok'], res.get('error')
-        assert res['n_student'] == 3
-        assert sorted(unzip(res)) == [
-            'grades/anders_alice.csv', 'grades/baker_bob.csv',
-            'grades/chen_carol.csv', 'policy_PUBLIC.yaml']
+        info = web.load_csv(res['csv'])
+        assert info['n_student'] == 1
 
-    def test_the_policy_names_nobody(self, csv_text):
-        text = unzip(web.student_pack(csv_text,
-                                      YAML_STUDENT))['policy_PUBLIC.yaml']
+    def test_one_student_is_what_makes_the_page_a_student_s(self, csv_text):
+        """ the page reads n_student == 1 and swaps; nothing else tells it """
+        policy = web.student_policy(csv_text, YAML_STUDENT)['yaml']
+        info = web.load_csv(web.student_sheet(policy)['csv'])
 
-        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
-            assert email not in text
+        assert info['student_list'][0]['email'] == res_email()
 
-    def test_each_csv_holds_one_student(self, csv_text):
-        file_dict = unzip(web.student_pack(csv_text, YAML_STUDENT))
-        text = file_dict['grades/anders_alice.csv']
+    def test_it_says_how_many_there_are_to_fill_in(self, csv_text):
+        """ the sheet holds no columns, so it cannot say for itself """
+        policy = web.student_policy(csv_text, YAML_STUDENT)['yaml']
+        res = web.student_sheet(policy)
 
-        assert 'alice@u.edu' in text
-        assert 'bob' not in text
-        assert 'carol' not in text
+        assert res['n_ass'] == 4
 
-    def test_the_pair_grades_an_unadjusted_student(self, csv_text):
-        """ the two files the page asks for, for a student singled out for
-        nothing -- YAML_PLAIN adjusts nobody, so that is all three """
-        file_dict = unzip(web.student_pack(csv_text, YAML_PLAIN))
-        policy = file_dict['policy_PUBLIC.yaml']
+    def test_a_policy_with_no_roster_is_a_message(self):
+        res = web.student_sheet('category:\n  weight:\n    hw: 100\n')
+
+        assert not res['ok']
+        assert 'no assignments' in res['error']
+
+    def test_a_broken_policy_is_a_message(self):
+        res = web.student_sheet('category:\n  weight:\n    hw: nonsense\n')
+
+        assert not res['ok']
+        assert res['error']
+
+    def test_the_sheet_grades_an_unadjusted_student(self, csv_text):
+        """ every one of the three, since YAML_PLAIN adjusts nobody """
+        policy = web.student_policy(csv_text, YAML_PLAIN)['yaml']
         was = {s['email']: s['mean']
                for s in web.grade(csv_text, YAML_PLAIN)['student_list']}
 
-        for stem, email in (('anders_alice', 'alice@u.edu'),
-                            ('baker_bob', 'bob@u.edu'),
-                            ('chen_carol', 'carol@u.edu')):
-            res = web.grade(file_dict[f'grades/{stem}.csv'], policy)
+        for email, score in (('alice@u.edu', ALICE_SCORE),
+                             ('bob@u.edu', {'hw1': 10, 'hw2': 10, 'hw3': 10,
+                                            'quiz1': 5}),
+                             ('carol@u.edu', {'hw1': 0, 'hw2': 6, 'hw3': 6,
+                                              'quiz1': 6})):
+            res = web.grade(filled_sheet(policy, score), policy)
 
             assert res['ok'], res.get('error')
             assert len(res['student_list']) == 1
             assert res['student_list'][0]['mean'] == was[email], email
 
-    def test_the_csvs_are_named_as_the_breakdowns_are(self, csv_text):
-        """ the same stem the emailed breakdown already uses """
-        name_set = set(unzip(web.student_pack(csv_text, YAML_STUDENT)))
-
-        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
-            stem = web.student_csv(csv_text, YAML_STUDENT,
-                                   email)['filename'][:-len('.csv')]
-            assert f'grades/{stem}.csv' in name_set
-
-    def test_two_students_of_one_name_get_a_csv_each(self, tmp_path):
-        """ or the second written takes the first's place """
-        from conftest import ASSIGN_STD, write_scope
-
-        f_grade = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, [
-            {'email': 'jsmith@u.edu', 'first': 'john', 'last': 'smith',
-             'scores': {'HW1': 9}},
-            {'email': 'jsmith2@u.edu', 'first': 'john', 'last': 'smith',
-             'scores': {'HW1': 4}}])
-
-        res = web.student_pack(f_grade.read_text(), YAML_HW1)
-
-        assert res['ok'], res.get('error')
-        file_dict = unzip(res)
-        csv_list = [n for n in file_dict if n.startswith('grades/')]
-
-        assert len(csv_list) == 2
-        for name in csv_list:
-            assert len(file_dict[name].strip().split('\n')) == 2
-
-    def test_a_broken_policy_is_a_message(self, csv_text):
-        res = web.student_pack(csv_text,
-                               'category:\n  weight:\n    no: 1\n')
-
-        assert not res['ok']
-        assert res['error']
-
     def test_is_plain_data(self, csv_text):
-        assert is_plain(web.student_pack(csv_text, YAML_STUDENT))
+        policy = web.student_policy(csv_text, YAML_STUDENT)['yaml']
+        assert is_plain(web.student_sheet(policy))
+
+    def test_a_filled_sheet_dropped_back_in_grades_the_same(self, csv_text):
+        """ how a term's typing survives, since nothing is kept between visits
+
+        A filled sheet is a gradebook of one student, so the page reads it as
+        somebody's own grade exactly as it reads the blank one -- which is why
+        the file the page offers to save is the sheet with the scores in it.
+        """
+        yaml_late = ('category:\n  weight:\n    hw: 100\n'
+                     '  late_penalty:\n    hw:\n'
+                     '      penalty_per_day: 0.1\n      excuse_day: 0\n')
+        policy = web.student_policy(csv_text, yaml_late)['yaml']
+        saved = filled_sheet(policy, ALICE_SCORE, {'hw1': 3})
+
+        # the page reads it back as one student, so solo mode still fires
+        assert web.load_csv(saved)['n_student'] == 1
+
+        first = web.grade(saved, policy)['student_list'][0]
+        second = web.grade(saved, policy)['student_list'][0]
+
+        assert second['mean'] == first['mean']
+        # and the lateness it carries is the lateness that was entered
+        late = {a['name']: a['late_days'] for a in second['ass_list']
+                if a['late_days']}
+        assert late == {'hw1': 3}
+
+
+def res_email():
+    from finalgrade import student
+    return student.EMAIL_YOU
 
 
 class TestWhatIf:
@@ -582,8 +602,14 @@ class TestWhatIf:
                  'assignments:\n  planned:\n    hw4: 10\n')
 
     def mine(self, csv_text):
-        from finalgrade import student
-        return student.one_row_csv(csv_text, 'alice@u.edu')
+        """ alice's own sheet, with what she really got typed in """
+        policy = web.student_policy(csv_text, self.YAML_HW)['yaml']
+        return filled_sheet(policy, ALICE_SCORE)
+
+    def sheet(self, csv_text, yaml_src):
+        """ the posted policy, and the blank sheet it makes """
+        policy = web.student_policy(csv_text, yaml_src)['yaml']
+        return policy, web.student_sheet(policy)['csv']
 
     def test_a_typed_score_moves_the_grade(self, csv_text):
         mine = self.mine(csv_text)

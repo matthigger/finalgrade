@@ -591,6 +591,14 @@ class Policy:
         if self.waive_dict:
             gradebook.waive(waive_dict=self.waive_dict, log=log)
 
+        if not len(gradebook.ass_list):
+            # asked here rather than when the file was read, because until the
+            # planned work is in there is no telling an empty gradebook from
+            # one whose assignments the policy is about to supply
+            raise PolicyError(
+                'nothing is being graded: the gradebook holds no assignments '
+                'and none are planned')
+
         return gradebook
 
     def __call__(self, f_scope, log=None):

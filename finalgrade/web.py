@@ -31,8 +31,8 @@ from . import student as student_mod
 
 __all__ = ['load_csv', 'check_policy', 'grade', 'seed_policy', 'default_yaml',
            'form_state', 'edit_policy', 'bin_values', 'canvas_export',
-           'banner_export', 'student_csv', 'student_policy', 'student_pack',
-           'what_if']
+           'banner_export', 'student_csv', 'student_policy',
+           'student_sheet', 'what_if']
 
 
 class _Csv:
@@ -320,74 +320,62 @@ def _student_policy(policy, f_csv):
     # graded first: a policy that will not grade the class has no answer for
     # the class's copy of it to agree with, which is all it is for
     policy(f_csv)
-    return student_mod.policy_text(student_mod.resolve_thresh(policy, f_csv))
+    return student_mod.policy_text(policy, f_csv)
 
 
-def student_pack(csv_text, yaml_text, name='scope.csv'):
-    """ the policy to post, and a csv per student to send
+def student_sheet(yaml_text):
+    """ the blank sheet a posted policy is enough to fill in
 
-    The policy is one file for the whole class, so there is one of it in
-    here.  The rows are one per student, because a student's own scores are
-    the half of this that cannot be posted anywhere.
+    The whole of what a student needs to start: they have the policy their
+    instructor posted and nothing else, and neither gradescope nor canvas
+    hands them an export of their own grades worth reading.  So the sheet is
+    made from the policy -- every assignment it plans, with nothing entered
+    against any of them.
 
     Args:
-        csv_text (str): the grade source
-        yaml_text (str): contents of the instructor's policy.yaml
-        name (str): the source csv's filename
+        yaml_text (str): contents of the posted policy.yaml
 
     Returns:
-        result (dict): ok, the zip base64 encoded, and how many students are
-            in it
+        result (dict): ok, the csv text of the sheet, the email it keys its
+            one student by, and how many assignments there are to fill in --
+            which the sheet itself cannot say, since it holds no columns for
+            them until they are entered
     """
-    import base64
-    import zipfile
-
     policy, error = _read_policy(yaml_text)
     if policy is None:
         return dict(ok=False, error=error)
 
-    buffer = io.BytesIO()
-    with _Csv(csv_text, name) as f_csv:
-        try:
-            (gradebook, df_grade), warn_list = _warn_list(
-                lambda: policy(f_csv))
-            # asked once for the class rather than once per student: it
-            # costs two runs over the whole gradebook, and every student's
-            # file needs the same answer to it
-            share = student_mod.resolve_thresh(policy, f_csv)
-        except FinalgradeError as e:
-            return dict(ok=False, error=str(e))
+    if not policy.plan_dict:
+        return dict(ok=False, error=(
+            'that policy lists no assignments, so there is nothing to fill '
+            'in.  the file your instructor posts carries the term\'s work in '
+            'its assignments/planned section -- this one has none, so it is '
+            'either not the file they meant to post or it was written by '
+            'hand'))
 
-        stem_dict = _stem_dict(df_grade)
-        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr(NAME_PUBLIC,
-                             student_mod.policy_text(share))
-            for email in df_grade.index:
-                archive.writestr(
-                    f'grades/{stem_dict[email]}.csv',
-                    student_mod.one_row_csv(csv_text, str(email)))
-
-    return dict(ok=True, error=None, warn_list=warn_list,
-                zip_b64=base64.b64encode(buffer.getvalue()).decode(),
-                n_student=int(len(df_grade)), filename='student_files.zip')
+    return dict(ok=True, error=None, csv=student_mod.blank_csv(),
+                email=student_mod.EMAIL_YOU, n_ass=len(policy.plan_dict))
 
 
-def what_if(csv_text, yaml_text, score_json='{}', name='scope.csv'):
-    """ the same export with some scores typed into it
+def what_if(csv_text, yaml_text, score_json='{}', day_json='{}',
+            name='scope.csv'):
+    """ the same export with a student's own scores typed into it
 
-    How a student asks what a grade would be.  The answer is a csv, which is
-    then graded by the code that grades the course -- so a what-if is the
-    real thing applied to made up scores, rather than a second opinion about
-    what the policy means.
+    How a student says what they got, and asks what it comes to.  The answer
+    is a csv, which is then graded by the code that grades the course -- so
+    the number is the real thing applied to the scores they entered, rather
+    than a second opinion about what the policy means.
 
-    Applied to the export as it came every time, so an answer is taken back
+    Applied to the sheet as it came every time, so an answer is taken back
     out by asking again without it.
 
     Args:
-        csv_text (str): the grade source, as downloaded
+        csv_text (str): the grade source: a student's blank sheet, or an
+            export as downloaded
         yaml_text (str): contents of a policy.yaml, read for the max points
-            of assignments the export has no column for yet
+            of assignments the sheet has no column for yet
         score_json (str): json object of assignment name -> points earned
+        day_json (str): json object of assignment name -> whole days late
         name (str): the source csv's filename
 
     Returns:
@@ -395,6 +383,7 @@ def what_if(csv_text, yaml_text, score_json='{}', name='scope.csv'):
     """
     try:
         score_dict = json.loads(score_json or '{}')
+        day_dict = json.loads(day_json or '{}')
     except ValueError as e:
         return dict(ok=False, error=f'could not read those scores: {e}')
 
@@ -404,38 +393,12 @@ def what_if(csv_text, yaml_text, score_json='{}', name='scope.csv'):
 
     try:
         text = student_mod.add_scores(csv_text, score_dict,
-                                      point_dict=policy.plan_dict)
+                                      point_dict=policy.plan_dict,
+                                      day_dict=day_dict)
     except FinalgradeError as e:
         return dict(ok=False, error=str(e))
 
     return dict(ok=True, error=None, csv=text)
-
-
-def _stem_dict(df_grade):
-    """ a folder name per student, no two of them the same
-
-    Two students with the same name would otherwise be given one folder
-    between them, and the second written would take the first's files with
-    it.  Disambiguated by email, the way the command line's per_student
-    folder already does it.
-
-    Args:
-        df_grade (pd.DataFrame): the graded class, one row per student
-
-    Returns:
-        stem_dict (dict): email -> folder name
-    """
-    from collections import Counter
-
-    count = Counter()
-    stem_dict = dict()
-    for email, row in df_grade.iterrows():
-        stem = _student_stem(row, email)
-        count[stem] += 1
-        if count[stem] > 1:
-            stem = f'{stem}_{_safe_stem(str(email).split("@")[0])}'
-        stem_dict[email] = stem
-    return stem_dict
 
 
 def _safe_stem(text):

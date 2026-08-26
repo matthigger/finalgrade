@@ -75,22 +75,19 @@ check_parser.add_argument(
 # ---------- "student" subcommand ----------
 student_parser = subparsers.add_parser(
     'student',
-    help='write the files students need to work their own grade out: one '
-         'policy.yaml to post for the class, and one csv per student')
+    help='write the policy.yaml to post for the class, so students can work '
+         'their own grade out from it')
 student_parser.add_argument(
     'f_scope', type=str,
     help='Gradescope CSV, or a Canvas gradebook export')
 student_parser.add_argument(
     '--policy', dest='f_policy', required=True,
-    help='YAML policy file. Required: the point of these files is that they '
-         'agree with the grades you ran, and a policy finalgrade invented '
+    help='YAML policy file. Required: the point of this file is that it '
+         'agrees with the grades you ran, and a policy finalgrade invented '
          'has graded nobody')
 student_parser.add_argument(
     '-o', '--output', dest='f_output', default=None,
     help='folder to write into (default: student/ beside the CSV)')
-student_parser.add_argument(
-    '--email', dest='email', default=None,
-    help='write one student\'s csv rather than the whole class\'s')
 student_parser.add_argument(
     '-q', '--quiet', action='store_true',
     help='suppress informational output')
@@ -230,50 +227,30 @@ def cmd_student(args):
 
     from . import student as student_mod
     from .policy import NAME_PUBLIC
-    from .web import _stem_dict
 
     folder = pathlib.Path(args.f_scope).resolve().parent
     policy = _resolve_config(args, folder)
 
-    # graded first, so that these files cannot describe a policy that would
-    # not grade the class they came from
+    # graded first, so that this file cannot describe a policy that would not
+    # grade the class it came from
     _, df_grade_full = policy(f_scope=args.f_scope)
-
-    if args.email is not None:
-        prefix = args.email.split('@')[0].lower()
-        keep_list = [idx for idx in df_grade_full.index
-                     if str(idx).split('@')[0].lower() == prefix]
-        if not keep_list:
-            raise PolicyError(
-                f'{args.email} is not among the students being graded')
-        df_grade_full = df_grade_full.loc[keep_list]
 
     out_folder = pathlib.Path(args.f_output or (folder / 'student'))
     out_folder.mkdir(parents=True, exist_ok=True)
-    csv_text = pathlib.Path(args.f_scope).read_text()
 
-    # one policy for the class.  the completion threshold is asked about once
-    # here rather than once per student: it costs two runs over the whole
-    # gradebook, and there is one answer to it
+    # one file for the class, and the only one.  the completion threshold is
+    # asked about here rather than left in it: a rate over a class of one is
+    # 100% or 0%, so posted as written it would drop every assignment a
+    # student has yet to hand in
     f_policy = out_folder / NAME_PUBLIC
-    f_policy.write_text(student_mod.policy_text(
-        student_mod.resolve_thresh(policy, args.f_scope)))
-
-    grade_folder = out_folder / 'grades'
-    grade_folder.mkdir(exist_ok=True)
-    stem_dict = _stem_dict(df_grade_full)
-    for email in df_grade_full.index:
-        (grade_folder / f'{stem_dict[email]}.csv').write_text(
-            student_mod.one_row_csv(csv_text, str(email)))
+    f_policy.write_text(student_mod.policy_text(policy, args.f_scope))
 
     logger.info(
         f'wrote {f_policy}\n'
-        f'  PUBLIC: your policy with every student taken out of it, so it is '
-        f'the same file for the whole class.  post it once\n'
-        f'wrote {len(df_grade_full)} csv(s) to {grade_folder}\n'
-        f'  one student\'s scores each, which is the half that cannot be '
-        f'posted.  with both files a student can work their own grade out on '
-        f'https://matthigger.github.io/finalgrade')
+        f'  PUBLIC: your policy with every student taken out of it, and the '
+        f'term\'s work written into it.  post it once -- a student drops it '
+        f'on https://matthigger.github.io/finalgrade, types their own scores '
+        f'in and gets your arithmetic on them')
 
 
 def cmd_canvas(args):
