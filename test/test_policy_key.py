@@ -83,10 +83,24 @@ class TestUserNamesAreNotKeys:
         Policy.from_file(F_POLICY_DEFAULT)
 
     def test_seeded_config_passes(self, f_scope_std, tmp_path):
-        from finalgrade import web
+        from finalgrade.gradebook import Gradebook
+        from finalgrade.policy import F_POLICY_DEFAULT
+        from finalgrade.seed import seed_text
+
         f_seed = tmp_path / 'seeded.yaml'
-        f_seed.write_text(web.seed_policy(f_scope_std.read_text()))
+        f_seed.write_text(seed_text(Gradebook.from_file(str(f_scope_std)),
+                                    'scope.csv',
+                                    F_POLICY_DEFAULT.read_text()))
         Policy.from_file(f_seed)
+
+    def test_the_pages_config_passes(self, tmp_path):
+        """ the same default, with the comments the page has no use for gone
+        """
+        from finalgrade import web
+
+        f_bare = tmp_path / 'bare.yaml'
+        f_bare.write_text(web.default_yaml())
+        Policy.from_file(f_bare)
 
 
 class TestWrongShape:

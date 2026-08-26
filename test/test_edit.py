@@ -7,7 +7,7 @@ it was touched.
 """
 import pytest
 
-from finalgrade import edit, web
+from finalgrade import edit
 from finalgrade.policy import Policy
 from finalgrade.errors import PolicyError
 
@@ -33,6 +33,22 @@ grade_thresh:
   .9: A
   0: F
 """
+
+
+@pytest.fixture
+def text_seed(f_scope_std):
+    """ a policy as the command line writes one, opened on the page
+
+    The page's own policy has no comments in it (finalgrade.web.default_yaml)
+    -- so any file here that does is one somebody else wrote, which is
+    exactly the file a widget must hand back the way it found it.
+    """
+    from finalgrade.gradebook import Gradebook
+    from finalgrade.policy import F_POLICY_DEFAULT
+    from finalgrade.seed import seed_text
+
+    gradebook = Gradebook.from_file(str(f_scope_std))
+    return seed_text(gradebook, 'scope.csv', F_POLICY_DEFAULT.read_text())
 
 
 def cfg(text):
@@ -65,19 +81,15 @@ class TestKeepsEverythingElse:
         assert out.index('category:') < out.index('assignments:') \
             < out.index('waive:') < out.index('grade_thresh:')
 
-    def test_a_seeded_config_keeps_its_assignment_table(self, f_scope_std):
-        seeded = web.seed_policy(f_scope_std.read_text(), 'scope.csv')
-
-        out = edit.apply(seeded, 'add_category', dict(cat='hw'))
+    def test_a_seeded_config_keeps_its_assignment_table(self, text_seed):
+        out = edit.apply(text_seed, 'add_category', dict(cat='hw'))
 
         assert 'the 4 assignments found' in out
         assert '# a guess at your categories' in out
 
-    def test_the_commented_guess_stays_commented(self, f_scope_std):
+    def test_the_commented_guess_stays_commented(self, text_seed):
         """ round-tripping must not un-comment the block it sits next to """
-        seeded = web.seed_policy(f_scope_std.read_text(), 'scope.csv')
-
-        out = edit.apply(seeded, 'add_category', dict(cat='hw'))
+        out = edit.apply(text_seed, 'add_category', dict(cat='hw'))
 
         bare_list = [ln for ln in out.splitlines() if ln == 'category:']
         assert len(bare_list) == 1

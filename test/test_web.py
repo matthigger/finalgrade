@@ -11,7 +11,7 @@ import pathlib
 import pytest
 
 from finalgrade import web
-from finalgrade.policy import Policy
+from finalgrade.policy import F_POLICY_DEFAULT, Policy
 
 
 @pytest.fixture
@@ -176,21 +176,32 @@ class TestGrade:
         assert len(res['mean_list']) == res['n_student']
 
 
-class TestSeed:
-    def test_seeds_from_the_csv(self, csv_text):
-        text = web.seed_policy(csv_text, 'scope.csv')
+class TestDefault:
+    """ the policy the page starts the editor with """
 
-        assert 'quiz1' in text
-        assert 'scope.csv' in text
+    def test_carries_no_comments(self):
+        """ nobody reading the page edits yaml by hand, so none is written
+        for them to read: every section here has a widget
+        """
+        text = web.default_yaml()
 
-    def test_bad_csv_still_yields_an_editable_config(self):
-        text = web.seed_policy('not,a,gradebook\n1,2,3\n')
+        assert '#' not in text
+        assert text.startswith('category:')
 
-        assert text == web.default_yaml()
+    def test_says_everything_the_packaged_file_says(self, tmp_path):
+        """ taking the comments out must not take a section with them """
+        f_bare = tmp_path / 'bare.yaml'
+        f_bare.write_text(web.default_yaml())
 
-    def test_seeded_config_checks_clean(self, csv_text):
+        assert Policy.from_file(f_bare) == Policy.from_file(F_POLICY_DEFAULT)
+
+    def test_the_packaged_file_keeps_its_comments(self):
+        """ the command line still hands somebody a file to read """
+        assert '#' in F_POLICY_DEFAULT.read_text()
+
+    def test_checks_clean(self, csv_text):
         """ what the page puts in the editor must not start out broken """
-        rep = web.check_policy(csv_text, web.seed_policy(csv_text))
+        rep = web.check_policy(csv_text, web.default_yaml())
 
         assert rep['ok']
 
@@ -243,7 +254,7 @@ class TestFormState:
         assert state['waive_list'][0]['ass_list'] == ['hw1', 'hw2']
 
     def test_is_plain_data(self, csv_text):
-        assert is_plain(web.form_state(web.seed_policy(csv_text)))
+        assert is_plain(web.form_state(web.default_yaml()))
 
     def test_half_typed_yaml_says_so_rather_than_raising(self):
         state = web.form_state('category:\n\tweight: 1\n')
@@ -285,7 +296,7 @@ class TestEditConfig:
 
     def test_a_policy_built_only_by_edits_grades(self, csv_text, f_scope_std):
         """ end to end: what the widgets produce is what grading reads """
-        yaml_text = web.seed_policy(csv_text)
+        yaml_text = web.default_yaml()
         for action, args in (
                 ('add_category', '{"cat": "hw"}'),
                 ('add_category', '{"cat": "quiz"}'),
@@ -431,7 +442,7 @@ class TestNoStrayFiles:
         web.load_csv(csv_text)
         web.check_policy(csv_text, YAML_STD)
         web.grade(csv_text, YAML_STD)
-        web.seed_policy(csv_text)
+        web.default_yaml()
 
         assert set(pathlib.Path(tmp_path).iterdir()) == before_set
 

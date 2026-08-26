@@ -338,7 +338,7 @@ class TestWeb:
 
     def test_the_widget_writes_a_policy_that_grades(self, f_scope_puz):
         csv_text = f_scope_puz.read_text()
-        yaml_text = web.seed_policy(csv_text)
+        yaml_text = web.default_yaml()
         for action, args in (('add_category', '{"cat": "puzzle"}'),
                              ('add_category', '{"cat": "hw"}'),
                              ('set_keep_high', '{"cat": "puzzle", "n": 2}')):
