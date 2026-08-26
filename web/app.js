@@ -365,9 +365,10 @@ function useCsv(name, text, opt) {
     state.notice = 'Your policy was kept — these grades replaced the last ' +
       'ones, and the policy you loaded still applies to them.';
   } else if (keep) {
+    // no need to warn about work the policy does not weigh: grading warns
+    // about that by name, and only when there is some
     state.notice = 'Your policy was kept — this gradebook replaced the last ' +
-      'one, not your grading. Anything new in it is unweighted until you ' +
-      'place it.';
+      'one.';
   } else if (sheet) {
     state.notice = null;
   } else if (state.solo) {
