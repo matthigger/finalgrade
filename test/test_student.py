@@ -1,10 +1,15 @@
-""" the policy a student may be handed, and the estimate they make with it
+""" the policy a class may be handed, and the estimate a student makes with it
 
-Two claims are being defended here.  The first is privacy: nothing about any
-other student survives into the file, whatever section it was written in.
-The second is that the student's own grade comes out the same as the
-instructor's -- an estimate that disagrees with the grade is worse than no
-estimate at all, because it is the one the student will quote back.
+Two claims are being defended here.  The first is that the file says nothing
+about anybody: it is posted once, for everybody, so it can only hold what is
+true of everybody.  The second is that a student it singles out for nothing
+gets their own grade out of it exactly -- an estimate that disagrees with the
+grade is worse than no estimate at all, because it is the one the student
+will quote back.
+
+A student the policy does single out is the interesting case, and the one
+these tests pin down: the shared file is wrong for them until their own
+adjustment is written in, and right again once it is.
 """
 import warnings
 
@@ -100,9 +105,15 @@ def email_list(f_example):
 
 
 @pytest.fixture(scope='module')
-def policy_example(tmp_path_factory, email_list):
+def adjusted_tup(email_list):
+    """ the three of the hundred the example policy singles out """
+    return tuple(email_list[:3])
+
+
+@pytest.fixture(scope='module')
+def policy_example(tmp_path_factory, adjusted_tup):
     """ a plausible course policy, singling three of the hundred out """
-    first, second, third = email_list[:3]
+    first, second, third = adjusted_tup
     text = f"""
 category:
   weight:
@@ -140,37 +151,7 @@ note:
 
 
 class TestTheSameGrade:
-    """ the claim the whole feature rests on """
-
-    def test_every_student_gets_their_own_number(self, f_scope_std,
-                                                 policy_full, tmp_path):
-        want_dict = graded(f_scope_std, policy_full)
-        csv_text = f_scope_std.read_text()
-
-        for email in EMAIL_TUP:
-            text = student.policy_text(policy_full, email=email)
-            got_dict = student_grade(student.one_row_csv(csv_text, email),
-                                     text, tmp_path)
-
-            assert list(got_dict) == [email]
-            assert got_dict[email] == want_dict[email], email
-
-    def test_the_late_penalty_comes_along(self, f_scope_std, policy_full,
-                                          tmp_path):
-        """ carol is late, short an excuse day, and forgiven one of them
-
-        Three per-student settings that all move one number: if any of them
-        were dropped this is the assertion that would notice.
-        """
-        want = graded(f_scope_std, policy_full)['carol@u.edu']
-        text = student.policy_text(policy_full, email='carol@u.edu')
-
-        assert 'excuse_day_offset' in text
-        got = student_grade(
-            student.one_row_csv(f_scope_std.read_text(), 'carol@u.edu'),
-            text, tmp_path)
-
-        assert got['carol@u.edu'] == want
+    """ the claim the whole feature rests on, for whoever it holds for """
 
     def test_a_class_wide_file_is_right_for_the_unadjusted(
             self, f_scope_std, tmp_path, write_policy):
@@ -192,59 +173,128 @@ class TestTheSameGrade:
         """ a letter needs the cutoffs that produced it """
         assert 'grade_thresh' in student.policy_text(policy_full)
 
+    def test_the_course_wide_late_rate_comes_along(self, policy_full):
+        text = student.policy_text(policy_full)
+        late = yaml.load(text)['category']['late_penalty']['hw']
+
+        assert late == {'penalty_per_day': .1, 'excuse_day': 1,
+                        'grace_period_minutes': 30}
+
+
+# adjustments chosen so that each one moves the grade it is about.  a waiver
+# on a student whose scores are all equal, or one that drop_low would have
+# discarded anyway, changes no number and so proves nothing here -- alice is
+# 10, 8, 6 on the homework and nothing is dropped, so waiving her worst is
+# 0.8 against 0.9, and carol is three days late with no excused days
+YAML_BITES = """
+category:
+  weight:
+    hw: 100
+  late_penalty:
+    hw:
+      penalty_per_day: 0.1
+      excuse_day: 0
+      excuse_day_offset:
+        carol@u.edu: 3
+waive:
+  alice@u.edu: hw3
+"""
+
+
+class TestAnAdjustmentWrittenBackIn:
+    """ the shared file is wrong for a student it singles out, until they say
+
+    Which is the trade this workflow makes: one file posted once, and the
+    handful of students who were emailed about something add that one line.
+    Both halves are worth pinning down -- that it is wrong without the line,
+    so that nobody believes otherwise, and that the line is all it takes.
+    """
+
+    @pytest.fixture
+    def policy_bites(self, write_policy):
+        return Policy.from_file(write_policy(YAML_BITES, 'bites.yaml'))
+
+    def test_a_waiver_without_it_is_wrong(self, f_scope_std, policy_bites,
+                                          tmp_path):
+        """ alice is waived from her worst hw, and the file cannot say """
+        want = graded(f_scope_std, policy_bites)['alice@u.edu']
+        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
+
+        got = student_grade(mine, student.policy_text(policy_bites), tmp_path)
+
+        assert want[0] == pytest.approx(.9)
+        assert got['alice@u.edu'][0] == pytest.approx(.8)
+
+    def test_a_waiver_written_back_in_is_right(self, f_scope_std,
+                                               policy_bites, tmp_path):
+        want = graded(f_scope_std, policy_bites)['alice@u.edu']
+        mine = student.one_row_csv(f_scope_std.read_text(), 'alice@u.edu')
+
+        # the line the header tells them to add
+        text = student.policy_text(policy_bites) \
+            + '\nwaive:\n  alice@u.edu: hw3\n'
+        got = student_grade(mine, text, tmp_path)
+
+        assert got['alice@u.edu'] == want
+
+    def test_extra_late_days_without_them_are_wrong(self, f_scope_std,
+                                                    policy_bites, tmp_path):
+        """ carol's three excused days are the only thing sparing her """
+        want = graded(f_scope_std, policy_bites)['carol@u.edu']
+        mine = student.one_row_csv(f_scope_std.read_text(), 'carol@u.edu')
+
+        got = student_grade(mine, student.policy_text(policy_bites), tmp_path)
+
+        assert got['carol@u.edu'][0] < want[0]
+
+    def test_extra_late_days_written_back_in(self, f_scope_std, policy_bites,
+                                             tmp_path):
+        """ the one that goes inside a block rather than at the bottom """
+        want = graded(f_scope_std, policy_bites)['carol@u.edu']
+        mine = student.one_row_csv(f_scope_std.read_text(), 'carol@u.edu')
+
+        text = student.policy_text(policy_bites).replace(
+            '      excuse_day: 0\n',
+            '      excuse_day: 0\n'
+            '      excuse_day_offset:\n        carol@u.edu: 3\n')
+        got = student_grade(mine, text, tmp_path)
+
+        assert got['carol@u.edu'] == want
+
+    def test_the_header_says_how(self, policy_full):
+        """ the file arrives as an attachment with no covering note """
+        text = student.policy_text(policy_full)
+
+        for key in ('waive:', 'waive_late:', 'excuse_day_offset:'):
+            assert key in text
+
+        # as instructions, not as settings: every one of them is commented
+        for line in text.split('\n'):
+            if any(key in line for key in
+                   ('waive:', 'waive_late:', 'excuse_day_offset:')):
+                assert line.lstrip().startswith('#'), line
+
 
 class TestNobodyElse:
     """ what may not be in the file, section by section """
 
-    def test_no_other_student_is_named(self, policy_full):
-        for email in EMAIL_TUP:
-            text = student.policy_text(policy_full, email=email)
-
-            for other in set(EMAIL_TUP) - {email}:
-                assert other not in text, f'{other} leaked into {email}'
-
-    def test_a_class_wide_file_names_nobody(self, policy_full):
+    def test_it_names_nobody_at_all(self, policy_full):
         text = student.policy_text(policy_full)
 
         for email in EMAIL_TUP:
             assert email not in text
 
+    def test_no_section_is_keyed_by_a_student(self, policy_full):
+        data = yaml.load(student.policy_text(policy_full))
+
+        for key in ('waive', 'waive_late', 'max', 'note', 'email_list'):
+            assert key not in data
+        assert 'excuse_day_offset' not in \
+            data['category']['late_penalty']['hw']
+
     def test_the_note_stays_behind(self, policy_full):
         """ it moves no grade, and the wording is the instructor's """
-        for email in (None,) + EMAIL_TUP:
-            text = student.policy_text(policy_full, email=email)
-
-            assert 'dean' not in text
-            assert 'note' not in text
-
-    def test_the_roster_stays_behind(self, policy_full):
-        text = student.policy_text(policy_full, email='alice@u.edu')
-
-        assert 'email_list' not in text
-
-    def test_only_this_students_waiver(self, policy_full):
-        text = student.policy_text(policy_full, email='bob@u.edu')
-        data = yaml.load(text)
-
-        assert data['waive'] == {'bob@u.edu': ['hw2']}
-        assert 'waive_late' not in data
-        assert 'max' not in data
-
-    def test_only_this_students_excuse_days(self, policy_full):
-        text = student.policy_text(policy_full, email='alice@u.edu')
-        late = yaml.load(text)['category']['late_penalty']['hw']
-
-        assert late['excuse_day_offset'] == {'alice@u.edu': 2}
-        assert late['penalty_per_day'] == .1
-        assert late['excuse_day'] == 1
-
-    def test_the_course_wide_late_rate_survives_alone(self, policy_full):
-        """ a student the offsets don't mention still needs the penalty """
-        text = student.policy_text(policy_full, email='bob@u.edu')
-        late = yaml.load(text)['category']['late_penalty']['hw']
-
-        assert late == {'penalty_per_day': .1, 'excuse_day': 1,
-                        'grace_period_minutes': 30}
+        assert 'dean' not in student.policy_text(policy_full)
 
     def test_a_comment_cannot_carry_what_a_section_could_not(
             self, write_policy):
@@ -252,8 +302,10 @@ class TestNobodyElse:
         policy = Policy.from_file(write_policy(
             '# alice gets an extra week, per the dean\n'
             'category:\n  weight:\n    hw: 100\n'))
+        text = student.policy_text(policy)
 
-        assert 'dean' not in student.policy_text(policy)
+        assert 'dean' not in text
+        assert 'alice' not in text
 
 
 class TestEverySectionIsAccountedFor:
@@ -263,32 +315,28 @@ class TestEverySectionIsAccountedFor:
         A section added to Policy and to neither tuple has to fail here
         rather than be handed to a class by default.
         """
-        every_set = set(student.SHARE_TUP + student.MINE_TUP
-                        + student.DROP_TUP)
+        every_set = set(student.SHARE_TUP + student.DROP_TUP)
 
         assert every_set == set(YAML_KEY_DICT)
 
     def test_no_section_is_in_two_minds(self):
-        every_list = list(student.SHARE_TUP + student.MINE_TUP
-                          + student.DROP_TUP)
+        every_list = list(student.SHARE_TUP + student.DROP_TUP)
 
         assert len(every_list) == len(set(every_list))
 
-    def test_every_per_student_section_is_mine_or_dropped(self, policy_full):
+    def test_every_per_student_section_is_dropped(self, policy_full):
         """ iter_email is Policy's own list of what names a student """
         where_set = {where.split('/')[0]
                      for _, where in policy_full.iter_email()}
-        # spelled as yaml keys, which is how iter_email reports them
         key_dict = {key_tup[0]: attr
                     for attr, key_tup in YAML_KEY_DICT.items()}
-        ok_set = set(student.MINE_TUP + student.DROP_TUP)
 
         for where in where_set:
             if where == 'late_penalty':
                 # the one that lives inside a course-wide section
                 assert student.LATE_MINE == 'excuse_day_offset'
                 continue
-            assert key_dict[where] in ok_set, where
+            assert key_dict[where] in student.DROP_TUP, where
 
 
 class TestCompletionThreshold:
@@ -300,46 +348,41 @@ class TestCompletionThreshold:
             'category:\n  weight:\n    hw: 50\n    quiz: 50\n'
             'assignments:\n  exclude_complete_thresh: 0.5\n'))
 
-    def test_it_is_written_out_as_the_exclusions_it_came_to(
-            self, f_scope_std, policy_thresh, tmp_path):
-        """ hw1: alice and bob have it, carol has a 0 -- 67%, so it stays """
+    @pytest.fixture
+    def f_grade_thresh(self, tmp_path):
+        """ the standard csv plus one assignment nobody did """
         from conftest import ASSIGN_STD, STUDENT_STD, write_scope
 
-        # one assignment nobody did: below any threshold, and gone
         stud_list = [dict(s, scores=dict(s['scores'], Quiz2=0))
                      for s in STUDENT_STD]
-        f_grade = write_scope(tmp_path / 'scope2.csv',
-                              dict(ASSIGN_STD, Quiz2=10), stud_list)
+        return write_scope(tmp_path / 'scope2.csv',
+                           dict(ASSIGN_STD, Quiz2=10), stud_list)
 
-        text = student.policy_text(policy_thresh, email='alice@u.edu',
-                                   f_grade=str(f_grade))
+    def test_it_is_written_out_as_the_exclusions_it_came_to(
+            self, policy_thresh, f_grade_thresh):
+        text = student.policy_text(policy_thresh,
+                                   f_grade=str(f_grade_thresh))
         data = yaml.load(text)
 
         assert 'exclude_complete_thresh' not in data['assignments']
         assert data['assignments']['exclude'] == ['quiz2']
 
-    def test_the_student_still_gets_the_same_grade(self, policy_thresh,
-                                                   tmp_path):
-        from conftest import ASSIGN_STD, STUDENT_STD, write_scope
-
-        stud_list = [dict(s, scores=dict(s['scores'], Quiz2=0))
-                     for s in STUDENT_STD]
-        f_grade = write_scope(tmp_path / 'scope2.csv',
-                              dict(ASSIGN_STD, Quiz2=10), stud_list)
-        want_dict = graded(f_grade, policy_thresh)
+    def test_the_students_still_get_the_same_grade(self, policy_thresh,
+                                                   f_grade_thresh, tmp_path):
+        want_dict = graded(f_grade_thresh, policy_thresh)
+        text = student.policy_text(policy_thresh,
+                                   f_grade=str(f_grade_thresh))
 
         for email in EMAIL_TUP:
-            text = student.policy_text(policy_thresh, email=email,
-                                       f_grade=str(f_grade))
             got = student_grade(
-                student.one_row_csv(f_grade.read_text(), email), text,
+                student.one_row_csv(f_grade_thresh.read_text(), email), text,
                 tmp_path)
             assert got[email] == want_dict[email], email
 
     def test_without_the_gradebook_it_is_refused(self, policy_thresh):
         """ handing it over meaning something else is the one bad option """
         with pytest.raises(PolicyError, match='exclude_complete_thresh'):
-            student.policy_text(policy_thresh, email='alice@u.edu')
+            student.policy_text(policy_thresh)
 
 
 class TestOneRow:
@@ -547,15 +590,6 @@ class TestWhatIf:
         assert student.add_scores(text, {}) == text
 
 
-def graded_one(csv_text, policy, tmp_path):
-    """ the one student in csv_text's mean """
-    f_out = tmp_path / 'one.csv'
-    f_out.write_text(csv_text)
-    got_dict = graded(f_out, policy)
-    assert len(got_dict) == 1
-    return list(got_dict.values())[0][0]
-
-
 class TestTheWholeExample:
     """ the hundred students behind the page's "try an example" button
 
@@ -566,27 +600,39 @@ class TestTheWholeExample:
     off-by-one in the cut would show up in.
     """
 
-    def test_every_one_of_them_gets_their_own_number(
-            self, f_example, policy_example, email_list, tmp_path):
+    def test_every_one_it_singles_out_for_nothing_gets_their_own_number(
+            self, f_example, policy_example, email_list, adjusted_tup,
+            tmp_path):
         want_dict = graded(f_example, policy_example)
         csv_text = f_example.read_text()
+        text = student.policy_text(policy_example)
 
         assert len(email_list) == 100
 
+        n = 0
         for email in email_list:
-            text = student.policy_text(policy_example, email=email)
+            if email in adjusted_tup:
+                continue
             got_dict = student_grade(student.one_row_csv(csv_text, email),
                                      text, tmp_path)
-
             assert got_dict[email] == want_dict[email], email
+            n += 1
 
-    def test_no_other_student_is_named_in_any_of_them(
-            self, policy_example, email_list):
-        """ a hundred files, and none of them mentions ninety nine people """
-        other_set = set(email_list)
+        assert n == 97
+
+    def test_the_one_file_names_nobody(self, policy_example, email_list):
+        """ a hundred students, and the file posted for them mentions none """
+        text = student.policy_text(policy_example)
 
         for email in email_list:
-            text = student.policy_text(policy_example, email=email)
+            assert email not in text
+            assert email.split('@')[0] not in text
 
-            for other in other_set - {email}:
-                assert other not in text, f'{other} leaked into {email}'
+
+def graded_one(csv_text, policy, tmp_path):
+    """ the one student in csv_text's mean """
+    f_out = tmp_path / 'one.csv'
+    f_out.write_text(csv_text)
+    got_dict = graded(f_out, policy)
+    assert len(got_dict) == 1
+    return list(got_dict.values())[0][0]

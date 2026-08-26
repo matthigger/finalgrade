@@ -30,19 +30,29 @@ from .policy import YAML_KEY_DICT
 __all__ = ['policy_text', 'one_row_csv', 'add_scores',
            'resolve_thresh']
 
-# every section of a policy, sorted by who may read it.  the three tuples
-# below have to account for all of YAML_KEY_DICT -- checked at import, so a
-# section added to Policy is a failure here rather than a section that
-# quietly ships to a class.
+# every section of a policy, sorted by whether it goes to the class.  the
+# two tuples below have to account for all of YAML_KEY_DICT -- checked at
+# import, so a section added to Policy is a failure here rather than a
+# section that quietly ships to a class.
+#
+# The line between them is not privacy but arithmetic: one file is posted
+# once, for everybody, so it can only hold what is true of everybody.  A
+# section keyed by student is not true of everybody even when it is about
+# the student reading it.
 #
 # SHARE_TUP    the same for everyone, so it says nothing about anyone
-# MINE_TUP     keyed by student, and kept for the one student it is about
 # DROP_TUP     never handed out, for the reason given at each below
 SHARE_TUP = ('cat_weight_dict', 'cat_drop_dict', 'cat_keep_dict',
              'cat_late_dict', 'remove_list', 'sub_dict', 'plan_dict',
              'extra_list', 'grade_thresh')
-MINE_TUP = ('waive_dict', 'late_waive_dict', 'max_dict')
 DROP_TUP = (
+    # every section keyed by a student.  a student who was told one of these
+    # applies to them writes it in themselves -- the file says how -- which
+    # is a line of yaml against the alternative of a file per student, kept
+    # in step with the roster all term and emailed one at a time
+    'waive_dict',
+    'late_waive_dict',
+    'max_dict',
     # a roster is a list of the class's email addresses, and a gradebook of
     # one student has nobody to prune anyway
     'email_list',
@@ -57,35 +67,23 @@ DROP_TUP = (
     'exclude_complete_thresh',
 )
 
-_missing_set = set(YAML_KEY_DICT) - set(SHARE_TUP + MINE_TUP + DROP_TUP)
+_missing_set = set(YAML_KEY_DICT) - set(SHARE_TUP + DROP_TUP)
 if _missing_set:
     raise ImportError(
         'finalgrade.student does not say whether a student may see '
-        f'{", ".join(sorted(_missing_set))} -- add it to SHARE_TUP, '
-        'MINE_TUP or DROP_TUP')
+        f'{", ".join(sorted(_missing_set))} -- add it to SHARE_TUP or '
+        'DROP_TUP')
 
-# what a late_penalty block says about one student, rather than about the
-# course.  shared for the student it belongs to, dropped for everyone else
+# the one thing inside a course-wide section that is keyed by student
 LATE_MINE = 'excuse_day_offset'
 
 # the file's own explanation of itself, since it arrives as an attachment
 # with no covering note and is the only thing a student has to go on
-HEADER_TOP = """\
+HEADER = """\
 # your grading policy, and how to use it
 #
-# this is your course's grading policy with everything about anybody else
-# taken out of it: the weights, the rules and the letter cutoffs, which are
-# the same for the whole class.
-"""
-
-HEADER_MINE = """\
-#
-# what it says about you -- a waiver, a forgiven late penalty, extra late
-# days -- is here too, because each of those moves your grade and an
-# estimate without them would be wrong.  nobody else's is.
-"""
-
-HEADER_END = """\
+# this is your course's grading policy: the weights, the rules and the letter
+# cutoffs, which are the same for the whole class.
 #
 # drop this file and your own grades csv together on
 #   https://matthigger.github.io/finalgrade
@@ -94,6 +92,29 @@ HEADER_END = """\
 #
 # nothing you do there is sent anywhere: the page runs on your computer.
 # and an estimate is not a grade -- only your instructor's run is that.
+#
+# ---------------------------------------------------------------------------
+# if you were told that something applies to you alone
+#
+# an assignment waived, a late penalty forgiven, extra late days -- it is not
+# in this file, because this is the one file the whole class gets.  add it
+# yourself, at the bottom, with your own email address:
+#
+#   waive:
+#     you@uni.edu: hw3
+#
+#   waive_late:
+#     you@uni.edu: hw5
+#
+# and extra late days go inside the late_penalty block for the category they
+# apply to, alongside excuse_day:
+#
+#       excuse_day_offset:
+#         you@uni.edu: 3
+#
+# every one of these is documented at
+#   https://github.com/matthigger/finalgrade/blob/main/doc/policy.md
+# ---------------------------------------------------------------------------
 """
 
 
@@ -110,29 +131,14 @@ def _put(data, key_tup, value):
     node[key_tup[-1]] = value
 
 
-def _mine(section, email):
-    """ the rows of a per-student section that are about email """
-    if not email:
-        return dict()
-    want = _prefix(email)
-    # keyed by the gradebook's spelling of the address, so the file names
-    # the student the way their own export does
-    return {email: val for _email, val in section.items()
-            if _prefix(_email) == want}
-
-
-def _late_section(cat_late_dict, email):
-    """ every late_penalty block, with only this student's offset left in """
+def _late_section(cat_late_dict):
+    """ every late_penalty block, with the per-student offsets taken out """
     out_dict = dict()
     for cat, late_dict in cat_late_dict.items():
         if not isinstance(late_dict, dict):
             continue
-        block = {key: val for key, val in late_dict.items()
-                 if key != LATE_MINE}
-        offset_dict = _mine(late_dict.get(LATE_MINE) or {}, email)
-        if offset_dict:
-            block[LATE_MINE] = offset_dict
-        out_dict[cat] = block
+        out_dict[cat] = {key: val for key, val in late_dict.items()
+                         if key != LATE_MINE}
     return out_dict
 
 
@@ -186,17 +192,20 @@ def resolve_thresh(policy, f_grade):
                                                                f_grade))
 
 
-def policy_text(policy, email=None, f_grade=None):
-    """ the policy to hand a student, as the text of a yaml file
+def policy_text(policy, f_grade=None):
+    """ the policy to hand the class, as the text of a yaml file
+
+    One file, posted once, holding what is true of everybody: the weights,
+    the score rules, the late rate, the cutoffs.  Every section keyed by a
+    student is left out, whoever they are -- a file that is right for one
+    student is wrong for the other ninety nine, and the file that is right
+    for all of them is the one that mentions none of them.
+
+    A student who was told something applies to them alone adds it
+    themselves; the header says how.
 
     Args:
         policy (Policy): the instructor's own policy
-        email (str): the student it is for.  their own waivers, forgiven late
-            penalties, best-of arrangements and extra late days come along,
-            because each of them moves their grade and no estimate without
-            them is worth making.  without an email none of those sections
-            appear at all: one file for a whole class, right for every
-            student the policy singles out for nothing
         f_grade (str): the csv the class is graded from.  needed only to
             resolve exclude_complete_thresh, which cannot be evaluated over
             one student -- without it a policy using the threshold is
@@ -221,18 +230,12 @@ def policy_text(policy, email=None, f_grade=None):
     for attr in SHARE_TUP:
         value = getattr(policy, attr)
         if attr == 'cat_late_dict':
-            value = _late_section(value, email)
+            value = _late_section(value)
         if not value:
             continue
         _put(data, YAML_KEY_DICT[attr], value)
 
-    for attr in MINE_TUP:
-        value = _mine(getattr(policy, attr), email)
-        if value:
-            _put(data, YAML_KEY_DICT[attr], value)
-
-    header = HEADER_TOP + (HEADER_MINE if email else '') + HEADER_END
-    return header + '\n' + edit.dump(_plainish(data))
+    return HEADER + '\n' + edit.dump(_plainish(data))
 
 
 def _plainish(obj):

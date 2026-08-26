@@ -438,17 +438,25 @@ class TestStudentCsv:
 
 
 class TestStudentPolicy:
-    """ the file an instructor hands a student """
+    """ the one file an instructor posts for the class """
 
-    def test_it_grades_that_student_the_same(self, csv_text):
+    def test_one_file_for_a_whole_class(self, csv_text):
+        res = web.student_policy(csv_text, YAML_STUDENT)
+
+        assert res['ok'], res.get('error')
+        assert res['filename'] == 'policy_student.yaml'
+        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
+            assert email not in res['yaml']
+
+    def test_it_grades_an_unadjusted_student_the_same(self, csv_text):
         """ the browser's claim, made once more for the student's own page """
         from finalgrade import student
 
-        res = web.student_policy(csv_text, YAML_STUDENT, 'alice@u.edu')
+        res = web.student_policy(csv_text, YAML_PLAIN)
 
         assert res['ok'], res.get('error')
         mine = student.one_row_csv(csv_text, 'alice@u.edu')
-        was = web.grade(csv_text, YAML_STUDENT)
+        was = web.grade(csv_text, YAML_PLAIN)
         now = web.grade(mine, res['yaml'])
 
         assert now['ok'], now.get('error')
@@ -456,44 +464,20 @@ class TestStudentPolicy:
             [s['mean'] for s in was['student_list']
              if s['email'] == 'alice@u.edu']
 
-    def test_it_names_nobody_else(self, csv_text):
-        res = web.student_policy(csv_text, YAML_STUDENT, 'alice@u.edu')
-
-        assert 'bob' not in res['yaml']
-        assert 'carol' not in res['yaml']
-
-    def test_named_after_the_student(self, csv_text):
-        res = web.student_policy(csv_text, YAML_STUDENT, 'alice@u.edu')
-
-        assert res['filename'] == 'anders_alice.yaml'
-
-    def test_one_file_for_a_whole_class(self, csv_text):
-        res = web.student_policy(csv_text, YAML_STUDENT)
-
-        assert res['ok']
-        assert res['filename'] == 'policy_student.yaml'
-        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
-            assert email not in res['yaml']
-
-    def test_an_unknown_student(self, csv_text):
-        res = web.student_policy(csv_text, YAML_STUDENT, 'nobody@u.edu')
-
-        assert not res['ok']
-        assert 'nobody@u.edu' in res['error']
-
     def test_a_broken_policy_is_a_message(self, csv_text):
         res = web.student_policy(csv_text,
-                                 'category:\n  weight:\n    no: 1\n',
-                                 'alice@u.edu')
+                                 'category:\n  weight:\n    no: 1\n')
 
         assert not res['ok']
 
     def test_is_plain_data(self, csv_text):
-        assert is_plain(web.student_policy(csv_text, YAML_STUDENT,
-                                           'alice@u.edu'))
+        assert is_plain(web.student_policy(csv_text, YAML_STUDENT))
 
 
 YAML_HW1 = 'category:\n  weight:\n    hw: 100\n'
+
+# singles nobody out, so the shared file is right for every one of them
+YAML_PLAIN = YAML_STD
 
 
 def unzip(res):
@@ -507,55 +491,60 @@ def unzip(res):
 
 
 class TestStudentPack:
-    """ a folder per student, so a class of a hundred is one click """
+    """ one policy to post, and one csv per student to send """
 
-    def test_two_files_per_student(self, csv_text):
+    def test_one_policy_and_a_csv_each(self, csv_text):
         res = web.student_pack(csv_text, YAML_STUDENT)
 
         assert res['ok'], res.get('error')
         assert res['n_student'] == 3
         assert sorted(unzip(res)) == [
-            'anders_alice/grades.csv', 'anders_alice/policy.yaml',
-            'baker_bob/grades.csv', 'baker_bob/policy.yaml',
-            'chen_carol/grades.csv', 'chen_carol/policy.yaml']
+            'grades/anders_alice.csv', 'grades/baker_bob.csv',
+            'grades/chen_carol.csv', 'policy_student.yaml']
 
-    def test_each_folder_holds_one_student(self, csv_text):
+    def test_the_policy_names_nobody(self, csv_text):
+        text = unzip(web.student_pack(csv_text,
+                                      YAML_STUDENT))['policy_student.yaml']
+
+        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
+            assert email not in text
+
+    def test_each_csv_holds_one_student(self, csv_text):
         file_dict = unzip(web.student_pack(csv_text, YAML_STUDENT))
+        text = file_dict['grades/anders_alice.csv']
 
-        for name in ('grades.csv', 'policy.yaml'):
-            text = file_dict[f'anders_alice/{name}']
-            assert 'bob' not in text
-            assert 'carol' not in text
+        assert 'alice@u.edu' in text
+        assert 'bob' not in text
+        assert 'carol' not in text
 
-    def test_the_pair_grades_that_student(self, csv_text):
-        """ the two files in a folder are the two the page asks for """
-        file_dict = unzip(web.student_pack(csv_text, YAML_STUDENT))
+    def test_the_pair_grades_an_unadjusted_student(self, csv_text):
+        """ the two files the page asks for, for a student singled out for
+        nothing -- YAML_PLAIN adjusts nobody, so that is all three """
+        file_dict = unzip(web.student_pack(csv_text, YAML_PLAIN))
+        policy = file_dict['policy_student.yaml']
         was = {s['email']: s['mean']
-               for s in web.grade(csv_text, YAML_STUDENT)['student_list']}
+               for s in web.grade(csv_text, YAML_PLAIN)['student_list']}
 
         for stem, email in (('anders_alice', 'alice@u.edu'),
                             ('baker_bob', 'bob@u.edu'),
                             ('chen_carol', 'carol@u.edu')):
-            res = web.grade(file_dict[f'{stem}/grades.csv'],
-                            file_dict[f'{stem}/policy.yaml'])
+            res = web.grade(file_dict[f'grades/{stem}.csv'], policy)
 
             assert res['ok'], res.get('error')
             assert len(res['student_list']) == 1
             assert res['student_list'][0]['mean'] == was[email], email
 
-    def test_the_folders_are_the_per_student_csv_names(self, csv_text):
+    def test_the_csvs_are_named_as_the_breakdowns_are(self, csv_text):
         """ the same stem the emailed breakdown already uses """
-        stem_set = {name.split('/')[0]
-                    for name in unzip(web.student_pack(csv_text,
-                                                       YAML_STUDENT))}
+        name_set = set(unzip(web.student_pack(csv_text, YAML_STUDENT)))
 
         for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
             stem = web.student_csv(csv_text, YAML_STUDENT,
                                    email)['filename'][:-len('.csv')]
-            assert stem in stem_set
+            assert f'grades/{stem}.csv' in name_set
 
-    def test_two_students_of_one_name_get_a_folder_each(self, tmp_path):
-        """ or the second written takes the first's files with it """
+    def test_two_students_of_one_name_get_a_csv_each(self, tmp_path):
+        """ or the second written takes the first's place """
         from conftest import ASSIGN_STD, write_scope
 
         f_grade = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, [
@@ -568,14 +557,11 @@ class TestStudentPack:
 
         assert res['ok'], res.get('error')
         file_dict = unzip(res)
-        assert len(file_dict) == 4
-        stem_set = {name.split('/')[0] for name in file_dict}
-        assert len(stem_set) == 2
+        csv_list = [n for n in file_dict if n.startswith('grades/')]
 
-        # and each folder holds the row of the student it is named for
-        for stem in stem_set:
-            csv = file_dict[f'{stem}/grades.csv']
-            assert len(csv.strip().split('\n')) == 2
+        assert len(csv_list) == 2
+        for name in csv_list:
+            assert len(file_dict[name].strip().split('\n')) == 2
 
     def test_a_broken_policy_is_a_message(self, csv_text):
         res = web.student_pack(csv_text,

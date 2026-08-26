@@ -232,19 +232,23 @@ By default every student in Gradescope is included.
 
 Everywhere an email appears in the policy — `waive`, `waive_late`, `excuse_day_offset`, and `email_list` — matching is done by the **prefix** (everything before `@`). This means `student@husky.neu.edu` in the policy will correctly match `student@northeastern.edu` in Gradescope. All comparisons are case-insensitive.
 
-## The copy a student may have
+## The copy a class may have
 
-Everything above is your file. A student can be handed a subset of it,
-alongside their own row of the export, and work their own grade out on the
-same page with the same code — including trying a score on work you have not
-graded yet.
+Everything above is your file. A subset of it can be posted once for the
+whole class, and a student who has that file and their own grades csv can
+work their own grade out on the same page with the same code -- including
+trying a score on work you have not graded yet.
 
-What crosses over is every course-wide setting on this page, plus the rows
-about that one student (`waive`, `waive_late`, `max`, and their own
-`excuse_day_offset`), each of which moves their grade. What does not is
-anybody else's rows, `note`, `email_list`, and `exclude_complete_thresh` --
-which is resolved into the exclusions it actually came to, because a
-completion rate over a class of one is 100% or 0%.
+What crosses over is every course-wide setting on this page. What does not is
+every section keyed by a student -- `waive`, `waive_late`, `max`,
+`excuse_day_offset` -- because one file posted once can only hold what is
+true of everybody. Nor `note` (it moves no grade) or `email_list` (a roster).
+`exclude_complete_thresh` is resolved into the exclusions it actually came
+to, because a completion rate over a class of one is 100% or 0%.
+
+A student you singled out adds their own line: on the page, where their own
+waivers and late days are controls, or by hand -- the posted file's header
+shows the three sections and how to write them.
 
 See [student.md](student.md) for how to write those files and what is in
 them.

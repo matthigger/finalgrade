@@ -1196,8 +1196,20 @@ body.solo .solo-only { display: revert; }
   border-bottom-color: var(--accent);
 }
 
-/* the spinners are worth more room than they cost here: the whole gesture is
-   nudging a score up and down to see where a letter turns over */
+/* no spinners: fifteen pairs of arrows is a lot of furniture for a gesture
+   nobody performs -- a score is typed, not nudged one point at a time */
+.chip.whatif input::-webkit-outer-spin-button,
+.chip.whatif input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+.chip.whatif input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .chip.whatif .of { color: var(--ink-faint); font-size: .75rem; }
 
 /* a score that is supposed rather than given.  it has to be obvious at a
@@ -1220,3 +1232,42 @@ body.solo .solo-only { display: revert; }
   color: var(--accent);
   font-weight: 700;
 }
+
+/* what the estimate is assuming about this reader in particular.  the policy
+   they were given is the class's, so anything here they put in themselves */
+.waive-row.adjust .chips { margin-bottom: .4rem; }
+
+.chip.is-adjust {
+  background: var(--warn-soft);
+  border-color: transparent;
+  padding-right: .15rem;
+}
+
+.chip.is-adjust .chip-v { color: var(--warn); }
+
+.chip.is-adjust button {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  padding: 0 .15rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip.is-adjust button:hover { color: var(--bad); }
+
+.adjust-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+  align-items: baseline;
+}
+
+.adjust-add select {
+  font-family: var(--mono);
+  font-size: .8rem;
+  max-width: 14rem;
+}
+
+.adjust-add input[type="number"] { width: 4rem; }

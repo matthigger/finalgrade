@@ -99,7 +99,7 @@ class TestMainCLI:
 
 
 class TestStudentCommand:
-    """ the two files each student needs, from the command line """
+    """ the files students need, from the command line """
 
     YAML = """\
 category:
@@ -121,35 +121,36 @@ note:
                                 str(f_policy), '-q', *extra_list]))
         return tmp_path / 'student'
 
-    def test_a_folder_per_student(self, f_scope_std):
+    def test_one_policy_and_a_csv_each(self, f_scope_std):
         out = self._run(f_scope_std)
 
-        assert sorted(p.name for p in out.iterdir()) == \
-            ['anders_alice', 'baker_bob', 'chen_carol']
-        for folder in out.iterdir():
-            assert (folder / 'policy.yaml').exists()
-            assert (folder / 'grades.csv').exists()
+        assert (out / 'policy_student.yaml').exists()
+        assert sorted(p.name for p in (out / 'grades').iterdir()) == \
+            ['anders_alice.csv', 'baker_bob.csv', 'chen_carol.csv']
 
-    def test_each_folder_is_one_student(self, f_scope_std):
+    def test_each_csv_is_one_student(self, f_scope_std):
         out = self._run(f_scope_std)
-        text = (out / 'anders_alice' / 'grades.csv').read_text()
+        text = (out / 'grades' / 'anders_alice.csv').read_text()
 
         assert 'alice@u.edu' in text
         assert 'bob' not in text
         assert len(text.strip().split('\n')) == 2
 
-    def test_nobody_elses_policy(self, f_scope_std):
+    def test_the_policy_names_nobody(self, f_scope_std):
         out = self._run(f_scope_std)
-        text = (out / 'baker_bob' / 'policy.yaml').read_text()
+        text = (out / 'policy_student.yaml').read_text()
 
-        assert 'bob@u.edu' in text
-        assert 'carol' not in text
+        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
+            assert email not in text
         assert 'a private word' not in text
 
     def test_one_student_on_request(self, f_scope_std):
         out = self._run(f_scope_std, ['--email', 'carol@u.edu'])
 
-        assert [p.name for p in out.iterdir()] == ['chen_carol']
+        assert [p.name for p in (out / 'grades').iterdir()] == \
+            ['chen_carol.csv']
+        # the policy is the class's either way, because it is the class's
+        assert (out / 'policy_student.yaml').exists()
 
     def test_a_student_who_is_not_there(self, f_scope_std):
         with pytest.raises(SystemExit) as exc_info:
@@ -161,10 +162,16 @@ note:
         f_out = f_scope_std.parent / 'handouts'
         self._run(f_scope_std, ['-o', str(f_out)])
 
-        assert (f_out / 'anders_alice' / 'policy.yaml').exists()
+        assert (f_out / 'policy_student.yaml').exists()
+        assert (f_out / 'grades' / 'anders_alice.csv').exists()
 
-    def test_the_pair_grades_that_student(self, f_scope_std):
-        """ the whole reason the two files travel together """
+    def test_the_pair_grades_an_unadjusted_student(self, f_scope_std):
+        """ the whole reason the two files travel together
+
+        Alice is the one this policy singles out for nothing, so the shared
+        file is exactly right for her.  Bob has a waiver in it, and would
+        have to write that line in himself.
+        """
         import warnings
 
         from finalgrade.policy import Policy
@@ -176,9 +183,8 @@ note:
             policy = Policy.from_file(f_scope_std.parent / 'policy.yaml')
             _, df_class = policy(str(f_scope_std))
 
-            folder = out / 'anders_alice'
-            mine = Policy.from_file(folder / 'policy.yaml')
-            _, df_mine = mine(str(folder / 'grades.csv'))
+            mine = Policy.from_file(out / 'policy_student.yaml')
+            _, df_mine = mine(str(out / 'grades' / 'anders_alice.csv'))
 
         assert list(df_mine.index) == ['alice@u.edu']
         assert df_mine.at['alice@u.edu', 'mean'] == \

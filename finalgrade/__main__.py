@@ -75,9 +75,8 @@ check_parser.add_argument(
 # ---------- "student" subcommand ----------
 student_parser = subparsers.add_parser(
     'student',
-    help='write the two files each student needs to work their own grade '
-         'out: their row of the export, and this policy with everybody else '
-         'taken out of it')
+    help='write the files students need to work their own grade out: one '
+         'policy.yaml to post for the class, and one csv per student')
 student_parser.add_argument(
     'f_scope', type=str,
     help='Gradescope CSV, or a Canvas gradebook export')
@@ -91,7 +90,7 @@ student_parser.add_argument(
     help='folder to write into (default: student/ beside the CSV)')
 student_parser.add_argument(
     '--email', dest='email', default=None,
-    help='write one student\'s folder rather than the whole class')
+    help='write one student\'s csv rather than the whole class\'s')
 student_parser.add_argument(
     '-q', '--quiet', action='store_true',
     help='suppress informational output')
@@ -237,7 +236,7 @@ def cmd_student(args):
 
     # graded first, so that these files cannot describe a policy that would
     # not grade the class they came from
-    gradebook, df_grade_full = policy(f_scope=args.f_scope)
+    _, df_grade_full = policy(f_scope=args.f_scope)
 
     if args.email is not None:
         prefix = args.email.split('@')[0].lower()
@@ -248,28 +247,32 @@ def cmd_student(args):
                 f'{args.email} is not among the students being graded')
         df_grade_full = df_grade_full.loc[keep_list]
 
-    # asked once for the class: it costs two runs over the whole gradebook,
-    # and every student's file needs the same answer to it
-    share = student_mod.resolve_thresh(policy, args.f_scope)
-
     out_folder = pathlib.Path(args.f_output or (folder / 'student'))
     out_folder.mkdir(parents=True, exist_ok=True)
     csv_text = pathlib.Path(args.f_scope).read_text()
 
+    # one policy for the class.  the completion threshold is asked about once
+    # here rather than once per student: it costs two runs over the whole
+    # gradebook, and there is one answer to it
+    f_policy = out_folder / 'policy_student.yaml'
+    f_policy.write_text(student_mod.policy_text(
+        student_mod.resolve_thresh(policy, args.f_scope)))
+
+    grade_folder = out_folder / 'grades'
+    grade_folder.mkdir(exist_ok=True)
     stem_dict = _stem_dict(df_grade_full)
     for email in df_grade_full.index:
-        _folder = out_folder / stem_dict[email]
-        _folder.mkdir(exist_ok=True)
-        (_folder / 'policy.yaml').write_text(
-            student_mod.policy_text(share, email=str(email)))
-        (_folder / 'grades.csv').write_text(
+        (grade_folder / f'{stem_dict[email]}.csv').write_text(
             student_mod.one_row_csv(csv_text, str(email)))
 
     logger.info(
-        f'wrote {len(df_grade_full)} student folder(s) to {out_folder}\n'
-        f'  each holds that student\'s own row and a policy.yaml with nobody '
-        f'else in it -- send a student their folder and they can drop both '
-        f'files on https://matthigger.github.io/finalgrade')
+        f'wrote {f_policy}\n'
+        f'  post this once: it is your policy with every student taken out '
+        f'of it, so it is the same file for the whole class\n'
+        f'wrote {len(df_grade_full)} csv(s) to {grade_folder}\n'
+        f'  one student\'s scores each, which is the half that cannot be '
+        f'posted.  with both files a student can work their own grade out on '
+        f'https://matthigger.github.io/finalgrade')
 
 
 def cmd_canvas(args):
