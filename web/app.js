@@ -2225,8 +2225,31 @@ async function useExample(name) {
   useCsv(name, await res.text());
 }
 
+/* The other half of the same course: what its instructor would post for it,
+ * which is all a student is given.  Loading it is the student's way in, so it
+ * goes through the same door a dropped file does.
+ *
+ * The gradebook is cleared first, because the button promises the student's
+ * page and a policy dropped onto a class is a different act entirely.  That
+ * makes this the one example that replaces the file being edited, so unsaved
+ * work is refused rather than carried off. */
+async function useExamplePolicy(name) {
+  if (saveState() === 'dirty') {
+    return showPickError('Your policy has unsaved changes, and the student '
+      + 'example would replace it — save it from the files line first.');
+  }
+
+  const res = await fetch(name);
+  state.csv = null;
+  state.canvasText = null;
+  useYaml(name, await res.text());
+}
+
 $('demo').addEventListener('click', () => useExample('ex_gradescope.csv'));
 $('demo-canvas').addEventListener('click', () => useExample('ex_canvas.csv'));
+$('demo-student').addEventListener('click',
+                                   () => useExamplePolicy(
+                                     'ex_policy_public.yaml'));
 
 $('quick').addEventListener('click', (e) => {
   const cat = e.target.getAttribute('data-cat');

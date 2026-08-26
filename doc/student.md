@@ -16,7 +16,9 @@ cannot post the wrong one by accident when the wrong one says PRIVATE.
 
 A student drops the posted file on
 [matthigger.github.io/finalgrade](https://matthigger.github.io/finalgrade)
-and **types their own scores in**. Neither gradescope nor canvas gives a
+and **types their own scores in**. (The page's *see it as a student* link
+loads an example of one, if you want to look at what they will see before
+posting anything.) Neither gradescope nor canvas gives a
 student an export of their own grades worth reading, so the scores come from
 the student, and the posted policy is what says which scores there are to
 type. The page then shows what they come to: what was late and what it cost,

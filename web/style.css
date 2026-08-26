@@ -82,6 +82,15 @@ h1 {
 .intro li::marker { color: var(--ink-faint); }
 .intro strong { color: var(--ink); }
 
+/* the two things to know before closing the tab, under the line they follow
+   from rather than as bullets of their own: a reader who has decided which
+   half of the page they are on has stopped reading the list */
+.intro-note {
+  display: block;
+  margin-top: .3rem;
+  color: var(--ink-faint);
+}
+
 h2 {
   margin: 0 0 .7rem;
   font-size: .95rem;
@@ -213,6 +222,11 @@ h2 .sub {
 
 .drop-main { margin: 0; font-size: 1.5rem; font-weight: 600; }
 .drop-sub { margin: .5rem 0 0; color: var(--ink-soft); font-size: .92rem; }
+
+/* the student example, a step quieter than the two instructor ones: most
+   people opening this page are grading a class, and the one who is not has
+   a file of their own to drop rather than an example to look at */
+.sub-small { font-size: .82rem; color: var(--ink-faint); margin-top: .25rem; }
 
 /* where a gradebook export comes from.  left aligned even though the box is
    centred: these are paths to follow, and a centred path is hard to scan */
