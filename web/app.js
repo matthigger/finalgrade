@@ -60,7 +60,30 @@ const state = {
   view: 'total',
   mode: 'final',
   seq: 0,
+  // the one student this page is about, when the gradebook holds one -- a
+  // student looking at their own grade rather than a course looking at
+  // itself.  null for a class
+  solo: null,
+  // scores a student has supposed, by assignment name.  the file itself is
+  // never edited: it is rewritten from these every time, so an answer is
+  // taken back out by deleting it rather than by undoing anything
+  whatIf: {},
+  // the csv the grades are computed from: the one that was loaded, with
+  // those suppositions written in.  the same string when there are none
+  csvGraded: null,
 };
+
+/* What a student is told they are looking at.  Every number on the page is
+ * arrived at by the code that produced their real grade -- which is the
+ * point of it -- and that is exactly what makes saying so necessary. */
+const SOLO_HINT = 'Worked out from your own row and your course\'s grading ' +
+  'policy, by the same code that produced your real grade. A score you type ' +
+  'in is a supposition, and an estimate is not a grade.';
+
+const NEED_POLICY = 'This is one student\'s row, so it is being read as ' +
+  'your own grade. It needs the policy.yaml your instructor gave you as ' +
+  'well — without it there is no course policy to apply, and the default ' +
+  'one is not yours.';
 
 /* ------------------------------------------------------------------ boot */
 
@@ -271,12 +294,26 @@ function useCsv(name, text) {
   state.sourceIsCanvas = info.source === 'canvas';
   // which format it was read as is not cosmetic: it decides whether late
   // penalties are available at all, so it belongs next to the filename
-  state.facts = `${info.source}, ${info.n_student} students, ` +
-    `${info.ass_list.length} assignments`;
+  state.facts = `${info.source}, ${info.n_student} ` +
+    `${plural(info.n_student, 'student')}, ` +
+    `${info.ass_list.length} ${plural(info.ass_list.length, 'assignment')}`;
   state.assList = info.ass_list;
   state.studentList = info.student_list;
   state.catHintList = info.cat_hint_list;
   state.grades = null;
+
+  // one student in the file is somebody looking at their own grade.  nothing
+  // else tells the two apart and nothing else has to: an instructor's export
+  // is their class, and a class is more than one person
+  state.solo = info.n_student === 1 ? info.student_list[0].email : null;
+  state.whatIf = {};
+  document.body.classList.toggle('solo', !!state.solo);
+
+  if (state.solo) {
+    $('stud-h2').firstChild.nodeValue = 'your grade ';
+    $('stud-sub').textContent = 'and what would move it';
+    $('solo-hint').textContent = SOLO_HINT;
+  }
 
   if (state.sourceIsCanvas) {
     state.canvasText = text;
@@ -289,6 +326,14 @@ function useCsv(name, text) {
     state.notice = 'Your policy was kept — this gradebook replaced the last ' +
       'one, not your grading. Anything new in it is unweighted until you ' +
       'place it.';
+  } else if (state.solo) {
+    // a policy written for this one row would grade by whatever the points
+    // happen to be, which is not the course's policy and would answer a
+    // question nobody asked.  the file that says what counts has to arrive
+    setYaml('');
+    state.seedYaml = null;
+    state.savedYaml = null;
+    state.notice = null;
   } else {
     seedPolicy();
   }
@@ -328,11 +373,49 @@ function setYaml(text) {
  * redrawn from the file, then the file is checked, then -- only if it is
  * usable -- grades and the charts follow. */
 function refresh() {
+  if (state.solo && !state.yaml) return askForPolicy();
+
+  const error = gradeSource();
   drawForm();
   if (check()) runGrades();
   else clearGrades();
+  if (error) $('messages').innerHTML += msgList([error], 'error');
   drawFiles();
   drawExport();
+}
+
+/* Half of what a student needs, and the page saying which half is missing.
+ * Grading them by the default policy would produce a number, which is worse
+ * than producing none: it would be wrong and look right. */
+function askForPolicy() {
+  clearGrades();
+  state.form = null;
+  $('stud-card').innerHTML = '';
+  $('messages').innerHTML = msgList([NEED_POLICY], 'note');
+  drawFiles();
+  drawExport();
+}
+
+/* The csv the grades are computed from.  Rebuilt from the file as it arrived
+ * every time, rather than edited in place, so that a supposition is undone by
+ * deleting it and nothing accumulates. */
+function gradeSource() {
+  state.csvGraded = state.csv;
+  if (!state.solo || !Object.keys(state.whatIf).length) return null;
+
+  const res = toJs(state.api.what_if(state.csv, state.yaml,
+                                     JSON.stringify(state.whatIf)));
+  if (res.ok) {
+    state.csvGraded = res.csv;
+    return null;
+  }
+  return res.error;
+}
+
+/* the csv to grade: the same string as the one loaded, unless a student has
+ * supposed something */
+function gradedCsv() {
+  return state.csvGraded || state.csv;
 }
 
 function applyEdit(action, args) {
@@ -352,7 +435,8 @@ function applyEdit(action, args) {
 
 function check() {
   const seq = ++state.seq;
-  const rep = toJs(state.api.check_policy(state.csv, state.yaml, state.name));
+  const rep = toJs(state.api.check_policy(gradedCsv(), state.yaml,
+                                          state.name));
   if (seq !== state.seq) return rep.ok;
 
   state.report = rep;
@@ -823,7 +907,9 @@ function drawRoster() {
 }
 
 function pickedStudent() {
-  const email = $('stud').value.trim();
+  // a page about one student is always about that student: there is nobody
+  // to pick, and no picker to pick them with
+  const email = state.solo || $('stud').value.trim();
   return state.studentList.find((s) => s.email === email) || null;
 }
 
@@ -858,6 +944,9 @@ function drawStudent(form) {
         <span class="stud-email">${escapeHtml(stud.email)}</span>
         ${graded ? `<button type="button" class="link stud-file"
           id="stud-csv">${escapeHtml(studentFile(stud))}</button>` : ''}
+        ${graded && !state.solo ? `<button type="button"
+          class="link stud-file" id="stud-yaml" title="${escapeHtml(
+    YAML_FILE_HINT)}">their policy.yaml</button>` : ''}
         ${graded
           ? `<span class="stud-grade">${delta(stud, graded)}${pct(graded.mean)}
               <span class="stud-letter">${escapeHtml(graded.letter)}</span>
@@ -865,11 +954,12 @@ function drawStudent(form) {
           : '<span class="empty">no grade yet</span>'}
       </div>
       ${graded ? catRow(graded) : ''}
-      ${graded ? scoreGrid(graded, stud) : ''}
+      ${graded ? scoreBlock(graded, stud) : ''}
       ${graded ? lateGrid(graded) : ''}
-      ${excuseRow(form, stud)}
-      ${noteBox(form, stud)}
+      ${state.solo ? '' : excuseRow(form, stud)}
+      ${state.solo ? '' : noteBox(form, stud)}
       ${graded ? auditLog(graded) : ''}
+      ${state.solo && graded ? threshRow(graded) : ''}
     </div>`;
 }
 
@@ -896,10 +986,18 @@ function catRow(graded) {
   return cat ? `<div class="mini-row cat-means">${cat}</div>` : '';
 }
 
-/* Every score, grouped by the categories the policy already defines, because
- * fifteen chips in one row is a list and four rows of four is a gradebook.
- * Clicking one waives it: the thing an instructor came here to do. */
-function scoreGrid(graded, stud) {
+const YAML_FILE_HINT = 'this policy with everybody else taken out, for ' +
+  'them to work their own grade out with';
+
+/* The same scores, as a control for whoever is reading them: an instructor
+ * waives one, a student supposes one. */
+function scoreBlock(graded, stud) {
+  return state.solo ? whatIfGrid(graded) : scoreGrid(graded, stud);
+}
+
+/* Scores grouped by the categories the policy already defines, because
+ * fifteen chips in one row is a list and four rows of four is a gradebook. */
+function scoreRows(graded, chipOf) {
   const group = new Map();
   for (const a of graded.ass_list) {
     const key = a.category || 'other';
@@ -907,17 +1005,97 @@ function scoreGrid(graded, stud) {
     group.get(key).push(a);
   }
 
-  const block = [...group.entries()].map(([cat, list]) => `
+  return [...group.entries()].map(([cat, list]) => `
     <div class="grid-group">
       <span class="grid-k">${escapeHtml(cat)}</span>
-      <div class="chips">${list.map(scoreChip).join('')}</div>
+      <div class="chips">${list.map(chipOf).join('')}</div>
     </div>`).join('');
+}
+
+/* Clicking one waives it: the thing an instructor came here to do. */
+function scoreGrid(graded, stud) {
+  const block = scoreRows(graded, scoreChip);
 
   return `<div class="waive-row block">
     <span class="field-k">scores <span class="sub">click to waive, drag
       one onto another to take the best of both</span></span>
     <div class="grid">${block}${maxGroup(stud)}</div>
   </div>`;
+}
+
+/* Every score, as a box holding what it is -- so that a student can put
+ * something else in it and watch the grade follow.  What has not been graded
+ * yet is the row that matters: a whole term's policy is already written down,
+ * so the arithmetic on "what do I need on the final" is sitting right here.
+ *
+ * A box left as it was is not an answer, and nothing is written into the file
+ * for it.  Only what was typed is supposed. */
+function whatIfGrid(graded) {
+  const block = scoreRows(graded, whatIfBox);
+  const n = Object.keys(state.whatIf).length;
+
+  return `<div class="waive-row block">
+    <span class="field-k">scores <span class="sub">type a score into work
+      that has not been graded yet${n
+    ? ' — <button type="button" class="link" id="whatif-clear">clear the '
+      + `${n} you have supposed</button>` : ''}</span></span>
+    <div class="grid">${block}</div>
+  </div>`;
+}
+
+/* One score, as it stands or as it has been supposed. */
+function whatIfBox(a) {
+  const supposed = Object.prototype.hasOwnProperty.call(state.whatIf, a.name);
+
+  // a waived assignment was never assigned, so there is nothing to suppose
+  // about it, and an answer would be read as a score the policy has already
+  // said not to count
+  if (a.waived) {
+    return `<span class="chip score is-waived"
+      title="${escapeHtml(a.name)} was waived for you, so it is not counted">
+      <span class="chip-k">${escapeHtml(a.name)}</span>
+      <span class="chip-v">waived</span></span>`;
+  }
+
+  const points = a.points === null || a.points === undefined ? '' : a.points;
+  const earned = a.perc === null || a.perc === undefined || !a.submitted
+    ? '' : Math.round(a.perc * points * 100) / 100;
+  const value = supposed ? state.whatIf[a.name] : earned;
+
+  const why = a.planned ? 'not assigned yet — suppose a score'
+    : !a.submitted ? 'nothing handed in, so it counts as zero'
+      : 'what you were given — put something else here to see what it '
+        + 'would do';
+
+  return `<label class="chip score whatif${supposed ? ' is-supposed' : ''}${
+    a.planned ? ' is-planned' : ''}${
+    !supposed && !a.submitted ? ' is-missing' : ''}"
+    title="${escapeHtml(why)}">
+    <span class="chip-k">${escapeHtml(a.name)}</span>
+    <span class="chip-v"><input type="number" step="any" min="0"
+      data-whatif="${escapeHtml(a.name)}" value="${value}"
+      placeholder="—" aria-label="${escapeHtml(a.name)} score">
+      <span class="of">/ ${escapeHtml(String(points))}</span></span>
+  </label>`;
+}
+
+/* Where the letters fall, because the question a grade provokes is how far
+ * away the next one is.  Read from the policy that produced the letter, so
+ * the answer cannot be a different set of cutoffs than the one applied. */
+function threshRow(graded) {
+  const list = (state.grades || {}).thresh_list || [];
+  if (!list.length) return '';
+
+  const cell = (item) => `<span class="mini${
+    item.letter === graded.letter ? ' is-mine' : ''}">
+    <span class="mini-k">${escapeHtml(item.letter)}</span>
+    <span class="mini-v">${pct(item.perc)}</span></span>`;
+
+  return `<details class="audit" data-fold="thresh"${foldOpen('thresh')}>
+    <summary>letter grades <span class="sub">what each one takes</span>
+    </summary>
+    <div class="mini-row">${list.map(cell).join('')}</div>
+  </details>`;
 }
 
 /* The maxes standing for this student, as one more row of the same grid --
@@ -1015,7 +1193,8 @@ function lateGrid(graded) {
     </span>`).join('');
 
   return `<div class="waive-row block">
-    <span class="field-k">late <span class="sub">click to forgive</span></span>
+    <span class="field-k">late <span class="sub">${state.solo
+    ? 'what it was, and what it cost' : 'click to forgive'}</span></span>
     <div class="grid">
       ${summary ? `<div class="mini-row">${summary}</div>` : ''}
       <div class="chips">${list.map(lateChip).join('')}</div>
@@ -1044,10 +1223,26 @@ function lateChip(a) {
     : a.late_days ? `${a.late_days}d${exact}`
       : a.late_minutes ? `0d${exact}` : 'on time';
 
+  const inGrace = a.late_minutes && !a.late_days;
+
+  // nothing here is a control for a student: their late days are a fact
+  // about what happened, and forgiving one is their instructor's to do
+  if (state.solo) {
+    const said = a.late_waived
+      ? 'the late penalty on this was forgiven'
+      : inGrace ? `${hhmm(a.late_minutes)} late, inside the grace period`
+        : a.late_days
+          ? `${a.late_days} ${plural(a.late_days, 'late day')} counted`
+          : 'handed in on time';
+
+    return `<span class="chip ${cls}" title="${escapeHtml(said)}">` +
+      `<span class="chip-k">${escapeHtml(a.name)}</span>` +
+      `<span class="chip-v">${escapeHtml(value)}</span></span>`;
+  }
+
   const why = a.late_waived
     ? 'late penalty forgiven — click to count it again'
-    : a.late_minutes && !a.late_days
-      ? `${hhmm(a.late_minutes)} late, inside the grace period`
+    : inGrace ? `${hhmm(a.late_minutes)} late, inside the grace period`
       : 'click to forgive any late penalty on this';
 
   return `<button type="button" class="chip ${cls}" data-late="${
@@ -1153,10 +1348,23 @@ function downloadStudentCsv() {
   const stud = pickedStudent();
   if (!stud) return;
 
-  const res = toJs(state.api.student_csv(state.csv, state.yaml, stud.email,
+  const res = toJs(state.api.student_csv(gradedCsv(), state.yaml, stud.email,
                                          state.name));
   if (!res.ok) return;
   download(res.csv, res.filename, 'text/csv');
+}
+
+/* The two files one student needs to work their own grade out: their row of
+ * the export, and the course policy with everybody else taken out of it. */
+function downloadStudentPolicy() {
+  const stud = pickedStudent();
+  if (!stud) return;
+
+  const res = toJs(state.api.student_policy(state.csv, state.yaml, stud.email,
+                                            state.name));
+  if (!res.ok) return ($('messages').innerHTML += msgList([res.error],
+                                                          'error'));
+  download(res.yaml, res.filename, 'text/yaml');
 }
 
 /* How much the last edit moved this student.  Waiving one homework out of
@@ -1310,7 +1518,7 @@ function clearGrades() {
 }
 
 function runGrades() {
-  const res = toJs(state.api.grade(state.csv, state.yaml, state.name));
+  const res = toJs(state.api.grade(gradedCsv(), state.yaml, state.name));
 
   if (!res.ok) {
     state.grades = null;
@@ -1512,6 +1720,9 @@ function fileLink(key, name, note, noteClass) {
  * warning about a document the page wrote by itself, and that the reader has
  * not touched, is how an indicator teaches people to ignore it. */
 function saveState() {
+  // nothing written is nothing to lose: a student waiting on the policy file
+  // their instructor sent has no work in the page to be warned about
+  if (!state.yaml) return 'clean';
   if (state.yaml === state.savedYaml) return 'clean';
   if (state.savedYaml === null && state.yaml === state.seedYaml) return 'fresh';
   return 'dirty';
@@ -1554,9 +1765,14 @@ function drawFiles() {
   const part = [
     '<span class="file-k">files</span>',
     fileLink('csv', state.name, state.facts),
-    fileLink('yaml', state.policyName, SAVE_NOTE[save],
-             `save-state is-${save}`),
   ];
+
+  // there is no policy to save when there is no policy: a student waiting on
+  // the file their instructor sent is not somebody with unsaved work
+  if (state.yaml) {
+    part.push(fileLink('yaml', state.policyName, SAVE_NOTE[save],
+                       `save-state is-${save}`));
+  }
 
   if (state.canvasText && !state.sourceIsCanvas) {
     part.push(fileLink('canvas', state.canvasName, 'canvas template'));
@@ -1636,7 +1852,9 @@ function drawExport() {
     '<button type="button" id="dl-grades">download grade_full.csv</button>' +
     `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
       ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
-    '<button type="button" id="dl-banner">export for banner…</button>';
+    '<button type="button" id="dl-banner">export for banner…</button>' +
+    '<button type="button" id="dl-pack" class="secondary">files for ' +
+    'students…</button>';
 
   $('export-hint').textContent = canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by ' +
@@ -1660,6 +1878,25 @@ function drawExport() {
     form.hidden = !form.hidden;
     if (!form.hidden) $('term-code').focus();
   });
+
+  $('dl-pack').addEventListener('click', runPack);
+}
+
+/* A folder per student, holding the two files they need to work their own
+ * grade out on this page: their own row of the export, and this policy with
+ * everybody else taken out of it.  One click, because a course has a hundred
+ * students and nobody is doing this one at a time. */
+function runPack() {
+  // synchronous, so nothing said here would paint before it returned
+  const res = toJs(state.api.student_pack(state.csv, state.yaml, state.name));
+  if (!res.ok) return ($('export-hint').textContent = res.error);
+
+  downloadBytes(res.zip_b64, stamped('student_files', 'zip'),
+                'application/zip');
+  $('export-hint').textContent =
+    `${res.n_student} folders, each holding one student's own row and a ` +
+    'policy.yaml with nobody else in it. Send a student their folder and ' +
+    'they can drop both files on this page.';
 }
 
 /* Banner will only match a row when its CRN, term code and student id all
@@ -2001,6 +2238,17 @@ $('stud-clear').addEventListener('click', () => {
 $('stud-card').addEventListener('change', (e) => {
   const stud = pickedStudent();
 
+  // a score a student has supposed.  it goes nowhere near the policy: the
+  // file says what counts, and this says what a score might have been
+  const what = e.target.getAttribute('data-whatif');
+  if (what !== null) {
+    const text = e.target.value.trim();
+    if (text === '') delete state.whatIf[what];
+    else state.whatIf[what] = Number(text);
+    refresh();
+    return keepFocus(what);
+  }
+
   if (e.target.id === 'stud-note') {
     if (!stud) return;
     return applyEdit('set_note',
@@ -2013,6 +2261,23 @@ $('stud-card').addEventListener('change', (e) => {
               { cat, email: stud.email, days: Number(e.target.value) });
   }
 });
+
+/* A redraw builds the card again from scratch, which throws away the element
+ * the keyboard was about to move to -- so tab out of a score and focus lands
+ * on the document, where the next tab starts again from the top of the page.
+ * Filling in a term's worth of suppositions is the whole gesture here, so it
+ * has to survive doing it twice.
+ *
+ * Only when focus fell to nothing: if something that still exists has taken
+ * it, that was deliberate and taking it back would be worse. */
+function keepFocus(name) {
+  if (document.activeElement && document.activeElement !== document.body) {
+    return;
+  }
+  const box = $('stud-card').querySelector(
+    `[data-whatif="${CSS.escape(name)}"]`);
+  if (box) box.focus();
+}
 
 /* Dragging a score onto another, on pointer events rather than html5 drag
  * and drop.  That api refuses to begin a drag for reasons the page cannot
@@ -2164,6 +2429,16 @@ $('stud-card').addEventListener('click', (e) => {
   const stud = pickedStudent();
   if (!stud) return;
 
+  if (e.target.id === 'whatif-clear') {
+    state.whatIf = {};
+    return refresh();
+  }
+
+  // nothing on a student's own page edits the policy: it is a handout, and
+  // the grade it produces is only worth reading because it is not theirs to
+  // change
+  if (state.solo) return;
+
   const undo = e.target.getAttribute('data-unmax');
   if (undo !== null) {
     return applyEdit('set_max',
@@ -2210,6 +2485,7 @@ $('email-clear').addEventListener('click', () => {
 
 $('stud-card').addEventListener('click', (e) => {
   if (e.target.id === 'stud-csv') downloadStudentCsv();
+  if (e.target.id === 'stud-yaml') downloadStudentPolicy();
 });
 
 $('files').addEventListener('click', (e) => {

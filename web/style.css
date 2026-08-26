@@ -1152,3 +1152,71 @@ code {
   padding: .1rem .3rem;
   border-radius: 3px;
 }
+
+/* ------------------------------------------------------ a student's page
+
+   One student in a gradebook is somebody looking at their own grade, and
+   this is the same page with the instructor's half taken out rather than a
+   second page saying the same things differently -- a second page is a
+   second chance to disagree about what a policy means.  Everything that
+   edits the policy goes; what is left reads. */
+
+.solo-only { display: none; }
+body.solo .instructor-only { display: none; }
+body.solo .solo-only { display: revert; }
+
+/* a score, as a box holding what it is.  the same chip as everywhere else,
+   with room for an answer in it */
+.chip.whatif {
+  padding-right: .45rem;
+  cursor: text;
+}
+
+.chip.whatif .chip-v {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .15rem;
+  pointer-events: auto;
+}
+
+.chip.whatif input {
+  width: 3.2rem;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  padding: 0 .1rem;
+}
+
+.chip.whatif input:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+/* the spinners are worth more room than they cost here: the whole gesture is
+   nudging a score up and down to see where a letter turns over */
+.chip.whatif .of { color: var(--ink-faint); font-size: .75rem; }
+
+/* a score that is supposed rather than given.  it has to be obvious at a
+   glance which numbers on the page are real, because the page is about to
+   be quoted back at somebody */
+.chip.whatif.is-supposed {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.chip.whatif.is-supposed input { color: var(--accent); font-weight: 600; }
+
+.chip.whatif.is-planned { border-style: dashed; }
+.chip.whatif.is-planned input::placeholder { color: var(--ink-faint); }
+
+/* where this student's own letter falls, among the cutoffs that placed it */
+.mini.is-mine {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}

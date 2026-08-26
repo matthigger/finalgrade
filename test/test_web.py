@@ -21,6 +21,24 @@ def csv_text(f_scope_std):
 
 YAML_STD = 'category:\n  weight:\n    hw: 50\n    quiz: 50\n'
 
+# the same, with something to say about each of the three students
+YAML_STUDENT = """\
+category:
+  weight:
+    hw: 50
+    quiz: 50
+  late_penalty:
+    hw:
+      penalty_per_day: .1
+      excuse_day: 1
+      excuse_day_offset:
+        alice@u.edu: 2
+waive:
+  bob@u.edu: hw2
+note:
+  carol@u.edu: a private word
+"""
+
 
 def is_plain(obj):
     """ True when obj is something json can hold (so js can receive it) """
@@ -417,6 +435,220 @@ class TestStudentCsv:
 
     def test_is_plain_data(self, csv_text):
         assert is_plain(web.student_csv(csv_text, YAML_STD, 'alice@u.edu'))
+
+
+class TestStudentPolicy:
+    """ the file an instructor hands a student """
+
+    def test_it_grades_that_student_the_same(self, csv_text):
+        """ the browser's claim, made once more for the student's own page """
+        from finalgrade import student
+
+        res = web.student_policy(csv_text, YAML_STUDENT, 'alice@u.edu')
+
+        assert res['ok'], res.get('error')
+        mine = student.one_row_csv(csv_text, 'alice@u.edu')
+        was = web.grade(csv_text, YAML_STUDENT)
+        now = web.grade(mine, res['yaml'])
+
+        assert now['ok'], now.get('error')
+        assert [s['mean'] for s in now['student_list']] == \
+            [s['mean'] for s in was['student_list']
+             if s['email'] == 'alice@u.edu']
+
+    def test_it_names_nobody_else(self, csv_text):
+        res = web.student_policy(csv_text, YAML_STUDENT, 'alice@u.edu')
+
+        assert 'bob' not in res['yaml']
+        assert 'carol' not in res['yaml']
+
+    def test_named_after_the_student(self, csv_text):
+        res = web.student_policy(csv_text, YAML_STUDENT, 'alice@u.edu')
+
+        assert res['filename'] == 'anders_alice.yaml'
+
+    def test_one_file_for_a_whole_class(self, csv_text):
+        res = web.student_policy(csv_text, YAML_STUDENT)
+
+        assert res['ok']
+        assert res['filename'] == 'policy_student.yaml'
+        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
+            assert email not in res['yaml']
+
+    def test_an_unknown_student(self, csv_text):
+        res = web.student_policy(csv_text, YAML_STUDENT, 'nobody@u.edu')
+
+        assert not res['ok']
+        assert 'nobody@u.edu' in res['error']
+
+    def test_a_broken_policy_is_a_message(self, csv_text):
+        res = web.student_policy(csv_text,
+                                 'category:\n  weight:\n    no: 1\n',
+                                 'alice@u.edu')
+
+        assert not res['ok']
+
+    def test_is_plain_data(self, csv_text):
+        assert is_plain(web.student_policy(csv_text, YAML_STUDENT,
+                                           'alice@u.edu'))
+
+
+YAML_HW1 = 'category:\n  weight:\n    hw: 100\n'
+
+
+def unzip(res):
+    """ the pack's archive, as a name -> text dict """
+    import base64
+    import io
+    import zipfile
+
+    archive = zipfile.ZipFile(io.BytesIO(base64.b64decode(res['zip_b64'])))
+    return {name: archive.read(name).decode() for name in archive.namelist()}
+
+
+class TestStudentPack:
+    """ a folder per student, so a class of a hundred is one click """
+
+    def test_two_files_per_student(self, csv_text):
+        res = web.student_pack(csv_text, YAML_STUDENT)
+
+        assert res['ok'], res.get('error')
+        assert res['n_student'] == 3
+        assert sorted(unzip(res)) == [
+            'anders_alice/grades.csv', 'anders_alice/policy.yaml',
+            'baker_bob/grades.csv', 'baker_bob/policy.yaml',
+            'chen_carol/grades.csv', 'chen_carol/policy.yaml']
+
+    def test_each_folder_holds_one_student(self, csv_text):
+        file_dict = unzip(web.student_pack(csv_text, YAML_STUDENT))
+
+        for name in ('grades.csv', 'policy.yaml'):
+            text = file_dict[f'anders_alice/{name}']
+            assert 'bob' not in text
+            assert 'carol' not in text
+
+    def test_the_pair_grades_that_student(self, csv_text):
+        """ the two files in a folder are the two the page asks for """
+        file_dict = unzip(web.student_pack(csv_text, YAML_STUDENT))
+        was = {s['email']: s['mean']
+               for s in web.grade(csv_text, YAML_STUDENT)['student_list']}
+
+        for stem, email in (('anders_alice', 'alice@u.edu'),
+                            ('baker_bob', 'bob@u.edu'),
+                            ('chen_carol', 'carol@u.edu')):
+            res = web.grade(file_dict[f'{stem}/grades.csv'],
+                            file_dict[f'{stem}/policy.yaml'])
+
+            assert res['ok'], res.get('error')
+            assert len(res['student_list']) == 1
+            assert res['student_list'][0]['mean'] == was[email], email
+
+    def test_the_folders_are_the_per_student_csv_names(self, csv_text):
+        """ the same stem the emailed breakdown already uses """
+        stem_set = {name.split('/')[0]
+                    for name in unzip(web.student_pack(csv_text,
+                                                       YAML_STUDENT))}
+
+        for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
+            stem = web.student_csv(csv_text, YAML_STUDENT,
+                                   email)['filename'][:-len('.csv')]
+            assert stem in stem_set
+
+    def test_two_students_of_one_name_get_a_folder_each(self, tmp_path):
+        """ or the second written takes the first's files with it """
+        from conftest import ASSIGN_STD, write_scope
+
+        f_grade = write_scope(tmp_path / 'scope.csv', ASSIGN_STD, [
+            {'email': 'jsmith@u.edu', 'first': 'john', 'last': 'smith',
+             'scores': {'HW1': 9}},
+            {'email': 'jsmith2@u.edu', 'first': 'john', 'last': 'smith',
+             'scores': {'HW1': 4}}])
+
+        res = web.student_pack(f_grade.read_text(), YAML_HW1)
+
+        assert res['ok'], res.get('error')
+        file_dict = unzip(res)
+        assert len(file_dict) == 4
+        stem_set = {name.split('/')[0] for name in file_dict}
+        assert len(stem_set) == 2
+
+        # and each folder holds the row of the student it is named for
+        for stem in stem_set:
+            csv = file_dict[f'{stem}/grades.csv']
+            assert len(csv.strip().split('\n')) == 2
+
+    def test_a_broken_policy_is_a_message(self, csv_text):
+        res = web.student_pack(csv_text,
+                               'category:\n  weight:\n    no: 1\n')
+
+        assert not res['ok']
+        assert res['error']
+
+    def test_is_plain_data(self, csv_text):
+        assert is_plain(web.student_pack(csv_text, YAML_STUDENT))
+
+
+class TestWhatIf:
+    """ a score typed into work that has not been graded yet """
+
+    YAML_HW = 'category:\n  weight:\n    hw: 100\n'
+    YAML_PLAN = ('category:\n  weight:\n    hw: 100\n'
+                 'assignments:\n  planned:\n    hw4: 10\n')
+
+    def mine(self, csv_text):
+        from finalgrade import student
+        return student.one_row_csv(csv_text, 'alice@u.edu')
+
+    def test_a_typed_score_moves_the_grade(self, csv_text):
+        mine = self.mine(csv_text)
+
+        was = web.grade(mine, self.YAML_HW)['student_list'][0]['mean']
+        res = web.what_if(mine, self.YAML_HW, '{"hw3": 10}')
+
+        assert res['ok'], res.get('error')
+        now = web.grade(res['csv'], self.YAML_HW)['student_list'][0]['mean']
+        assert now > was
+
+    def test_a_planned_assignment_can_be_answered(self, csv_text):
+        """ the max points come out of the policy that planned it """
+        res = web.what_if(self.mine(csv_text), self.YAML_PLAN, '{"hw4": 10}')
+
+        assert res['ok'], res.get('error')
+        graded = web.grade(res['csv'], self.YAML_PLAN)['student_list'][0]
+        ass_dict = {a['name']: a for a in graded['ass_list']}
+
+        assert ass_dict['hw4']['perc'] == 1
+        assert ass_dict['hw4']['submitted']
+        assert not ass_dict['hw4']['planned']
+
+    def test_an_unanswered_plan_still_counts_for_nobody(self, csv_text):
+        res = web.what_if(self.mine(csv_text), self.YAML_PLAN, '{}')
+        graded = web.grade(res['csv'], self.YAML_PLAN)['student_list'][0]
+        ass_dict = {a['name']: a for a in graded['ass_list']}
+
+        assert ass_dict['hw4']['planned']
+        assert ass_dict['hw4']['perc'] is None
+
+    def test_no_answers_is_the_csv_it_was_given(self, csv_text):
+        res = web.what_if(csv_text, YAML_STD, '{}')
+
+        assert res['ok']
+        assert res['csv'] == csv_text
+
+    def test_nonsense_json_is_a_message(self, csv_text):
+        res = web.what_if(csv_text, YAML_STD, 'not json')
+
+        assert not res['ok']
+        assert res['error']
+
+    def test_an_assignment_nothing_knows_about(self, csv_text):
+        res = web.what_if(self.mine(csv_text), YAML_STD, '{"hw9": 10}')
+
+        assert not res['ok']
+        assert 'hw9' in res['error']
+
+    def test_is_plain_data(self, csv_text):
+        assert is_plain(web.what_if(csv_text, YAML_STD, '{}'))
 
 
 class TestNoStrayFiles:
