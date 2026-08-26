@@ -219,16 +219,17 @@
         <label class="f" for="term-code">term code</label>
         <input type="text" id="term-code" placeholder="202310" size="8"
           inputmode="numeric">
-        <label class="f" for="crn-list">CRNs</label>
-        <input type="text" id="crn-list" placeholder="12345 67890" size="18">
+      </div>
+      <div id="banner-crn"></div>
+      <div class="checks">
+        <label class="f"><input type="checkbox" id="banner-trim" checked>
+          trim to final letter</label>
       </div>
       <div class="row">
         <button type="button" id="banner-go">build the xlsx</button>
       </div>
       <p class="hint" id="banner-note">Banner matches a row only when its
-        CRN, term code and 9&#8209;digit student id all line up. Several CRNs
-        can ride along — Banner is told which column to match at import time
-        and discards the rest.</p>
+        CRN, term code and 9&#8209;digit student id all line up.</p>
     </div>
   </div>
 

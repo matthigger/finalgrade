@@ -112,6 +112,26 @@ canvas_parser.add_argument(
     '-q', '--quiet', action='store_true',
     help='suppress informational output')
 
+
+def _section_crn(text):
+    """ 'sec-02=12345' as the pair it looks like
+
+    Args:
+        text (str): one -s value
+
+    Returns:
+        pair (tuple): section, crn
+
+    Raises:
+        argparse.ArgumentTypeError: no '=' to split on, or a blank half
+    """
+    section, sep, crn = str(text).partition('=')
+    if not sep or not section.strip() or not crn.strip():
+        raise argparse.ArgumentTypeError(
+            f'expected SECTION=CRN, e.g. sec-02=12345, but got: {text!r}')
+    return section.strip(), crn.strip()
+
+
 # ---------- "banner" subcommand ----------
 banner_parser = subparsers.add_parser(
     'banner',
@@ -126,7 +146,20 @@ banner_parser.add_argument(
     help='Banner term code (added as a new column)')
 banner_parser.add_argument(
     '-c', '--crn', action='append', dest='crn_list',
-    help='CRN of course section (may be passed multiple times)')
+    help='CRN of course section (may be passed multiple times).  every row '
+         'gets every CRN, in its own column, and banner is told which to '
+         'match on: one import per section')
+banner_parser.add_argument(
+    '-s', '--section-crn', action='append', dest='section_crn_list',
+    metavar='SECTION=CRN', type=_section_crn,
+    help='CRN of one section, e.g. -s sec-02=12345.  SECTION need only be '
+         'the part of the section name that tells it from the others.  '
+         'every section named this way uploads in a single import; one left '
+         'out is left out of the workbook')
+banner_parser.add_argument(
+    '--full', action='store_true',
+    help='keep every grade column, rather than just the final grade banner '
+         'reads')
 banner_parser.add_argument(
     '-q', '--quiet', action='store_true',
     help='suppress informational output')
@@ -272,6 +305,35 @@ def cmd_canvas(args):
     logger.info(f'wrote {f_canvas_out}')
 
 
+def _crn_dict(pair_list):
+    """ the -s pairs as a mapping, refusing one section named twice
+
+    argparse hands back a list, and building a dict from it would keep the
+    last CRN silently -- the one case where the user has said outright that
+    they are unsure which it is.
+
+    Args:
+        pair_list (list): (section, crn) tuples, or None
+
+    Returns:
+        crn_dict (dict): section -> crn, or None when -s went unused (which
+            is not the same as a mapping that named no section)
+
+    Raises:
+        PolicyError: a section was given more than one CRN
+    """
+    if not pair_list:
+        return None
+
+    dupe_list = [sec for sec, n in Counter(
+        sec for sec, _ in pair_list).items() if n > 1]
+    if dupe_list:
+        raise PolicyError(
+            'a section can only have one CRN, but -s gives more than one to: '
+            + ', '.join(sorted(dupe_list)))
+    return dict(pair_list)
+
+
 def cmd_banner(args):
     """Execute the 'banner' subcommand."""
     _setup_logging(args.quiet)
@@ -282,7 +344,10 @@ def cmd_banner(args):
 
     # sid must stay a string: leading zeros are significant to banner
     df = pd.read_csv(args.grade_full, dtype={'sid': str})
-    df = to_banner(df, term_code=args.term_code, crn_list=args.crn_list)
+    df = to_banner(df, term_code=args.term_code, crn_list=args.crn_list,
+                   crn_dict=_crn_dict(args.section_crn_list),
+                   letter_only=not args.full)
+    logger.info(f'{len(df)} students in the workbook')
 
     timestamp = datetime.now().strftime('%b%d_%H%M')
     f_out = args.grade_full.replace('.csv', f'_banner_{timestamp}.xlsx')

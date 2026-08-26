@@ -693,6 +693,14 @@ button.link {
   color: var(--ink-soft);
 }
 
+/* a gradescope section name is a course, a CRN, a title and a term run
+   together, so it is long: let it wrap rather than push its CRN box away */
+.banner-sec {
+  flex: 0 1 22rem;
+  min-width: 0;
+  word-break: break-word;
+}
+
 .f input[type="number"] {
   width: 4.2rem;
   font: inherit;

@@ -52,6 +52,11 @@ const state = {
   assList: [],
   studentList: [],
   catHintList: [],
+  // the sections this gradebook names, which the banner form asks a CRN for
+  sectionList: [],
+  // the sections the banner form was last built for, so a redraw leaves the
+  // CRNs already typed into it alone
+  bannerKey: null,
   form: null,
   grades: null,
   // last mean seen per student, so an edit can show what it moved
@@ -327,6 +332,7 @@ function useCsv(name, text, opt) {
   state.assList = info.ass_list;
   state.studentList = info.student_list;
   state.catHintList = info.cat_hint_list;
+  state.sectionList = info.section_list;
   state.grades = null;
 
   // one student in the file is somebody looking at their own grade.  nothing
@@ -2137,20 +2143,72 @@ function drawExport() {
     : 'Drop the gradebook canvas exported to enable this.';
 }
 
+  // a CRN box per section the gradebook names, redrawn with the panel so a
+  // re-exported gradebook with a new section gets one
+  drawBannerCrn();
+}
+
 function setExportMode(mode) {
   state.exportMode = mode;
   drawExport();
   if (mode === 'banner') $('term-code').focus();
 }
 
+/* A CRN names one section, and the gradebook already knows which sections it
+ * covers -- so ask for a CRN next to each one rather than have the whole set
+ * typed into a box and sorted out at import time.  A gradebook with no
+ * section column falls back to that older way, which still works. */
+function drawBannerCrn() {
+  const secList = state.sectionList || [];
+  // the boxes hold what the user typed, so rebuild only when the sections
+  // themselves change -- a re-render must not empty them
+  const key = JSON.stringify(secList);
+  if (key === state.bannerKey) return;
+  state.bannerKey = key;
+
+  $('banner-crn').innerHTML = secList.length
+    ? secList.map((sec, idx) =>
+      `<div class="field"><label class="f banner-sec" for="crn-${idx}"
+        >${escapeHtml(sec)}</label
+      ><input type="text" id="crn-${idx}" class="crn" size="8"
+        inputmode="numeric" placeholder="12345"
+        data-section="${escapeHtml(sec)}"></div>`).join('')
+    : '<div class="field"><label class="f" for="crn-list">CRNs</label>' +
+      '<input type="text" id="crn-list" placeholder="12345 67890" ' +
+      'size="18"></div>';
+
+  $('banner-note').className = 'hint';
+  $('banner-note').textContent = secList.length
+    ? 'Banner matches a row only when its CRN, term code and 9‑digit ' +
+      'student id all line up. Each section carries its own CRN, so one ' +
+      'import covers the course; a section left blank is left out.'
+    : 'Banner matches a row only when its CRN, term code and 9‑digit ' +
+      'student id all line up. This gradebook names no sections, so every ' +
+      'CRN rides along in its own column — Banner is told which to match at ' +
+      'import time and discards the rest.';
+}
+
 /* Banner will only match a row when its CRN, term code and student id all
  * line up, so it needs the two that a gradebook cannot know. */
 function runBanner() {
   const term = $('term-code').value.trim();
-  const crnList = $('crn-list').value.split(/[\s,]+/).filter(Boolean);
+
+  // an object is one CRN per row, a list is every CRN on every row.  which
+  // is sent says which the page just asked for
+  let crn;
+  if ((state.sectionList || []).length) {
+    crn = {};
+    document.querySelectorAll('#banner-crn input.crn').forEach((el) => {
+      const value = el.value.trim();
+      if (value) crn[el.dataset.section] = value;
+    });
+  } else {
+    crn = $('crn-list').value.split(/[\s,]+/).filter(Boolean);
+  }
 
   const res = toJs(state.api.banner_export(
-    state.csv, state.yaml, term, JSON.stringify(crnList), state.name));
+    state.csv, state.yaml, term, JSON.stringify(crn), state.name,
+    $('banner-trim').checked));
 
   const note = $('banner-note');
   if (!res.ok) {
@@ -2159,8 +2217,11 @@ function runBanner() {
     return;
   }
 
-  note.className = 'hint';
-  note.textContent = `${res.n_row} rows written.`;
+  // a section nobody gave a CRN is a warning, not a failure: the workbook is
+  // still the one to upload, minus those students
+  note.className = res.warn_list.length ? 'error' : 'hint';
+  note.textContent = [`${res.n_row} rows written.`]
+    .concat(res.warn_list).join(' ');
   downloadBytes(res.xlsx_b64, stamped('banner', 'xlsx'),
                 'application/vnd.openxmlformats-officedocument.' +
                 'spreadsheetml.sheet');
