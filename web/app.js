@@ -2141,7 +2141,6 @@ function drawExport() {
     ? 'The canvas export merges these grades into your canvas gradebook by '
       + 'SIS user id, scaled to 100 so canvas does not round them.'
     : 'Drop the gradebook canvas exported to enable this.';
-}
 
   // a CRN box per section the gradebook names, redrawn with the panel so a
   // re-exported gradebook with a new section gets one

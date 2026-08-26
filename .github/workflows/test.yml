@@ -28,3 +28,13 @@ jobs:
 
       - name: test
         run: pytest -q
+
+  # the page ships app.js verbatim, so a syntax error in it is a page that
+  # loads, spins, and never says why -- the browser is the only thing that
+  # was parsing it.  node is already on the runner
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: app.js parses
+        run: node --check web/app.js
