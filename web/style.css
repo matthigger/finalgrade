@@ -293,6 +293,13 @@ table.weights tr.grp td { border-top: 1px solid var(--line); }
 table.weights td.strong { font-weight: 600; }
 table.weights th, table.weights td { padding-right: .8rem; }
 
+/* one export's inputs, and only the selected one's are in the page */
+#export-mode { margin-bottom: .9rem; }
+
+.export-pane .row { margin-top: .8rem; }
+
+.export-pane .drop-inline { margin-top: 0; }
+
 /* ---- the canvas template box ---- */
 
 .drop-inline {
