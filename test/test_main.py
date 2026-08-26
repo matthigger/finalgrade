@@ -100,7 +100,7 @@ class TestMainCLI:
 
 
 class TestStudentCommand:
-    """ the files students need, from the command line """
+    """ the one file students need, from the command line """
 
     YAML = """\
 category:
@@ -122,20 +122,11 @@ note:
                                 str(f_policy), '-q', *extra_list]))
         return tmp_path / 'student'
 
-    def test_one_policy_and_a_csv_each(self, f_scope_std):
+    def test_one_file_and_only_one(self, f_scope_std):
+        """ the whole class gets the same file, so there is one of it """
         out = self._run(f_scope_std)
 
-        assert (out / 'policy_PUBLIC.yaml').exists()
-        assert sorted(p.name for p in (out / 'grades').iterdir()) == \
-            ['anders_alice.csv', 'baker_bob.csv', 'chen_carol.csv']
-
-    def test_each_csv_is_one_student(self, f_scope_std):
-        out = self._run(f_scope_std)
-        text = (out / 'grades' / 'anders_alice.csv').read_text()
-
-        assert 'alice@u.edu' in text
-        assert 'bob' not in text
-        assert len(text.strip().split('\n')) == 2
+        assert [p.name for p in out.iterdir()] == ['policy_PUBLIC.yaml']
 
     def test_the_policy_names_nobody(self, f_scope_std):
         out = self._run(f_scope_std)
@@ -145,29 +136,23 @@ note:
             assert email not in text
         assert 'a private word' not in text
 
-    def test_one_student_on_request(self, f_scope_std):
-        out = self._run(f_scope_std, ['--email', 'carol@u.edu'])
+    def test_the_term_s_work_is_in_it(self, f_scope_std):
+        """ the roster is what a student has to fill in """
+        out = self._run(f_scope_std)
+        text = (out / 'policy_PUBLIC.yaml').read_text()
 
-        assert [p.name for p in (out / 'grades').iterdir()] == \
-            ['chen_carol.csv']
-        # the policy is the class's either way, because it is the class's
-        assert (out / 'policy_PUBLIC.yaml').exists()
-
-    def test_a_student_who_is_not_there(self, f_scope_std):
-        with pytest.raises(SystemExit) as exc_info:
-            self._run(f_scope_std, ['--email', 'nobody@u.edu'])
-
-        assert exc_info.value.code == 2
+        assert 'planned' in text
+        for ass in ('hw1', 'hw2', 'hw3', 'quiz1'):
+            assert ass in text
 
     def test_somewhere_else_on_request(self, f_scope_std):
         f_out = f_scope_std.parent / 'handouts'
         self._run(f_scope_std, ['-o', str(f_out)])
 
         assert (f_out / 'policy_PUBLIC.yaml').exists()
-        assert (f_out / 'grades' / 'anders_alice.csv').exists()
 
-    def test_the_pair_grades_an_unadjusted_student(self, f_scope_std):
-        """ the whole reason the two files travel together
+    def test_it_grades_an_unadjusted_student(self, f_scope_std):
+        """ the whole reason the file is worth posting
 
         Alice is the one this policy singles out for nothing, so the shared
         file is exactly right for her.  Bob has a waiver in it, and would
@@ -175,6 +160,7 @@ note:
         """
         import warnings
 
+        from finalgrade import student
         from finalgrade.policy import Policy
 
         out = self._run(f_scope_std)
@@ -184,9 +170,17 @@ note:
             policy = Policy.from_file(f_scope_std.parent / 'policy.yaml')
             _, df_class = policy(str(f_scope_std))
 
-            mine = Policy.from_file(out / 'policy_PUBLIC.yaml')
-            _, df_mine = mine(str(out / 'grades' / 'anders_alice.csv'))
+            # alice types in what she really got
+            sheet = student.add_scores(
+                student.blank_csv(),
+                {'hw1': 10, 'hw2': 8, 'hw3': 6, 'quiz1': 10},
+                point_dict={'hw1': 10, 'hw2': 10, 'hw3': 10, 'quiz1': 10})
+            f_sheet = f_scope_std.parent / 'mine.csv'
+            f_sheet.write_text(sheet)
 
-        assert list(df_mine.index) == ['alice@u.edu']
-        assert df_mine.at['alice@u.edu', 'mean'] == \
+            mine = Policy.from_file(out / 'policy_PUBLIC.yaml')
+            _, df_mine = mine(str(f_sheet))
+
+        assert list(df_mine.index) == [student.EMAIL_YOU]
+        assert df_mine.at[student.EMAIL_YOU, 'mean'] == \
             df_class.at['alice@u.edu', 'mean']

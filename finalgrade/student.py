@@ -1,16 +1,22 @@
-""" the half of a policy a student may be handed, and their row to grade
+""" the half of a policy a student may be handed, and a sheet to fill in
 
 An instructor's policy.yaml names students: who is waived from what, whose
 late day bank is larger than the class's, and why.  None of that can go to a
 class.  What can is the part that is the same for everyone -- the weights,
-the rules, the thresholds -- plus, for one student, the rows that are about
-them and nobody else.
+the rules, the thresholds, and the list of the term's work with what each
+piece is out of.
 
-Two files make a student's own estimate: that policy, and their own row of
-the export.  Given both, the page grades them with the same code that graded
-the class, so the number they are shown is the number they have.  That is the
-whole reason this is a subset of the instructor's file rather than a second
-description of the same course: a second description can disagree.
+One file makes a student's own estimate: that policy.  Neither gradescope nor
+canvas gives a student a usable export of their own grades, so the student
+types their scores in instead, and the policy is what says which scores there
+are to type.  Every assignment starts with no score, which is nan, which is
+what a waiver is -- so a sheet nobody has filled in yet grades to nothing at
+all, and a grade only ever counts the work its owner has entered.
+
+What they type becomes a csv, and that csv is graded by the code that graded
+the class.  That is the whole reason this is a subset of the instructor's file
+rather than a second description of the same course: a second description can
+disagree.
 
 Nothing here is anyone's grade but the student's own, and nothing crosses
 over that Policy does not model -- the file is rebuilt from a Policy rather
@@ -22,12 +28,12 @@ import io
 
 import pandas as pd
 
-from .assign_list import normalize
+from .assign_list import AssignmentList, normalize
 from .errors import FinalgradeError, PolicyError
 from .gradebook import Gradebook
 from .policy import YAML_KEY_DICT
 
-__all__ = ['policy_text', 'one_row_csv', 'add_scores',
+__all__ = ['policy_text', 'blank_csv', 'add_scores', 'roster_dict',
            'resolve_thresh']
 
 # every section of a policy, sorted by whether it goes to the class.  the
@@ -83,42 +89,52 @@ HEADER = """\
 # ---------------------------------------------------------------------------
 # YOUR GRADE, WORKED OUT BY YOU -- start here
 #
-#   1. get your grades as a csv: the one your instructor sent you, or your
-#      own download from gradescope or canvas
-#   2. go to  https://matthigger.github.io/finalgrade
-#   3. drop this file and that csv on the page, together
+#   1. go to  https://matthigger.github.io/finalgrade
+#   2. drop this file on the page
+#   3. type in your scores
 #
-# the page then works your grade out the same way your instructor's run does,
-# and shows you how: every score, what was late and what it cost, which
-# scores were dropped, and how the categories combined.  you can type a score
-# into work that has not been graded yet to see what it would do.
+# every assignment in the course is listed below, with what it is out of, so
+# the page can lay them all out for you to fill in.  work you leave blank is
+# not counted at all -- so the grade you see is over what you have entered,
+# and typing a score into work not handed back yet shows what it would do.
+#
+# the page works your grade out the same way your instructor's run does, and
+# shows you how: what was late and what it cost, which scores were dropped,
+# and how the categories combined.
 #
 # nothing you do there is sent anywhere -- the page downloads a python
 # interpreter and runs it in the tab, on your computer.  and an estimate is
-# not a grade: only your instructor's run is that.
+# not a grade: only your instructor's run is that.  it is only as good as
+# what you typed, too.
 # ---------------------------------------------------------------------------
 #
+# a blank is not a zero: work with no score entered is left out of the grade
+# entirely, the same as an assignment that was never set.  so if you did not
+# hand something in, type 0 -- leaving it empty makes the estimate better than
+# your grade is.
+#
 # PUBLIC: this file is the same one the whole class has, so it holds only what
-# is true of everybody -- the weights, the score rules, the late rate and the
-# letter cutoffs.  it says nothing about you, and nothing about anybody else.
+# is true of everybody -- the weights, the score rules, the late rate, the
+# letter cutoffs and the list of the work.  it says nothing about you, and
+# nothing about anybody else.
 #
 # so if you were told that something applies to you alone -- an assignment
 # waived, a late penalty forgiven, extra late days -- it is not in here, and
 # your estimate is wrong until you add it.  the page has a control for each of
 # them under "adjustments for you", which is the easy way.  by hand, it looks
-# like this, with your own email address:
+# like this ("you" is how the page names you on your own sheet):
 #
 #   waive:
-#     you@uni.edu: hw3
+#     you: hw3
 #
 #   waive_late:
-#     you@uni.edu: hw5
+#     you: hw5
 #
 # and extra late days go inside the late_penalty block for the category they
 # apply to, alongside excuse_day:
 #
 #       excuse_day_offset:
-#         you@uni.edu: 3
+#         you: 3
 #
 # every setting in this file is documented at
 #   https://github.com/matthigger/finalgrade/blob/main/doc/policy.md
@@ -199,24 +215,73 @@ def resolve_thresh(policy, f_grade):
                                                                f_grade))
 
 
+def roster_dict(f_grade):
+    """ every assignment the export holds, with what it is out of
+
+    The list of the term's work, which is a fact about the course and not
+    about anybody in it.  It goes to the class so that a student who has no
+    export of their own still has something to fill in -- without it the
+    policy names categories and the student has to guess what is in them.
+
+    Read from the export as it arrived rather than from a graded gradebook,
+    so that the exclusions and substitutions the posted policy carries still
+    have the assignments they name to act on.
+
+    Args:
+        f_grade (str): a gradescope or canvas export of the class
+
+    Returns:
+        point_dict (dict): assignment name -> max points
+    """
+    gradebook = Gradebook.from_file(f_grade)
+    return {str(ass): _plainish(points)
+            for ass, points in gradebook.points.items()}
+
+
+def with_roster(policy, f_grade):
+    """ the same policy with the term's work written into assignments/planned
+
+    A planned assignment is one nobody has a score for, which is what every
+    assignment is on a sheet nobody has filled in yet.  So the roster needs
+    no section of its own: the section that already means "this exists, and
+    counts for nobody until a score arrives" is exactly the one it wants.
+
+    An assignment the instructor had already planned keeps their max points;
+    theirs is the deliberate figure, and the export has no column for it to
+    disagree with anyway.
+
+    Args:
+        policy (Policy): the instructor's own policy
+        f_grade (str): the csv the class is graded from
+
+    Returns:
+        policy (Policy): with every assignment of the term planned
+    """
+    plan_dict = dict(roster_dict(f_grade))
+    plan_dict.update(policy.plan_dict)
+    return dataclasses.replace(policy, plan_dict=plan_dict)
+
+
 def policy_text(policy, f_grade=None):
     """ the policy to hand the class, as the text of a yaml file
 
     One file, posted once, holding what is true of everybody: the weights,
-    the score rules, the late rate, the cutoffs.  Every section keyed by a
-    student is left out, whoever they are -- a file that is right for one
-    student is wrong for the other ninety nine, and the file that is right
-    for all of them is the one that mentions none of them.
+    the score rules, the late rate, the cutoffs, and the term's work with
+    what each piece is out of.  Every section keyed by a student is left
+    out, whoever they are -- a file that is right for one student is wrong
+    for the other ninety nine, and the file that is right for all of them is
+    the one that mentions none of them.
 
     A student who was told something applies to them alone adds it
     themselves; the header says how.
 
     Args:
         policy (Policy): the instructor's own policy
-        f_grade (str): the csv the class is graded from.  needed only to
-            resolve exclude_complete_thresh, which cannot be evaluated over
-            one student -- without it a policy using the threshold is
-            refused rather than handed over meaning something else
+        f_grade (str): the csv the class is graded from.  the assignment
+            roster is read from it, and exclude_complete_thresh resolved
+            against it -- the threshold cannot be evaluated over one
+            student, so without the gradebook a policy using it is refused
+            rather than handed over meaning something else
 
     Returns:
         text (str): contents of a policy.yaml
@@ -231,6 +296,9 @@ def policy_text(policy, f_grade=None):
                 'assignment they have not handed in.  the gradebook is '
                 'needed to write down which assignments it excluded')
         policy = resolve_thresh(policy, f_grade)
+
+    if f_grade is not None:
+        policy = with_roster(policy, f_grade)
 
     data = dict()
 
@@ -267,6 +335,43 @@ def _plainish(obj):
     if isinstance(obj, str):
         return str(obj)
     return obj
+
+
+# ---------- the sheet a student fills in ----------
+
+# who the student is, in a gradebook that holds only them.  it lands in
+# their own copy of the policy when they add an adjustment for themselves --
+# waive: {you: hw3} -- so it is a word rather than an address: there is
+# nobody else for it to be confused with, and no real address to guess at
+EMAIL_YOU = 'you'
+
+
+def blank_csv(email=EMAIL_YOU):
+    """ a gradescope export of one student who has handed in nothing
+
+    The sheet a student starts from.  It names them and nothing else: no
+    assignment has a column, so every assignment on the page arrives from
+    the policy's own roster instead, as work planned and unscored.  That is
+    the difference that matters -- a blank cell in an export is a zero
+    somebody did not hand in, while an assignment with no column at all has
+    no score, which is what a waiver is and counts for nobody.
+
+    So an untouched sheet grades to nothing, and each score typed in is the
+    only thing that changes that.
+
+    Args:
+        email (str): how the sheet keys its one student
+
+    Returns:
+        csv_text (str): a gradescope export of one student, no assignments
+    """
+    # no name, so that anything naming the reader falls back to the email and
+    # calls them "you" rather than inventing a student called You Unknown
+    df = pd.DataFrame([{'First Name': '', 'Last Name': '', 'SID': '',
+                        'Email': email, 'Sections': ''}])
+    out = io.StringIO()
+    df.to_csv(out, index=False)
+    return out.getvalue()
 
 
 # ---------- the student's own row of the export ----------
@@ -311,34 +416,6 @@ def _id_col(df):
         'canvas one (no Student / SIS User ID columns)')
 
 
-def one_row_csv(csv_text, email):
-    """ the export cut down to one student, still a csv of the same kind
-
-    What an instructor sends a student so that the student has something to
-    grade.  It is their own row and the header over it -- for canvas, the
-    points possible row as well, without which no assignment has a maximum.
-
-    Args:
-        csv_text (str): a gradescope or canvas export of a whole class
-        email (str): the student to keep
-
-    Returns:
-        csv_text (str): an export of one student
-    """
-    df = _read_frame(csv_text)
-    col, is_point = _id_col(df)
-
-    want = _prefix(email)
-    is_mine = df[col].fillna('').astype(str).map(_prefix) == want
-    if not is_mine.any():
-        raise FinalgradeError(
-            f'{email} is not among the students in that csv')
-
-    out = io.StringIO()
-    df[is_point | is_mine].to_csv(out, index=False)
-    return out.getvalue()
-
-
 # ---------- what if this score were that ----------
 
 def _find_col(df, ass):
@@ -358,21 +435,40 @@ def _add_gradescope_ass(df, ass, points):
     df[ass + ' - Lateness (H:M:S)'] = ''
 
 
-def add_scores(csv_text, score_dict, point_dict=None, email=None):
-    """ the same export with some scores written into it
+def _late_cell(day):
+    """ days late as the H:M:S an export would have written
 
-    How a student asks what a grade would be: a score typed into work that
-    has not been graded yet becomes a score in the csv, and the csv is graded
-    by the code that grades the course.  Nothing about the policy changes, so
-    there is no second way for the arithmetic to come out.
+    Whole days, rather than the inverse of the grace period: a day written
+    here is a day late, and the policy's own grace and excused days then
+    apply to it exactly as they apply to a real submission.  So a category
+    that forgives the first day still forgives it here.
+    """
+    return f'{int(day) * 24}:00:00'
 
-    An assignment with no column yet -- one the policy only plans -- gets the
-    columns an export would have given it, out of point_dict.
+
+def add_scores(csv_text, score_dict, point_dict=None, email=None,
+               day_dict=None):
+    """ the same export with some scores and lateness written into it
+
+    How a student says what they got: a score typed in becomes a score in
+    the csv, and the csv is graded by the code that grades the course.
+    Nothing about the policy changes, so there is no second way for the
+    arithmetic to come out.
+
+    An assignment with no column yet -- one the policy only plans, which on a
+    student's own sheet is all of them -- gets the columns an export would
+    have given it, out of point_dict.
 
     An answer of None is one that has not been given, and is skipped rather
     than written as a blank: a blank score is a zero somebody did not hand
     in, which is not what an unanswered question means.  Taking an answer
     back out is done by asking again without it, from the csv as it came.
+
+    Lateness is its own answer and never inferred from a score.  Saying what
+    a score would have been says nothing about when it was handed in, and
+    dropping the penalty along with it would flatter the estimate -- so days
+    late are only ever the days the student entered.  Days against an
+    assignment with no score are ignored: there is nothing yet to be late.
 
     Args:
         csv_text (str): a gradescope or canvas export
@@ -382,11 +478,12 @@ def add_scores(csv_text, score_dict, point_dict=None, email=None):
             csv has no column for (a policy's `planned` section)
         email (str): whose scores these are.  optional when the csv holds one
             student, which is the case this is written for
+        day_dict (dict): assignment name -> whole days late
 
     Returns:
         csv_text (str): the export, with those scores in it
     """
-    if not score_dict:
+    if not score_dict and not day_dict:
         return csv_text
 
     df = _read_frame(csv_text)
@@ -410,15 +507,24 @@ def add_scores(csv_text, score_dict, point_dict=None, email=None):
         idx = df.index[is_mine][0]
 
     point_dict = point_dict or dict()
-    score_dict = {ass: score for ass, score in score_dict.items()
+    score_dict = {ass: score for ass, score in (score_dict or {}).items()
                   if score is not None and str(score).strip() != ''}
-    if not score_dict:
+    day_dict = {ass: day for ass, day in (day_dict or {}).items()
+                if day is not None and str(day).strip() != ''}
+    if not score_dict and not day_dict:
         return csv_text
 
-    for ass, score in score_dict.items():
+    for ass in list(score_dict) + [a for a in day_dict
+                                   if a not in score_dict]:
         col = _find_col(df, ass)
 
         if col is None:
+            if ass not in score_dict:
+                # days late against work with no score.  there is nothing to
+                # be late on yet, and writing the column to hold the lateness
+                # would invent a zero that was handed in
+                continue
+
             # the policy plans this assignment; the export has never seen it
             points = point_dict.get(ass) or point_dict.get(normalize(ass))
             if not points:
@@ -433,11 +539,18 @@ def add_scores(csv_text, score_dict, point_dict=None, email=None):
                 _add_gradescope_ass(df, ass, points)
                 col = ass
 
-        # the lateness beside it is left exactly as the export had it: what
-        # a score would have been is a question about the score, and
-        # answering it by also forgiving the days it was late would quietly
-        # take a penalty off the estimate
-        df.at[idx, col] = str(score)
+        if ass in score_dict:
+            df.at[idx, col] = str(score_dict[ass])
+
+        if ass in day_dict:
+            col_late = _find_col(df, ass + AssignmentList.LATE)
+            if col_late is None:
+                # a canvas export records no lateness at all, so there is no
+                # column to put it in and no penalty for it to reach
+                raise FinalgradeError(
+                    f'that csv records no lateness for {ass}, so there is '
+                    'nothing for days late to change')
+            df.at[idx, col_late] = _late_cell(day_dict[ass])
 
     out = io.StringIO()
     df.to_csv(out, index=False)

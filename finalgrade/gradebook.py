@@ -175,13 +175,18 @@ def finalize(df_score, points, df_meta, df_late_minutes=None,
         if df_late_minutes is not None:
             df_late_minutes = df_late_minutes.drop(columns=zero_list)
 
-    if not len(points):
+    if not len(points) and zero_list:
         # every mean would be nan, so say so here rather than let a gradebook
         # of nothing propagate.  a canvas course whose only columns are ones
         # this tool uploaded (means, letter grades) lands exactly here
         raise GradebookError(
             'no assignment is worth any points, so there is nothing to '
             'grade (an assignment needs a max points above 0)')
+
+    # a source with no assignment columns at all is a different thing from
+    # one whose columns all fell away: it is a sheet whose work has yet to be
+    # planned, which is what a student starts from.  Policy.prepare raises if
+    # nothing has planned any by the time the grading is done
 
     # every score is a fraction of that assignment's max points
     df_perc = df_score.div(points, axis='columns')

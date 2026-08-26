@@ -47,13 +47,14 @@ save.
   attachment for the email asking why a grade is what it is.
 - **Notes** — free text on a student, stored beside the waiver it explains, so
   the reason outlives the email thread.
-- **A student's own copy** — `policy_PUBLIC.yaml` to post for the class, with
-  every student taken out of it, and their own grades csv. Same page, same
-  code, same answer as your run: how their grade was reached, and what a score
-  on work you haven't graded yet would do to it. Your own file is
-  `policy_PRIVATE.yaml`, because it names students. A student you singled out
-  sets their own waiver or extra late days with the same controls you use. See
-  [doc/student.md](doc/student.md).
+- **A student's own copy** — post one `policy_PUBLIC.yaml` for the class, with
+  every student taken out of it and the term's work written in. A student drops
+  it on the same page and types their own scores; same code, same answer as
+  your run, plus what a score on work you haven't graded yet would do to it.
+  Work left blank counts for nobody, so the sheet is useful in week six. Your
+  own file is `policy_PRIVATE.yaml`, because it names students. A student you
+  singled out sets their own waiver, days late or extra late days with the
+  same controls you use. See [doc/student.md](doc/student.md).
 - **Inspect** — the distribution of any category or assignment, before and
   after your policy, where hovering a bar names the students in it. Not "what
   is the shape of the class" but "who is sitting just under the A− line?"
@@ -117,9 +118,8 @@ Other flags: `-o` output path, `--late_csv` late days per student-assignment,
 `--per_student` a csv each, `--new-policy` a fresh one, `-q` quiet. Run
 `finalgrade grade --help` for the full list.
 
-`student` writes the files students need to work their own grade out on the
-page — one `policy_PUBLIC.yaml` to post for the class, and one csv per
-student to send:
+`student` writes the one file students need to work their own grade out on the
+page — `policy_PUBLIC.yaml`, to post once for the class:
 
     finalgrade student scope.csv --policy policy_PRIVATE.yaml
 

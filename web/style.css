@@ -1226,6 +1226,31 @@ body.solo .solo-only { display: revert; }
 .chip.whatif.is-planned { border-style: dashed; }
 .chip.whatif.is-planned input::placeholder { color: var(--ink-faint); }
 
+/* days late, which on a student's page is a box rather than a reading.  it
+   sits in the same kind of chip as a score so the two rows read alike */
+.chip.late-c.whatif input { width: 2.2rem; }
+
+/* forgiving a penalty is a different act from saying how late it was, so it
+   is its own target rather than the whole chip -- a student typing days into
+   a box that also forgave on a stray click would forgive by accident */
+.chip-forgive {
+  pointer-events: auto;
+  margin-left: .35rem;
+  font: inherit;
+  font-size: .7rem;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  border-bottom: 1px dotted var(--line);
+  padding: 0;
+  cursor: pointer;
+}
+
+.chip-forgive:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 /* where this student's own letter falls, among the cutoffs that placed it */
 .mini.is-mine {
   background: var(--accent-soft);
