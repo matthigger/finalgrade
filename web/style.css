@@ -593,56 +593,7 @@ textarea:focus-visible, button:focus-visible {
 
 .row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .7rem; }
 
-/* One export per line: the button, and what the file it writes is for.  The
-   buttons are the same width as each other so the reasons line up and can be
-   read down the page as a list. */
-#export-row { margin-top: .7rem; }
 
-.export-line {
-  display: flex;
-  align-items: baseline;
-  gap: .7rem;
-  margin-bottom: .5rem;
-}
-
-.export-line button { flex: 0 0 13rem; text-align: center; }
-
-.export-note {
-  font-size: .82rem;
-  color: var(--ink-faint);
-  line-height: 1.45;
-}
-
-/* PUBLIC against PRIVATE.  Posting the wrong one hands a class its
-   classmates' accommodations, so the difference is spelled out rather than
-   left to the filenames. */
-.two-files {
-  margin: 1rem 0 0;
-  padding: .8rem .9rem;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-size: .85rem;
-}
-
-.two-files dt {
-  font-family: var(--mono);
-  font-size: .8rem;
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.two-files dt:not(:first-child) { margin-top: .6rem; }
-
-.two-files dd {
-  margin: .15rem 0 0;
-  color: var(--ink-faint);
-  line-height: 1.5;
-}
-
-@media (max-width: 34rem) {
-  .export-line { flex-direction: column; gap: .2rem; }
-  .export-line button { flex: 0 0 auto; }
-}
 
 button {
   font: inherit;

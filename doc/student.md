@@ -30,7 +30,9 @@ their computer, the same as it does for you.
 
 ## Writing the file
 
-In the browser, under **export**, the **policy_PUBLIC.yaml** button.
+In the browser it is in **your files**, at the top of the page, beside the
+`policy.yaml` it is made from — which is where the choice of which one to hand
+out actually gets made.
 
 On the command line:
 
