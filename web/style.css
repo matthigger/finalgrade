@@ -686,6 +686,13 @@ button.link {
   color: var(--ink-soft);
 }
 
+/* one export's inputs, and only the selected one's are in the page */
+#export-mode { margin-bottom: .9rem; }
+
+.export-pane .row { margin-top: .8rem; }
+
+.export-pane .drop-inline { margin-top: 0; }
+
 /* a gradescope section name is a course, a CRN, a title and a term run
    together, so it is long: let it wrap rather than push its CRN box away */
 .banner-sec {

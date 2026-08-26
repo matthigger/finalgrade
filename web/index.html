@@ -163,29 +163,52 @@
     <p class="hint">Spreadsheets ready to upload, with the ids each
       platform matches on.</p>
 
-    <div class="row" id="export-row"></div>
     <p class="hint" id="export-hint"></p>
 
-    <div id="canvas-drop" class="drop drop-inline">
-      <p id="canvas-drop-msg" class="drop-main">Drop your canvas gradebook
-        here</p>
-      <p class="drop-sub" id="canvas-drop-sub">Grades &rsaquo; Export — canvas
-        matches students by its own SIS user id, which only that file
-        carries.
-        <button type="button" id="canvas-browse" class="link">choose a
-          file</button></p>
-      <input type="file" id="canvas-file" accept=".csv,text/csv" hidden>
+    <div class="seg" id="export-mode" role="group"
+      aria-label="what to export" hidden>
+      <button type="button" data-mode="grades" class="on">grade_full.csv
+      </button>
+      <button type="button" data-mode="canvas">canvas</button>
+      <button type="button" data-mode="banner">banner</button>
     </div>
 
-    <div id="banner-form" hidden>
+    <div id="export-pane-grades" class="export-pane" hidden>
+      <div class="row">
+        <button type="button" id="dl-grades">download grade_full.csv</button>
+      </div>
+      <p class="hint">Every column this page computed — the mean, the letter,
+        each category and what it was worth. The file to keep, and the one
+        the command line reads back.</p>
+    </div>
+
+    <div id="export-pane-canvas" class="export-pane" hidden>
+      <div id="canvas-drop" class="drop drop-inline">
+        <p id="canvas-drop-msg" class="drop-main">Drop your canvas gradebook
+          here</p>
+        <p class="drop-sub" id="canvas-drop-sub">Grades &rsaquo; Export —
+          canvas matches students by its own SIS user id, which only that
+          file carries.
+          <button type="button" id="canvas-browse" class="link">choose a
+            file</button></p>
+        <input type="file" id="canvas-file" accept=".csv,text/csv" hidden>
+      </div>
+      <div class="row">
+        <button type="button" id="dl-canvas">export for canvas</button>
+      </div>
+      <p class="hint" id="canvas-hint"></p>
+    </div>
+
+    <div id="export-pane-banner" class="export-pane" hidden>
       <div class="field">
         <label class="f" for="term-code">term code</label>
         <input type="text" id="term-code" placeholder="202310" size="8"
           inputmode="numeric">
-        <button type="button" id="banner-go" class="small">build the
-          xlsx</button>
       </div>
       <div id="banner-crn"></div>
+      <div class="row">
+        <button type="button" id="banner-go">build the xlsx</button>
+      </div>
       <p class="hint" id="banner-note">Banner matches a row only when its
         CRN, term code and 9&#8209;digit student id all line up.</p>
     </div>

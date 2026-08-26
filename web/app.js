@@ -49,6 +49,8 @@ const state = {
   assList: [],
   studentList: [],
   catHintList: [],
+  // which export the panel is showing the inputs for
+  exportMode: 'grades',
   // the sections this gradebook names, which the banner form asks a CRN for
   sectionList: [],
   // the sections the banner form was last built for, so a redraw leaves the
@@ -1607,13 +1609,13 @@ function drawCanvasDrop() {
 function takeCanvasFile(file) {
   readText(file)
     .then((text) => setCanvasTemplate(file.name, text))
-    .catch((err) => ($('export-hint').textContent = err.message));
+    .catch((err) => ($('canvas-hint').textContent = err.message));
 }
 
 function setCanvasTemplate(name, text) {
   const info = toJs(state.api.load_csv(text, name));
   if (!info.ok || info.source !== 'canvas') {
-    $('export-hint').textContent = info.ok
+    $('canvas-hint').textContent = info.ok
       ? `${name} is not a canvas gradebook export — it has no SIS user id ` +
         'column to match students by.'
       : info.error;
@@ -1626,48 +1628,49 @@ function setCanvasTemplate(name, text) {
   drawExport();
 }
 
+/* Each export wants different things of you -- a canvas gradebook to merge
+ * into, a term code and CRNs, or nothing at all -- and three sets of inputs
+ * on screen at once left it unclear which belonged to which.  So: pick the
+ * one you are doing, and see only what it asks for. */
+const EXPORT_MODE_TUP = ['grades', 'canvas', 'banner'];
+
 function drawExport() {
   drawCanvasDrop();
 
-  if (!state.grades) {
-    $('export-row').innerHTML = '';
+  const ready = !!state.grades;
+  $('export-mode').hidden = !ready;
+  EXPORT_MODE_TUP.forEach((mode) =>
+    ($(`export-pane-${mode}`).hidden = true));
+
+  if (!ready) {
+    $('export-hint').hidden = false;
     $('export-hint').textContent =
       'Exports appear once the policy grades cleanly.';
-    $('banner-form').hidden = true;
     return;
   }
+  $('export-hint').hidden = true;
 
+  Array.from($('export-mode').children).forEach((el) =>
+    el.classList.toggle('on', el.dataset.mode === state.exportMode));
+  $(`export-pane-${state.exportMode}`).hidden = false;
+
+  // the canvas tab stays reachable with no template set -- the drop zone
+  // that sets one lives inside it.  the export button is what waits
   const canCanvas = !!state.canvasText;
-  $('export-row').innerHTML =
-    '<button type="button" id="dl-grades">download grade_full.csv</button>' +
-    `<button type="button" id="dl-canvas" class="${canCanvas ? '' : 'secondary'}"
-      ${canCanvas ? '' : 'disabled'}>export for canvas</button>` +
-    '<button type="button" id="dl-banner">export for banner…</button>';
-
-  $('export-hint').textContent = canCanvas
+  $('dl-canvas').disabled = !canCanvas;
+  $('dl-canvas').classList.toggle('secondary', !canCanvas);
+  $('canvas-hint').textContent = canCanvas
     ? 'The canvas export merges these grades into your canvas gradebook by ' +
       'SIS user id, scaled to 100 so canvas does not round them.'
-    : 'Set a canvas template below to enable the canvas export.';
-
-  $('dl-grades').addEventListener('click', () =>
-    download(state.grades.csv, 'grade_full.csv', 'text/csv'));
-
-  if (canCanvas) {
-    $('dl-canvas').addEventListener('click', () => {
-      const res = toJs(state.api.canvas_export(
-        state.csv, state.yaml, state.canvasText, state.name, true));
-      if (!res.ok) return ($('export-hint').textContent = res.error);
-      download(res.csv, stamped('canvas_upload', 'csv'), 'text/csv');
-    });
-  }
+    : 'Drop the gradebook canvas exported to enable this.';
 
   drawBannerCrn();
+}
 
-  $('dl-banner').addEventListener('click', () => {
-    const form = $('banner-form');
-    form.hidden = !form.hidden;
-    if (!form.hidden) $('term-code').focus();
-  });
+function setExportMode(mode) {
+  state.exportMode = mode;
+  drawExport();
+  if (mode === 'banner') $('term-code').focus();
 }
 
 /* A CRN names one section, and the gradebook already knows which sections it
@@ -2316,8 +2319,25 @@ $('canvas-file').addEventListener('change', (e) => {
   e.target.value = '';
 });
 
+/* the panes are in the page rather than rendered into it, so each of these
+ * is wired once -- and a CRN typed into one survives every redraw */
+$('export-mode').addEventListener('click', (e) => {
+  const mode = e.target.dataset && e.target.dataset.mode;
+  if (mode) setExportMode(mode);
+});
+
+$('dl-grades').addEventListener('click', () =>
+  download(state.grades.csv, 'grade_full.csv', 'text/csv'));
+
+$('dl-canvas').addEventListener('click', () => {
+  const res = toJs(state.api.canvas_export(
+    state.csv, state.yaml, state.canvasText, state.name, true));
+  if (!res.ok) return ($('canvas-hint').textContent = res.error);
+  download(res.csv, stamped('canvas_upload', 'csv'), 'text/csv');
+});
+
 $('banner-go').addEventListener('click', runBanner);
-$('banner-form').addEventListener('keydown', (e) => {
+$('export-pane-banner').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') runBanner();
 });
 
