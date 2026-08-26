@@ -30,6 +30,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install build
 
+      # a broken app.js deploys as a page that spins forever, so it is
+      # checked before it can go out rather than after
+      - name: app.js parses
+        run: node --check web/app.js
+
       # the site is the page plus a wheel of this commit, so the browser
       # always runs the same code the tests just ran
       - name: build site
