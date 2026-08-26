@@ -505,6 +505,61 @@ def filled_sheet(yaml_text, score_dict, day_dict=None):
     return res['csv']
 
 
+def _banner_frame(res):
+    """ the workbook the page hands back, as a frame """
+    import base64
+    import io
+
+    import pandas as pd
+
+    return pd.read_excel(io.BytesIO(base64.b64decode(res['xlsx_b64'])))
+
+
+class TestBannerExport:
+    """ the columns banner reads, in the order it is handed them """
+
+    HEADER_TUP = ('Term Code', 'CRN', 'Student ID', 'Final Grade')
+
+    def crn_dict(self, csv_text):
+        """ one CRN per section, the way the page's boxes send them """
+        sec_list = web.load_csv(csv_text)['section_list']
+        return {sec: str(12340 + i) for i, sec in enumerate(sec_list)}
+
+    def test_trimmed_is_exactly_the_four_columns(self, csv_text):
+        res = web.banner_export(csv_text, YAML_STD, '202310',
+                                json.dumps(self.crn_dict(csv_text)))
+
+        assert res['ok'], res.get('error')
+        assert tuple(_banner_frame(res).columns) == self.HEADER_TUP
+
+    def test_one_crn_column_whatever_the_sections(self, csv_text):
+        """ a CRN per section is what makes it one column and one import """
+        crn = self.crn_dict(csv_text)
+        res = web.banner_export(csv_text, YAML_STD, '202310',
+                                json.dumps(crn))
+        df = _banner_frame(res)
+
+        assert set(df['CRN'].astype(str)) <= set(crn.values())
+
+    def test_untrimmed_keeps_the_grades_and_the_same_lead(self, csv_text):
+        res = web.banner_export(csv_text, YAML_STD, '202310',
+                                json.dumps(self.crn_dict(csv_text)),
+                                'scope.csv', False)
+        df = _banner_frame(res)
+
+        assert tuple(df.columns)[:3] == self.HEADER_TUP[:3]
+        assert 'mean' in df.columns
+        assert 'hw1' in df.columns
+
+    def test_the_final_grade_is_the_letter(self, csv_text):
+        res = web.banner_export(csv_text, YAML_STD, '202310',
+                                json.dumps(self.crn_dict(csv_text)))
+        letter_list = [s['letter']
+                       for s in web.grade(csv_text, YAML_STD)['student_list']]
+
+        assert sorted(_banner_frame(res)['Final Grade']) == sorted(letter_list)
+
+
 class TestStudentSheet:
     """ the blank sheet a posted policy is enough to fill in """
 

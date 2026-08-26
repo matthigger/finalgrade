@@ -21,6 +21,7 @@ import pandas as pd
 from . import edit
 from .audit import (build_log, count_frame_dict, counted_set, late_detail,
                     student_frame)
+from .banner import section_list
 from .check import build_report, render
 from .policy import F_POLICY_DEFAULT, NAME_PUBLIC, Policy
 from .errors import FinalgradeError
@@ -129,6 +130,9 @@ def load_csv(csv_text, name='scope.csv'):
             n_student=len(gradebook.df_perc),
             cat_hint_list=list(gradebook.cat_hint_list),
             zero_point_list=list(gradebook.zero_point_list),
+            # the sections this export names, so the banner form can ask for
+            # a CRN per section rather than have them typed out
+            section_list=section_list(gradebook.df_meta),
             ass_list=[dict(name=ass,
                            points=float(gradebook.points[ass]),
                            n_complete=int(complete[ass]),
@@ -450,7 +454,7 @@ def _student_stem(row, email):
 
 
 def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
-                  name='scope.csv'):
+                  name='scope.csv', letter_only=True):
     """ the grades as a banner-ready xlsx, base64 encoded
 
     Banner matches on CRN, term code and a 9 digit student id together, so
@@ -463,15 +467,16 @@ def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
         csv_text (str): the grade source
         yaml_text (str): contents of a policy.yaml
         term_code (str): banner's 6 digit term, e.g. '202310'
-        crn_json (str): json list of 5 digit CRNs
+        crn_json (str): the CRNs, either as a json object keyed by section
+            (one CRN per row, every section in one import) or as a json list
+            (every CRN on every row, one import per section)
         name (str): the source csv's filename
+        letter_only (bool): write only the columns banner reads
 
     Returns:
         result (dict): ok, and the workbook as base64
     """
     import base64
-
-    from .banner import to_banner, to_xlsx_bytes
 
     result = grade(csv_text, yaml_text, name)
     if not result['ok']:
@@ -485,11 +490,20 @@ def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
     df_grade = pd.read_csv(io.StringIO(result['csv']), dtype={'sid': str})
 
     try:
-        df_out = to_banner(df_grade, term_code=str(term_code).strip(),
-                           crn_list=json.loads(crn_json or '[]'))
-        data = to_xlsx_bytes(df_out)
+        crn = json.loads(crn_json or '[]')
+        # a mapping is the new shape and a list the old one.  which the page
+        # sends depends only on whether the gradebook names sections, so
+        # both have to keep working
+        kwarg_dict = ({'crn_dict': crn} if isinstance(crn, dict)
+                      else {'crn_list': crn})
+
+        (df_out, data), warn_list = _warn_list(
+            lambda: _banner_bytes(df_grade, str(term_code).strip(),
+                                  letter_only, **kwarg_dict))
     except KeyError as e:
         return dict(ok=False, warn_list=[], error=str(e).strip('"'))
+    except FinalgradeError as e:
+        return dict(ok=False, warn_list=[], error=str(e))
     except ImportError:
         return dict(ok=False, warn_list=[],
                     error='the excel writer did not load, so no xlsx can be '
@@ -498,9 +512,18 @@ def banner_export(csv_text, yaml_text, term_code, crn_json='[]',
         return dict(ok=False, warn_list=[],
                     error=f'could not build the banner workbook: {e}')
 
-    return dict(ok=True, error=None, warn_list=[],
+    return dict(ok=True, error=None, warn_list=warn_list,
                 xlsx_b64=base64.b64encode(data).decode('ascii'),
                 n_row=len(df_out))
+
+
+def _banner_bytes(df_grade, term_code, letter_only, **kwarg_dict):
+    """ the banner frame and its workbook, as one call for _warn_list """
+    from .banner import to_banner, to_xlsx_bytes
+
+    df_out = to_banner(df_grade, term_code=term_code,
+                       letter_only=letter_only, **kwarg_dict)
+    return df_out, to_xlsx_bytes(df_out)
 
 
 def _grade_twice(policy, f_csv):
