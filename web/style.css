@@ -215,10 +215,9 @@ h2 .sub {
 .drop-main { margin: 0; font-size: 1.5rem; font-weight: 600; }
 .drop-sub { margin: .5rem 0 0; color: var(--ink-soft); font-size: .92rem; }
 
-/* the student example, a step quieter than the two instructor ones: most
-   people opening this page are grading a class, and the one who is not has
-   a file of their own to drop rather than an example to look at */
-.sub-small { font-size: .82rem; color: var(--ink-faint); margin-top: .25rem; }
+/* the three ways in, one per line and all in the same voice: which of them
+   applies to a reader depends on who they are, not on how loud it is */
+.drop-sub + .drop-sub { margin-top: .25rem; }
 
 /* where a gradebook export comes from.  left aligned even though the box is
    centred: these are paths to follow, and a centred path is hard to scan */
@@ -1225,9 +1224,7 @@ code {
    second chance to disagree about what a policy means.  Everything that
    edits the policy goes; what is left reads. */
 
-.solo-only { display: none; }
 body.solo .instructor-only { display: none; }
-body.solo .solo-only { display: revert; }
 
 /* a score, as a box holding what it is.  the same chip as everywhere else,
    with room for an answer in it */
