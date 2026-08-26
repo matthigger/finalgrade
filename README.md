@@ -47,11 +47,12 @@ save.
   attachment for the email asking why a grade is what it is.
 - **Notes** — free text on a student, stored beside the waiver it explains, so
   the reason outlives the email thread.
-- **A student's own copy** — one policy to post for the class, with every
-  student taken out of it, and their own grades csv. Same page, same code,
-  same answer as your run: how their grade was reached, and what a score on
-  work you haven't graded yet would do to it. A student you singled out adds
-  their own waiver or extra late days on the page. See
+- **A student's own copy** — `policy_PUBLIC.yaml` to post for the class, with
+  every student taken out of it, and their own grades csv. Same page, same
+  code, same answer as your run: how their grade was reached, and what a score
+  on work you haven't graded yet would do to it. Your own file is
+  `policy_PRIVATE.yaml`, because it names students. A student you singled out
+  sets their own waiver or extra late days with the same controls you use. See
   [doc/student.md](doc/student.md).
 - **Inspect** — the distribution of any category or assignment, before and
   after your policy, where hovering a bar names the students in it. Not "what
@@ -72,14 +73,17 @@ The same code, same policy file, same results.
     pip install finalgrade
 
 ```bash
-finalgrade grade scope.csv                        # grades, and seeds a policy.yaml
-$EDITOR policy.yaml                               # weights, score rules, late
-finalgrade check scope.csv --policy policy.yaml   # what will that policy do?
-finalgrade grade scope.csv --policy policy.yaml   # grade with it
+finalgrade grade scope.csv                        # grades, seeds a policy
+$EDITOR policy_PRIVATE.yaml                       # weights, score rules, late
+finalgrade check scope.csv --policy policy_PRIVATE.yaml   # what will it do?
+finalgrade grade scope.csv --policy policy_PRIVATE.yaml   # grade with it
 ```
 
-The seeded `policy.yaml` lists your assignments by the names a policy has to
-use and suggests a category split, commented out. Editing it is the middle
+The seeded `policy_PRIVATE.yaml` lists your assignments by the names a policy
+has to use and suggests a category split, commented out. PRIVATE because it
+names students — `finalgrade student` writes the public half of it, for the
+class. An existing `policy.yaml` from an earlier version is still found and
+used. Editing it is the middle
 step — until you do, every assignment counts in proportion to its own points.
 
 `check` answers "what will this do?" without computing any grades, reports
@@ -114,10 +118,10 @@ Other flags: `-o` output path, `--late_csv` late days per student-assignment,
 `finalgrade grade --help` for the full list.
 
 `student` writes the files students need to work their own grade out on the
-page — one `policy_student.yaml` to post for the class, and one csv per
+page — one `policy_PUBLIC.yaml` to post for the class, and one csv per
 student to send:
 
-    finalgrade student scope.csv --policy policy.yaml
+    finalgrade student scope.csv --policy policy_PRIVATE.yaml
 
 beside the csv. See [doc/student.md](doc/student.md).
 

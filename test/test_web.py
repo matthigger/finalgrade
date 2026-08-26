@@ -444,7 +444,7 @@ class TestStudentPolicy:
         res = web.student_policy(csv_text, YAML_STUDENT)
 
         assert res['ok'], res.get('error')
-        assert res['filename'] == 'policy_student.yaml'
+        assert res['filename'] == 'policy_PUBLIC.yaml'
         for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
             assert email not in res['yaml']
 
@@ -500,11 +500,11 @@ class TestStudentPack:
         assert res['n_student'] == 3
         assert sorted(unzip(res)) == [
             'grades/anders_alice.csv', 'grades/baker_bob.csv',
-            'grades/chen_carol.csv', 'policy_student.yaml']
+            'grades/chen_carol.csv', 'policy_PUBLIC.yaml']
 
     def test_the_policy_names_nobody(self, csv_text):
         text = unzip(web.student_pack(csv_text,
-                                      YAML_STUDENT))['policy_student.yaml']
+                                      YAML_STUDENT))['policy_PUBLIC.yaml']
 
         for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
             assert email not in text
@@ -521,7 +521,7 @@ class TestStudentPack:
         """ the two files the page asks for, for a student singled out for
         nothing -- YAML_PLAIN adjusts nobody, so that is all three """
         file_dict = unzip(web.student_pack(csv_text, YAML_PLAIN))
-        policy = file_dict['policy_student.yaml']
+        policy = file_dict['policy_PUBLIC.yaml']
         was = {s['email']: s['mean']
                for s in web.grade(csv_text, YAML_PLAIN)['student_list']}
 

@@ -84,7 +84,8 @@ class TestMainCLI:
         # no policy.yaml copied — should be auto-created
         args = parser.parse_args(['grade', str(f_scope), '-q'])
         main(args)
-        assert (tmp_path / 'policy.yaml').exists()
+        # PRIVATE: it names students, so the name says not to hand it out
+        assert (tmp_path / 'policy_PRIVATE.yaml').exists()
         assert (tmp_path / 'grade_full.csv').exists()
 
     def test_new_config_flag(self, tmp_path):
@@ -124,7 +125,7 @@ note:
     def test_one_policy_and_a_csv_each(self, f_scope_std):
         out = self._run(f_scope_std)
 
-        assert (out / 'policy_student.yaml').exists()
+        assert (out / 'policy_PUBLIC.yaml').exists()
         assert sorted(p.name for p in (out / 'grades').iterdir()) == \
             ['anders_alice.csv', 'baker_bob.csv', 'chen_carol.csv']
 
@@ -138,7 +139,7 @@ note:
 
     def test_the_policy_names_nobody(self, f_scope_std):
         out = self._run(f_scope_std)
-        text = (out / 'policy_student.yaml').read_text()
+        text = (out / 'policy_PUBLIC.yaml').read_text()
 
         for email in ('alice@u.edu', 'bob@u.edu', 'carol@u.edu'):
             assert email not in text
@@ -150,7 +151,7 @@ note:
         assert [p.name for p in (out / 'grades').iterdir()] == \
             ['chen_carol.csv']
         # the policy is the class's either way, because it is the class's
-        assert (out / 'policy_student.yaml').exists()
+        assert (out / 'policy_PUBLIC.yaml').exists()
 
     def test_a_student_who_is_not_there(self, f_scope_std):
         with pytest.raises(SystemExit) as exc_info:
@@ -162,7 +163,7 @@ note:
         f_out = f_scope_std.parent / 'handouts'
         self._run(f_scope_std, ['-o', str(f_out)])
 
-        assert (f_out / 'policy_student.yaml').exists()
+        assert (f_out / 'policy_PUBLIC.yaml').exists()
         assert (f_out / 'grades' / 'anders_alice.csv').exists()
 
     def test_the_pair_grades_an_unadjusted_student(self, f_scope_std):
@@ -183,7 +184,7 @@ note:
             policy = Policy.from_file(f_scope_std.parent / 'policy.yaml')
             _, df_class = policy(str(f_scope_std))
 
-            mine = Policy.from_file(out / 'policy_student.yaml')
+            mine = Policy.from_file(out / 'policy_PUBLIC.yaml')
             _, df_mine = mine(str(out / 'grades' / 'anders_alice.csv'))
 
         assert list(df_mine.index) == ['alice@u.edu']

@@ -229,6 +229,7 @@ def cmd_student(args):
     _setup_logging(args.quiet)
 
     from . import student as student_mod
+    from .policy import NAME_PUBLIC
     from .web import _stem_dict
 
     folder = pathlib.Path(args.f_scope).resolve().parent
@@ -254,7 +255,7 @@ def cmd_student(args):
     # one policy for the class.  the completion threshold is asked about once
     # here rather than once per student: it costs two runs over the whole
     # gradebook, and there is one answer to it
-    f_policy = out_folder / 'policy_student.yaml'
+    f_policy = out_folder / NAME_PUBLIC
     f_policy.write_text(student_mod.policy_text(
         student_mod.resolve_thresh(policy, args.f_scope)))
 
@@ -267,8 +268,8 @@ def cmd_student(args):
 
     logger.info(
         f'wrote {f_policy}\n'
-        f'  post this once: it is your policy with every student taken out '
-        f'of it, so it is the same file for the whole class\n'
+        f'  PUBLIC: your policy with every student taken out of it, so it is '
+        f'the same file for the whole class.  post it once\n'
         f'wrote {len(df_grade_full)} csv(s) to {grade_folder}\n'
         f'  one student\'s scores each, which is the half that cannot be '
         f'posted.  with both files a student can work their own grade out on '

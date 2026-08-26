@@ -246,9 +246,12 @@ true of everybody. Nor `note` (it moves no grade) or `email_list` (a roster).
 `exclude_complete_thresh` is resolved into the exclusions it actually came
 to, because a completion rate over a class of one is 100% or 0%.
 
-A student you singled out adds their own line: on the page, where their own
-waivers and late days are controls, or by hand -- the posted file's header
-shows the three sections and how to write them.
+A student you singled out adds their own line: on the page, with the same
+click-to-waive and drag-to-take-the-best controls you use, or by hand -- the
+posted file's header shows the sections and how to write them.
+
+The two files are named for which is which: `policy_PRIVATE.yaml` is yours
+and names students, `policy_PUBLIC.yaml` is the one to post.
 
 See [student.md](student.md) for how to write those files and what is in
 them.
