@@ -98,6 +98,69 @@ class TestPlanned:
         assert not hw9['submitted']
 
 
+class TestPlannedMeansTheGradebookLackedIt:
+    """ planned is a fact about the gradebook, not about the policy naming it
+
+    A policy may plan work the export already has -- the posted student
+    policy carries the whole term's roster, and dropping a real gradebook
+    beside it is a normal thing to do.  Read off the policy, every assignment
+    in the course then reads "not set" while holding real scores.
+    """
+
+    ROSTER_YAML = """\
+category:
+  weight:
+    hw: 100
+    quiz: 100
+assignments:
+  planned:
+    hw1: 10
+    hw2: 10
+    hw3: 10
+    quiz1: 10
+"""
+
+    def test_a_planned_assignment_the_export_has_is_not_planned(
+            self, f_scope_std):
+        """ the real thing arrived, so it outranks the plan for it """
+        res = web.grade(f_scope_std.read_text(), self.ROSTER_YAML)
+
+        assert res['ok'], res.get('error')
+        planned = [r['assignment'] for r in res['row_list'] if r['planned']]
+        assert planned == []
+
+    def test_nor_on_a_student_s_own_scores(self, f_scope_std):
+        res = web.grade(f_scope_std.read_text(), self.ROSTER_YAML)
+        row = res['student_list'][0]
+
+        assert [a['name'] for a in row['ass_list'] if a['planned']] == []
+
+    def test_work_the_export_lacks_is_still_planned(self, f_scope_std):
+        """ the other half: a plan for work nobody has set still says so """
+        yaml_text = self.ROSTER_YAML + '    hw9: 10\n'
+        res = web.grade(f_scope_std.read_text(), yaml_text)
+
+        assert res['ok'], res.get('error')
+        planned = [r['assignment'] for r in res['row_list'] if r['planned']]
+        assert planned == ['hw9']
+
+    def test_the_gradebook_records_what_it_planted(self, f_scope_std,
+                                                   write_policy):
+        """ where the answer now comes from: the gradebook, not the policy """
+        import warnings
+
+        policy = Policy.from_file(
+            write_policy(self.ROSTER_YAML + '    hw9: 10\n', 'roster.yaml'))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            gradebook, _ = policy(str(f_scope_std))
+
+        # four of the five were already in the export; only hw9 was planted
+        assert sorted(gradebook.planned_list) == ['hw9']
+        assert 'hw9' in gradebook.ass_list
+
+
 class TestSubmittedVersusZero:
     def test_a_blank_is_not_a_submission(self, tmp_path):
         from conftest import write_scope

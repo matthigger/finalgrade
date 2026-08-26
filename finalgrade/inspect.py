@@ -101,7 +101,7 @@ def build_table(gradebook, policy):
             row_list.append(_row(gradebook, ass, cat, points, in_cat,
                                  None if in_cat is None else in_cat * cat_frac,
                                  n_student,
-                                 planned=ass in policy.plan_dict,
+                                 planned=ass in gradebook.planned_list,
                                  extra=ass in extra_set))
 
     # an assignment no category caught still has to appear, or the table
@@ -111,7 +111,7 @@ def build_table(gradebook, policy):
             row_list.append(_row(gradebook, ass, None,
                                  float(gradebook.points[ass]), None, 0.,
                                  n_student,
-                                 planned=ass in policy.plan_dict,
+                                 planned=ass in gradebook.planned_list,
                                  extra=ass in extra_set))
 
     return row_list

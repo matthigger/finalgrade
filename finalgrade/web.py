@@ -624,7 +624,7 @@ def _student_ass_list(gradebook, policy, email, row, day_dict,
             waived=ass in waived,
             late_days=float(day_dict.get(ass, 0) or 0),
             late_waived=ass in late_waived,
-            planned=ass in policy.plan_dict and not submitted,
+            planned=ass in gradebook.planned_list,
             points=float(gradebook.points[ass])))
     return out_list
 

@@ -324,6 +324,11 @@ class Gradebook:
         self.df_meta = part_dict['df_meta']
         self.has_lateness = part_dict['has_lateness']
         self.zero_point_list = part_dict.get('zero_point_list', [])
+        # assignments this gradebook holds only because a policy planned
+        # them, so nobody has a score.  recorded by add_planned rather than
+        # read back off the policy: a policy naming an assignment says
+        # nothing about whether the export had it
+        self.planned_list = list(part_dict.get('planned_list', []))
         self.df_submit = part_dict.get('df_submit')
         self.cat_hint_list = part_dict.get('cat_hint_list', [])
 
@@ -427,9 +432,12 @@ class Gradebook:
         """
         for ass, points in plan_dict.items():
             if ass in self.df_perc.columns:
-                # the real thing arrived; it outranks the plan for it
+                # the real thing arrived; it outranks the plan for it, and it
+                # is not planned work any more -- which is the distinction
+                # the list below exists to keep
                 continue
 
+            self.planned_list.append(ass)
             self.df_perc[ass] = np.nan
             self.df_late_minutes[ass] = np.nan
             self.points[ass] = float(points)
