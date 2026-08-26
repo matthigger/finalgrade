@@ -123,22 +123,22 @@ this way is one the command line reads too.
 
 ## Keeping a term's worth of typing
 
-Nothing is kept between visits, so the page offers a student two files and
-they are not interchangeable:
+Nothing is kept between visits, so a student's page offers them one file:
+**`you.csv`**, their scores. It is a gradebook of one student, so dropping it
+back in alongside the policy is read as their own grade and their typing comes
+back with it.
 
-- **`you.csv`** — their scores. It is a gradebook of one student, so dropping
-  it back in alongside the policy is read as their own grade and their typing
-  comes back with it. This is the one to save.
-- **`your_grade_explained.csv`** — the breakdown behind the number: every
-  category mean, what was late and what it cost, what was waived. It explains
-  a grade rather than recording the scores behind one, so it cannot be read
-  back in. Upload it by mistake and the page says which file was wanted.
+The per-student breakdown — every category mean, what was late and what it
+cost, what was waived — is yours rather than theirs. It explains what is
+already on the screen in front of them, and it records no scores, so it cannot
+be read back in; uploading one by mistake gets a message saying which file was
+wanted.
 
 Their adjustments live in the policy rather than the sheet, so a student who
 added a waiver saves the `policy.yaml` too.
 
-An **adjustments for you** block lists everything the estimate is assuming
-about them in particular. It is worth showing even when it is empty — an
+An **adjustments** block lists everything the estimate is assuming about them
+in particular. It is worth showing even when it is empty — an
 empty list is the fact that nothing special is being assumed, and a student
 who expected an entry in it has just learned something worth an email.
 
@@ -178,5 +178,7 @@ this is a thing you can do for a course where it helps, and not do for one
 where it doesn't, which is roughly where a judgement call of this kind
 belongs.
 
-The page says, next to the number, that an estimate is not a grade — and that
-it is only as good as what was typed.
+The student's page carries no disclaimer next to the number. It is a page
+that adds up the scores it was given, and it says so where the scores are
+entered; the caveat that an estimate is not a grade belongs in the sentence
+you post the file with, where a student will read it.

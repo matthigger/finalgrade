@@ -58,8 +58,10 @@ const state = {
   meanSeen: {},
   // which folds the reader has opened, by data-fold key.  an edit redraws
   // the markup they live in, and a log that shuts itself the moment you
-  // change the thing it explains is a log you cannot read while working
-  fold: {},
+  // change the thing it explains is a log you cannot read while working.
+  // the computation log starts open: how a grade was reached is the question
+  // the grade provokes, so it is not something to go looking for
+  fold: { audit: true },
   view: 'total',
   mode: 'final',
   seq: 0,
@@ -84,28 +86,16 @@ const state = {
   csvGraded: null,
 };
 
-/* What a student is told they are looking at.  Every number on the page is
- * arrived at by the code that produced their real grade -- which is the
- * point of it -- and that is exactly what makes saying so necessary. */
-const SOLO_HINT = 'Your own scores, worked out by your course\'s grading ' +
-  'policy — the same code that produces your real grade. Work you leave ' +
-  'blank is not counted at all, so this is a grade over what you have ' +
-  'entered; type 0 for anything you did not hand in. An estimate is not a ' +
-  'grade, and it is only as good as what you typed. Nothing is kept between ' +
-  'visits, so save you.csv from the files at the top of the page — dropping ' +
-  'it back in next time brings your scores with it.';
-
 const NEED_POLICY = 'This is one student\'s row, so it is being read as ' +
   'your own grade. It needs the policy.yaml your instructor gave you as ' +
   'well — without it there is no course policy to apply, and the default ' +
   'one is not yours.';
 
-/* What a student's own two files are called.  The sheet is the one that can
- * be read back -- it is a gradebook of one student -- so it takes the plain
- * name, and the breakdown says in its own that it explains rather than
- * records.  Sharing a name is how a reader comes to upload the wrong one. */
+/* What a student's sheet is called.  It is a gradebook of one student, so
+ * dropping it back in is read as their own grade -- which is why it is the
+ * only file the student's page offers, and why it keeps a name they will
+ * recognise when they come to look for it. */
 const SHEET_NAME = 'you.csv';
-const BREAKDOWN_NAME = 'your_grade_explained.csv';
 
 /* ------------------------------------------------------------------ boot */
 
@@ -345,8 +335,8 @@ function useCsv(name, text, opt) {
   // the headings back, or the page keeps calling a course "your grade"
   if (state.solo) {
     $('stud-h2').firstChild.nodeValue = 'your grade ';
-    $('stud-sub').textContent = 'and what would move it';
-    $('solo-hint').textContent = SOLO_HINT;
+    $('stud-sub').textContent =
+      'Enter your assignment grades to compute your final grade';
   } else {
     $('stud-h2').firstChild.nodeValue = 'students ';
     $('stud-sub').textContent = 'grades, waivers, accommodations';
@@ -1005,8 +995,8 @@ function drawStudent(form) {
         }</span>
         <span class="stud-email">${escapeHtml(stud.email)}</span>
         ${graded ? `<button type="button" class="link stud-file"
-          id="stud-csv">${state.solo ? 'how this grade was reached'
-    : escapeHtml(studentFile(stud))}</button>` : ''}
+          id="stud-csv">${escapeHtml(
+    state.solo ? SHEET_NAME : studentFile(stud))}</button>` : ''}
         ${graded
           ? `<span class="stud-grade">${delta(stud, graded)}${pct(graded.mean)}
               <span class="stud-letter">${escapeHtml(graded.letter)}</span>
@@ -1094,11 +1084,10 @@ function whatIfGrid(graded, stud) {
     + Object.keys(state.whatIfDay).length;
 
   return `<div class="waive-row block">
-    <span class="field-k">your scores <span class="sub">type in what you
-      got — anything left blank is not counted. click one to waive it, drag
-      one onto another to take the best of both${n
-    ? ' — <button type="button" class="link" id="whatif-clear">clear all '
-      + `${n} you have entered</button>` : ''}</span></span>
+    <span class="field-k">your scores${n
+    ? ' <span class="sub"><button type="button" class="link" '
+      + `id="whatif-clear">clear all ${n} you have entered</button></span>`
+    : ''}</span>
     <div class="grid">${block}${maxGroup(stud)}</div>
   </div>`;
 }
@@ -1174,10 +1163,7 @@ function adjustBlock(form, stud) {
   ].join('');
 
   return `<div class="waive-row block adjust">
-    <span class="field-k">adjustments for you
-      <span class="sub">what this is assuming about you in particular —
-      nothing here is in the policy you were given, so if you were told
-      something applies to you, set it above</span></span>
+    <span class="field-k">adjustments</span>
     <div class="grid">
       <div class="chips">${row
     || '<span class="empty">nothing — you are being graded by the class '
@@ -1359,9 +1345,8 @@ function lateBoxGrid(graded, list) {
     </span>`).join('');
 
   return `<div class="waive-row block">
-    <span class="field-k">days late <span class="sub">how late each one was,
-      in whole days — your policy's grace period and excused days are already
-      in the number below</span></span>
+    <span class="field-k">days late <span class="sub">Be sure to put in late
+      days for accurate computation too</span></span>
     <div class="grid">
       ${summary ? `<div class="mini-row">${summary}</div>` : ''}
       <div class="chips">${list.map(lateBox).join('')}</div>
@@ -1537,16 +1522,23 @@ function studentFile(stud) {
   return `${last}_${first}.csv`;
 }
 
-/* The same file --per_student writes: everything behind one grade, which is
- * what you attach to the email asking why it is what it is. */
+/* For an instructor, the same file --per_student writes: everything behind
+ * one grade, which is what you attach to the email asking why it is what it
+ * is.
+ *
+ * For the student whose grade it is, that file explains what is already on
+ * the screen in front of them.  What they have and the page does not is their
+ * own typing, so theirs is the sheet -- the one file that brings it back. */
 function downloadStudentCsv() {
   const stud = pickedStudent();
   if (!stud) return;
 
+  if (state.solo) return download(gradedCsv(), SHEET_NAME, 'text/csv');
+
   const res = toJs(state.api.student_csv(gradedCsv(), state.yaml, stud.email,
                                          state.name));
   if (!res.ok) return;
-  download(res.csv, state.solo ? BREAKDOWN_NAME : res.filename, 'text/csv');
+  download(res.csv, res.filename, 'text/csv');
 }
 
 /* The file to post for the class: this policy with every student taken out
@@ -1605,7 +1597,9 @@ function excuseRow(form, stud) {
   if (!late.length) return '';
 
   return `<div class="waive-row">
-    <span class="field-k">extra late days</span>
+    <span class="field-k">extra late days${state.solo
+    ? ' <span class="sub">Just for you, above and beyond the late days given '
+      + 'to all students</span>' : ''}</span>
     <div class="checks">${late.map((c) => {
       const off = ((c.late || {}).excuse_day_offset || {})[stud.email] || 0;
       return `<label class="f">${escapeHtml(c.name)}
