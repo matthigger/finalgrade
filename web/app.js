@@ -2035,9 +2035,9 @@ function drawFiles() {
   // for, since a copy kept around would go stale against the one above it
   if (state.grades && !state.solo) {
     part.push(fileRow('public', NAME_PUBLIC,
-                      'Contains the grading policy without any individual '
-                      + 'student adjustments, ready to share with '
-                      + 'everyone.'));
+                      'Excludes all student-specific adjustments, share '
+                      + 'with students so they can estimate their own '
+                      + 'grades'));
   }
 
   if (state.canvasText && !state.sourceIsCanvas) {
