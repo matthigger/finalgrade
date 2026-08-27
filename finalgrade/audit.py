@@ -322,10 +322,16 @@ def _add_drop(gradebook, policy, out):
 
             name_list = [f'{cat_ass_list[i]} ({perc_arr[i]:.0%})'
                          for i in idx_list]
-            out[email].append(dict(
-                kind='drop',
-                text=f'{cat}: dropped {", ".join(name_list)}, '
-                     f'the lowest of {len(cat_ass_list)}'))
+            text = (f'{cat}: dropped {", ".join(name_list)}, '
+                    f'the lowest of {len(cat_ass_list)}')
+
+            # the student who counts the drops and comes up short is owed the
+            # reason: one score has to survive for the category to have a mean
+            if len(idx_list) < drop_n:
+                text += (f' (drop_low is {drop_n}, but the highest score is '
+                         f'kept rather than dropped too)')
+
+            out[email].append(dict(kind='drop', text=text))
 
 
 def _add_keep(gradebook, policy, out):

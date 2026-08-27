@@ -38,6 +38,10 @@ Drops each student's 2 lowest homework scores. Any category listed here must als
 
 An assignment nobody handed in reads as a 0 in a Gradescope or Canvas export, so it is a low score like any other and is the first thing dropped. Only a waived or Canvas-excused assignment is skipped instead of dropped: it was never assigned, so it is neither.
 
+**A student's highest score is never dropped, and a warning says so.** Writing `drop_low: 3` where only 3 homeworks are graded — a whole term's policy run in week 4, usually — would otherwise take every score a student has and leave the category with no mean at all: not a low homework grade but no homework grade, so its weight silently passes to whatever else is weighted, and a 40% homework with a 100% quiz comes out an A. Instead the best score stays and the rest go. `keep_high: 1` says the same thing outright, and is what to write if it is what you meant.
+
+This is also what keeps `drop_low` from turning on you: a larger number can never produce a lower grade than a smaller one.
+
 ### Keep highest
 
 ```yaml
