@@ -1,8 +1,8 @@
 """ which of a student's scores count in a category, and their mean
 
-drop_low discards a student's worst few; keep_high counts only their best
-few.  A category takes one or the other, never both: which of a student's
-scores count is one question with one answer.
+drop_low discards a student's worst few, never all of them; keep_high
+counts only their best few.  A category takes one or the other, never both:
+which of a student's scores count is one question with one answer.
 
 They differ on an assignment with no score at all -- nan here, which is what
 a waiver, a canvas excusal or an ungraded assignment reaches this far as
@@ -36,10 +36,14 @@ def get_drop_idx(perc, weight, drop_n=0, extra=None):
     is what it is is often asking which one was dropped, and that answer is
     different for every student.
 
+    A student's best score is never dropped, however large drop_n is -- see
+    the floor below.
+
     Args:
         perc (np.array): percentage earned per assignment
         weight (np.array): weight of each assignment
-        drop_n (int): number of assignments to drop
+        drop_n (int): number of assignments to drop, floored at one fewer
+            than the student has to drop
         extra (np.array): True where an assignment is extra credit, which is
             never dropped -- it can only raise a grade, so discarding it is
             never the help that dropping is meant to be
@@ -53,6 +57,12 @@ def get_drop_idx(perc, weight, drop_n=0, extra=None):
     idx_ok = [idx for idx in range(len(perc))
               if not (np.isnan(weight[idx]) or np.isnan(perc[idx]))
               and not (extra is not None and extra[idx])]
+
+    # drop_low forgives, so a larger drop_n must never grade lower than a
+    # smaller one.  taking every score leaves the category with no mean at
+    # all, which is lower than any drop_n that left one standing -- so the
+    # last score standing is the student's best
+    drop_n = min(drop_n, max(len(idx_ok) - 1, 0))
 
     # worst percentage first, and the heavier assignment first when two are
     # equal
@@ -113,7 +123,8 @@ def get_count_idx(perc, weight, drop_n=0, keep_n=0, extra=None):
     Args:
         perc (np.array): percentage earned per assignment, nan for no score
         weight (np.array): weight of each assignment
-        drop_n (int): number of assignments to drop, exclusive with keep_n
+        drop_n (int): number of assignments to drop, exclusive with keep_n.
+            floored so a student's best score survives (get_drop_idx)
         keep_n (int): number of assignments to count
         extra (np.array): True where an assignment is extra credit
 
@@ -152,7 +163,8 @@ def get_mean_drop_low(perc, weight, drop_n=0, keep_n=0, extra=None):
     Args:
         perc (np.array): percentage earned per assignment
         weight (np.array): weight of each assignment
-        drop_n (int): number of assignments to drop
+        drop_n (int): number of assignments to drop, floored so a student's
+            best score survives (get_drop_idx)
         keep_n (int): number of assignments to count, exclusive with drop_n
         extra (np.array): True where an assignment is extra credit.  its
             points count towards what was earned and not towards what was

@@ -228,12 +228,23 @@ def rule_warn_list(cat, ass_cat_list, extra_cat, drop_n=None, keep_n=None):
     """
     out = []
 
+    # extra credit is neither kept nor dropped, so neither rule is measured
+    # against it
+    n_ass = sum(not x for x in extra_cat)
+
     # nothing is left to count a missing score against, so keep_high quietly
     # becomes the ordinary mean of everything
-    n_keepable = sum(not x for x in extra_cat)
-    if ass_cat_list and (keep_n or 0) > n_keepable:
-        out.append(f'keep_high is {keep_n} where {cat} has {n_keepable} '
+    if ass_cat_list and (keep_n or 0) > n_ass:
+        out.append(f'keep_high is {keep_n} where {cat} has {n_ass} '
                    f'assignments to count, so every one of them does')
+
+    # a drop this large would take every score a student has and leave the
+    # category with no mean at all.  get_drop_idx floors it instead, which is
+    # not the rule that was written and so has to be said out loud
+    if (drop_n or 0) >= n_ass > 0:
+        out.append(f'drop_low is {drop_n} where {cat} holds {n_ass}, so '
+                   f'every student keeps their highest score and drops the '
+                   f'rest (keep_high: 1 says the same thing)')
 
     # a rule set to nothing grades as though it were never written, which is
     # not what anyone who typed it meant

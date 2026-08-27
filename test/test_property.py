@@ -45,7 +45,9 @@ class TestGetMeanDropLow:
         """
         perc, weight = pw
         prev = get_mean_drop_low(perc, weight, drop_n=0)
-        for drop_n in range(1, len(perc)):
+        # past len(perc) too: a drop_low bigger than the category is floored
+        # rather than emptying it, so it has a mean to compare like any other
+        for drop_n in range(1, len(perc) + 3):
             mean = get_mean_drop_low(perc, weight, drop_n=drop_n)
             assert mean >= prev - 1e-6, f'drop_n={drop_n} lowered the mean'
             prev = mean
@@ -73,10 +75,11 @@ class TestGetMeanDropLow:
                                                                abs=1e-6)
 
     @given(pw=perc_weight())
-    def test_dropping_everything_is_nan(self, pw):
-        """ no assignments left to average """
+    def test_dropping_everything_keeps_the_best(self, pw):
+        """ one score has to survive, and it is the highest one """
         perc, weight = pw
-        assert np.isnan(get_mean_drop_low(perc, weight, drop_n=len(perc)))
+        mean = get_mean_drop_low(perc, weight, drop_n=len(perc))
+        assert mean == pytest.approx(perc.max(), abs=1e-6)
 
     @given(pw=perc_weight(min_size=2))
     def test_nan_is_ignored_not_counted(self, pw):
